@@ -1,0 +1,270 @@
+{
+  "titles": [
+    {
+      "id": "the-odyssey",
+      "title": "The Odyssey",
+      "type": "Movie",
+      "status": "Completed",
+      "priority": "",
+      "review": "",
+      "rating": 0,
+      "notes": "",
+      "dateStarted": null,
+      "dateFinished": "2026-08-02",
+      "dateAdded": "2026-08-02T09:34:07.628Z",
+      "dateModified": "2026-08-02T09:34:33.763Z",
+      "totalEpisodes": 1,
+      "episodeDuration": 172,
+      "releaseDate": "2026-07-17",
+      "externalLink": "https://www.imdb.com/title/tt33764258",
+      "seasons": [
+        { "name": "Movie", "episodes": 1, "offset": 0, "skippedEpisodes": [] }
+      ],
+      "watchedEpisodes": [1],
+      "favorite": false,
+      "posterUrl": "https://m.media-amazon.com/images/M/MV5BNTcyNmJlZmQ._V1_.jpg",
+      "trailerUrl": "none",
+      "manualTrailerUrl": "",
+      "director": ["Christopher Nolan"],
+      "cast": ["Matt Damon", "Robert Pattinson", "Corey Hawkins"],
+      "communityRating": 8.3,
+      "communityVotes": 67786,
+      "communitySource": "imdb",
+      "communityRatingLastFetched": "2026-08-02T09:34:07.966Z",
+      "studio": ["none"],
+      "manualStudio": [],
+      "manualPosterUrl": "",
+      "anilistId": 0
+    },
+    {
+      "id": "spider-man-brand-new-day",
+      "title": "Spider-Man: Brand New Day",
+      "type": "Movie",
+      "status": "Plan to watch",
+      "priority": "Medium",
+      "review": "",
+      "rating": 0,
+      "notes": "",
+      "dateStarted": null,
+      "dateFinished": null,
+      "dateAdded": "2026-08-02T09:37:57.486Z",
+      "dateModified": "2026-08-02T09:38:43.122Z",
+      "totalEpisodes": 1,
+      "episodeDuration": 145,
+      "releaseDate": "2026-07-31",
+      "externalLink": "https://www.imdb.com/title/tt22084616",
+      "seasons": [
+        { "name": "Movie", "episodes": 1, "offset": 0, "skippedEpisodes": [] }
+      ],
+      "watchedEpisodes": [],
+      "favorite": false,
+      "posterUrl": "none",
+      "trailerUrl": "none",
+      "manualTrailerUrl": "",
+      "director": ["Destin Daniel Cretton"],
+      "cast": ["Tom Holland", "Zendaya", "Sadie Sink"],
+      "studio": ["none"],
+      "manualStudio": [],
+      "manualPosterUrl": "",
+      "anilistId": 0,
+      "communityRating": 0,
+      "communityVotes": 0,
+      "communitySource": "",
+      "communityRatingLastFetched": ""
+    },
+    {
+      "id": "dexter-resurrection",
+      "title": "Dexter: Resurrection",
+      "type": "TV Show",
+      "status": "Watching",
+      "priority": "",
+      "review": "",
+      "rating": 0,
+      "notes": "",
+      "dateStarted": null,
+      "dateFinished": null,
+      "dateAdded": "2026-08-03T13:53:17.033Z",
+      "dateModified": "2026-08-03T13:53:36.526Z",
+      "totalEpisodes": 20,
+      "episodeDuration": 45,
+      "releaseDate": "2025-07-11",
+      "externalLink": "https://www.imdb.com/title/tt33043892",
+      "seasons": [
+        { "name": "Season 1", "episodes": 10, "offset": 0 },
+        { "name": "Season 2", "episodes": 10, "offset": 10, "skippedEpisodes": [3, 5, 6, 7] }
+      ],
+      "watchedEpisodes": [10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 13, 15, 99, 3],
+      "favorite": true,
+      "dateFavorited": "2026-08-03T13:55:00.000Z",
+      "posterUrl": "https://m.media-amazon.com/images/M/MV5BMzgxNzUwZTct._V1_SX300.jpg",
+      "trailerUrl": "none",
+      "manualTrailerUrl": "",
+      "director": ["Clyde Phillips"],
+      "cast": ["Michael C. Hall", "Jack Alcott", "Ntare Guma Mbaho Mwine"],
+      "communityRating": 9,
+      "communityVotes": 129604,
+      "communitySource": "imdb",
+      "communityRatingLastFetched": "2026-08-03T13:53:17.342Z",
+      "studio": ["none"],
+      "manualStudio": [],
+      "tmdbId": 259909,
+      "lastInteracted": "2026-08-03T13:53:36.526Z"
+    }
+  ],
+  "groups": [],
+  "settings": {
+    "colorTheme": "default",
+    "dateFormat": "european",
+    "defaultWatchlistView": "rows",
+    "autoCompleteOnLastEpisode": true,
+    "setFinishDateAutomatically": false,
+    "omdbApiKey": "deadbeef",
+    "tmdbApiKey": "0123456789abcdef0123456789abcdef",
+    "googleBooksApiKey": "",
+    "rawgApiKey": "",
+    "igdbClientId": "",
+    "igdbClientSecret": "",
+    "steamApiKey": "",
+    "steamId": "",
+    "activeApi": "OMDb",
+    "animeApiSource": "jikan",
+    "gamesApiSource": "rawg",
+    "typeApiMapping": {},
+    "types": [
+      { "name": "Anime", "color": "#1D9E75" },
+      { "name": "Movie", "color": "#378ADD" },
+      { "name": "TV Show", "color": "#BA7517" },
+      { "name": "Korean TV Show", "color": "#7F77DD" },
+      { "name": "Animation", "color": "#D85A30" }
+    ],
+    "statuses": [
+      { "name": "Watching", "color": "#1D9E75" },
+      { "name": "Plan to watch", "color": "#888780" },
+      { "name": "Completed", "color": "#378ADD" },
+      { "name": "Dropped", "color": "#E24B4A" }
+    ],
+    "priorities": [
+      { "name": "Low", "color": "#888780" },
+      { "name": "Medium", "color": "#3b82f6" },
+      { "name": "High", "color": "#E24B4A" }
+    ],
+    "reviews": [
+      { "name": "Nah", "color": "#E24B4A" },
+      { "name": "Awesome", "color": "#1D9E75" },
+      { "name": "Marvelous", "color": "#7F77DD" }
+    ],
+    "ratingSystem": [
+      { "label": "Poor", "color": "#E24B4A" },
+      { "label": "Fair", "color": "#E28C3C" },
+      { "label": "Good", "color": "#378ADD" },
+      { "label": "Great", "color": "#1D9E75" },
+      { "label": "Masterpiece", "color": "#7F77DD" }
+    ],
+    "rootFolder": "WatchLog",
+    "autoCreateFolders": true,
+    "coloredTypeBadges": true,
+    "openWatchlistAfterAdd": true,
+    "dashboardCardStyle": "rectangles",
+    "cardSize": 0,
+    "cardSizeMobile": 0,
+    "cardTextStyles": {
+      "watchlist": "under",
+      "games": "under",
+      "reading": "under",
+      "upcoming": "under"
+    },
+    "halfStarRatings": false,
+    "episodeNumbering": "absolute",
+    "defaultAddType": "__wl_last_used__",
+    "lastAddedType": "Movie",
+    "dashboardTopCredits": 5,
+    "readingTypeColors": { "manga": "#D4537E", "book": "#D85A30" },
+    "customListsFolder": "WatchLog/CustomLists",
+    "defaultCustomColumns": [],
+    "draftsVaultTag": "#watchlog",
+    "draftsAfterAdding": "keep",
+    "customListTabOrder": [],
+    "showHintBanners": true,
+    "showUpcomingStatusBar": true,
+    "upcomingTrackerView": "list",
+    "rowsLayout": [
+      { "id": "favorites", "enabled": true },
+      { "id": "byType", "enabled": true }
+    ],
+    "listFilters": {
+      "typeExclude": ["Anime"],
+      "statusExclude": [],
+      "groupExclude": [],
+      "ratingExclude": [],
+      "priorityExclude": [],
+      "sort": "rating",
+      "sortDir": "asc",
+      "secondSort": "none",
+      "secondSortDir": "asc"
+    },
+    "gamesFilters": { "genreExclude": [], "platformExclude": [], "wishlistOnly": false },
+    "seasonPalette": [
+      "#1D9E75",
+      "#BA7517",
+      "#378ADD",
+      "#7F77DD",
+      "#D85A30",
+      "#D4537E",
+      "#639922",
+      "#888780"
+    ]
+  },
+  "airtime": [],
+  "posterRetryDone": true,
+  "recommendedDaily": { "date": "2026-08-03", "ids": ["dexter-resurrection"] },
+  "migratedReadingHistory": true,
+  "history": [
+    {
+      "id": "1785663247685-y1tb2",
+      "timestamp": "2026-08-02T09:34:07.685Z",
+      "message": "The Odyssey (Movie) was added on Sunday 02/08/2026 at 11:34",
+      "source": "Watchlist",
+      "action": "added",
+      "titleName": "The Odyssey"
+    },
+    {
+      "id": "1785663273623-6h36g",
+      "timestamp": "2026-08-02T09:34:33.623Z",
+      "message": "The Odyssey (Movie) was marked as watched on Sunday 02/08/2026 at 11:34",
+      "source": "Watchlist",
+      "action": "watched",
+      "titleName": "The Odyssey"
+    }
+  ],
+  "reading": {
+    "books": [],
+    "manga": [],
+    "bookColumns": [],
+    "mangaColumns": [],
+    "settings": {
+      "defaultFolder": "WatchLog/Reading",
+      "defaultStatus": "Plan to Read",
+      "bookCustomFieldStyle": "fill",
+      "mangaCustomFieldStyle": "fill",
+      "statusColors": {
+        "Reading": "#1D9E75",
+        "Completed": "#378ADD",
+        "Plan to Read": "#00A9A5",
+        "To be released": "#E8873A",
+        "Dropped": "#E24B4A"
+      }
+    }
+  },
+  "games": {
+    "games": [],
+    "groups": [],
+    "settings": {
+      "statuses": [
+        { "name": "Playing", "color": "#1D9E75" },
+        { "name": "Not started", "color": "#888780" }
+      ],
+      "types": [],
+      "platforms": []
+    }
+  }
+}

@@ -1,0 +1,426 @@
+/* =============================================================================
+ * WatchLog v4 — Games tab
+ *
+ * Owned by the W8-games lane. Namespace: `.wl-game-*` / `.wl-games-*`.
+ * One class, one partial — every shared component (`.wl-poster`, `.wl-pill`,
+ * `.wl-btn`, `.wl-filter-*`, `.wl-table`) is *used* here and declared elsewhere,
+ * so nothing below re-declares a bare class another partial owns.
+ *
+ * Colours: Obsidian CSS variables and injected `--wl-*` custom properties only.
+ * No fixed `aspect-ratio` anywhere: the grid cell has a definite height already
+ * (see `tests/styles.test.ts`, which is why the dashboard once became a stack of
+ * screen-tall rectangles).
+ * ========================================================================== */
+
+.wl-games {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.wl-games-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-2);
+}
+
+.wl-games-played {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
+/* -----------------------------------------------------------------------------
+ * The cover card
+ * -------------------------------------------------------------------------- */
+
+.wl-game-card {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 90px;
+  border-radius: var(--wl-radius-m, 8px);
+  overflow: hidden;
+  background: var(--background-secondary);
+  box-shadow: var(--wl-shadow-1);
+  transition:
+    transform var(--wl-dur-base, 0.15s) ease,
+    box-shadow var(--wl-dur-base, 0.15s) ease;
+}
+
+.wl-game-card.is-clickable {
+  cursor: pointer;
+}
+
+.wl-game-card:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.wl-game-card-cover {
+  position: absolute;
+  inset: 0;
+}
+
+.wl-game-card-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to top,
+    var(--background-primary) 0%,
+    color-mix(in srgb, var(--background-primary) 72%, transparent) 44%,
+    transparent 74%
+  );
+}
+
+.wl-game-card-body {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2, 4px);
+  padding: var(--wl-space-3, 8px);
+}
+
+.wl-game-card-title {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.wl-game-card-meta {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-game-card-pills,
+.wl-game-card-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-2, 4px);
+}
+
+/* Playtime and achievements are the two numbers a games card exists to show. */
+.wl-game-playtime,
+.wl-game-achievements {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wl-space-1, 2px);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
+.wl-game-stat-icon {
+  display: inline-flex;
+}
+
+.wl-game-stat-icon .svg-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.wl-game-progress {
+  position: relative;
+  height: 3px;
+  border-radius: var(--wl-radius-pill, 999px);
+  background: var(--background-modifier-border);
+  overflow: hidden;
+}
+
+.wl-game-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--interactive-accent);
+}
+
+.wl-game-badge {
+  position: absolute;
+  top: var(--wl-space-2, 4px);
+  left: var(--wl-space-2, 4px);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wl-space-1, 2px);
+  padding: 1px var(--wl-space-2, 4px);
+  border-radius: var(--wl-radius-pill, 999px);
+  background: color-mix(in srgb, var(--background-primary) 82%, transparent);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-game-badge-icon {
+  display: inline-flex;
+}
+
+.wl-game-badge-icon .svg-icon {
+  width: 11px;
+  height: 11px;
+}
+
+.wl-game-badge-text {
+  line-height: 1;
+}
+
+.wl-game-fav {
+  position: absolute;
+  top: var(--wl-space-2, 4px);
+  right: var(--wl-space-2, 4px);
+  display: inline-flex;
+  color: var(--color-red, var(--text-accent));
+}
+
+.wl-game-fav .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* -----------------------------------------------------------------------------
+ * Hover actions — revealed on hover, always visible on touch
+ * -------------------------------------------------------------------------- */
+
+.wl-game-actions {
+  position: absolute;
+  top: var(--wl-space-2, 4px);
+  right: var(--wl-space-2, 4px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-1, 2px);
+  opacity: 0;
+  transition: opacity var(--wl-dur-fast, 0.12s) ease;
+}
+
+.wl-game-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: var(--wl-radius-s, 4px);
+  background: color-mix(in srgb, var(--background-primary) 82%, transparent);
+  box-shadow: var(--wl-shadow-1);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.wl-game-action:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.wl-game-action .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+@media (hover: hover) {
+  .wl-game-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--wl-shadow-2);
+  }
+
+  .wl-game-card:hover .wl-game-actions,
+  .wl-game-card:focus-within .wl-game-actions {
+    opacity: 1;
+  }
+}
+
+@media (hover: none) {
+  .wl-game-actions {
+    opacity: 1;
+  }
+
+  .wl-game-action {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+/* -----------------------------------------------------------------------------
+ * Compact row
+ * -------------------------------------------------------------------------- */
+
+.wl-game-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-3, 8px);
+  padding: var(--wl-space-2, 4px);
+  border-radius: var(--wl-radius-m, 8px);
+  transition: background-color var(--wl-dur-fast, 0.12s) ease;
+}
+
+.wl-game-row.is-clickable {
+  cursor: pointer;
+}
+
+.wl-game-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.wl-game-row-cover {
+  /* An explicit box rather than a ratio: covers vary (IGDB is 3:4, a pasted
+     URL can be anything) and the cover is object-fit cover anyway. */
+  flex: 0 0 auto;
+  width: 40px;
+  height: 56px;
+  border-radius: var(--wl-radius-s, 4px);
+  overflow: hidden;
+}
+
+.wl-game-row-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-1, 2px);
+}
+
+.wl-game-row-title {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wl-game-row-side {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2, 4px);
+}
+
+/* -----------------------------------------------------------------------------
+ * Detail modal
+ * -------------------------------------------------------------------------- */
+
+.wl-game-detail-head {
+  display: flex;
+  gap: var(--wl-space-4, 12px);
+  align-items: flex-start;
+}
+
+.wl-game-detail-cover {
+  flex: 0 0 auto;
+  width: 96px;
+  height: 128px;
+  border-radius: var(--wl-radius-m, 8px);
+  overflow: hidden;
+  background: var(--background-secondary);
+}
+
+.wl-game-detail-headbody {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2, 4px);
+}
+
+.wl-game-detail-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wl-space-5, 16px);
+  margin: var(--wl-space-4, 12px) 0;
+  padding: var(--wl-space-3, 8px) 0;
+  border-top: 1px solid var(--background-modifier-border);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.wl-game-detail-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-1, 2px);
+}
+
+.wl-game-detail-stat-value {
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.wl-game-detail-stat-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wl-game-field-pair {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2, 4px);
+}
+
+.wl-game-field-sep {
+  color: var(--text-faint);
+}
+
+/* -----------------------------------------------------------------------------
+ * Steam import
+ * -------------------------------------------------------------------------- */
+
+.wl-steam-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-1, 2px);
+  max-height: 46vh;
+  overflow-y: auto;
+  margin: var(--wl-space-3, 8px) 0;
+}
+
+.wl-steam-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-3, 8px);
+  padding: var(--wl-space-2, 4px) var(--wl-space-3, 8px);
+  border-radius: var(--wl-radius-s, 4px);
+}
+
+.wl-steam-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.wl-steam-row.is-skip {
+  opacity: 0.6;
+}
+
+.wl-steam-row-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wl-steam-row-title {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wl-steam-row-meta,
+.wl-steam-row-changes {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-steam-more {
+  padding: var(--wl-space-2, 4px) var(--wl-space-3, 8px);
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}

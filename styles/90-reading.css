@@ -1,0 +1,567 @@
+/* =============================================================================
+ * WatchLog v4 — Reading tab (books + manga)
+ *
+ * Owned by the W8-reading lane. Near-empty on purpose: the contract wave only
+ * creates the slot and the stub chrome shared by the three unbuilt tabs.
+ *
+ * INVARIANT (enforced by tests/styles.test.ts and the smoke harness): a bare
+ * class is declared by exactly ONE partial. `.wl-reading-*` is this file's
+ * namespace; nothing outside it may claim those names.
+ * ========================================================================== */
+
+/* -----------------------------------------------------------------------------
+ * Stub chrome — shared by Reading, Games and Lists until each lane lands.
+ * Declared here, and only here, because 90 is the first parity partial.
+ * -------------------------------------------------------------------------- */
+
+.wl-stub {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-4);
+  max-width: 42em;
+  margin: var(--wl-space-6) auto;
+  padding: var(--wl-space-5);
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: var(--wl-radius-l);
+  background: var(--background-primary);
+}
+
+.wl-stub-head {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-3);
+}
+
+.wl-stub-icon {
+  display: inline-flex;
+  color: var(--text-accent);
+}
+
+.wl-stub-icon .svg-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.wl-stub-title {
+  color: var(--text-normal);
+  font-size: var(--font-ui-large);
+  font-weight: var(--font-bold);
+}
+
+.wl-stub-body {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: 1.5;
+}
+
+/* "Your books are still there" — the sentence that separates an unbuilt tab
+   from a data-loss scare. */
+.wl-stub-existing {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  padding: var(--wl-space-3);
+  border-radius: var(--wl-radius-m);
+  background: color-mix(in srgb, var(--color-green, var(--interactive-accent)) 12%, transparent);
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-stub-existing-icon {
+  display: inline-flex;
+  color: var(--color-green, var(--interactive-accent));
+}
+
+.wl-stub-existing-icon .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.wl-stub-list {
+  margin: 0;
+  padding-left: var(--wl-space-5);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.7;
+}
+
+.wl-stub-foot {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-style: italic;
+}
+
+/* -----------------------------------------------------------------------------
+ * Reading tab proper.
+ *
+ * Everything below is namespaced `.wl-reading-*`. Generic chrome (the toolbar,
+ * the search box, the filter panel, tables, pills, stars, posters, the modal
+ * shell) is REUSED from the partials that own those classes — this file styles
+ * only what is genuinely reading-shaped, and declares no bare class another
+ * partial already claims.
+ * -------------------------------------------------------------------------- */
+
+/* --- sub-tabs ------------------------------------------------------------- */
+
+.wl-reading-subtabs {
+  display: flex;
+  gap: var(--wl-space-2);
+  margin-bottom: var(--wl-space-3);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.wl-reading-subtab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  padding: var(--wl-space-2) var(--wl-space-4);
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+}
+
+.wl-reading-subtab:hover {
+  color: var(--text-normal);
+}
+
+.wl-reading-subtab.is-active {
+  border-bottom-color: var(--interactive-accent);
+  color: var(--text-normal);
+  font-weight: var(--font-semibold);
+}
+
+.wl-reading-subtab-icon {
+  display: inline-flex;
+}
+
+.wl-reading-subtab-icon .svg-icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* The count is information, not decoration: it says which shelf has what
+   before you have to click to find out. */
+.wl-reading-subtab-count {
+  padding: 0 var(--wl-space-2);
+  border-radius: var(--wl-radius-pill, 999px);
+  background: var(--background-modifier-border);
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
+.wl-reading-subtab.is-active .wl-reading-subtab-count {
+  background: color-mix(in srgb, var(--interactive-accent) 22%, transparent);
+  color: var(--text-normal);
+}
+
+/* --- the table ------------------------------------------------------------ */
+
+.wl-reading-results {
+  min-height: 0;
+}
+
+.wl-reading-table {
+  width: 100%;
+}
+
+.wl-reading-row {
+  cursor: pointer;
+}
+
+.wl-reading-cover-cell {
+  width: 44px;
+  padding-right: 0;
+}
+
+/* Deliberately sized rather than given an aspect-ratio: a fixed ratio on a
+   table cell is what turned the dashboard into empty rectangles (QA4), and the
+   invariant test in tests/styles.test.ts keeps it that way. */
+.wl-reading-thumb {
+  width: 34px;
+  height: 50px;
+  border-radius: var(--wl-radius-s, 4px);
+  overflow: hidden;
+}
+
+.wl-reading-progress-cell {
+  min-width: 160px;
+}
+
+.wl-reading-progress-text {
+  margin-top: var(--wl-space-1);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
+.wl-reading-column-cell {
+  white-space: nowrap;
+}
+
+.wl-reading-action-cell {
+  width: 36px;
+  text-align: right;
+}
+
+/* The +1 button stays out of the way until the row is under the pointer —
+   a table of 300 books should read as a list, not as a wall of buttons. */
+.wl-reading-bump {
+  opacity: 0;
+  transition: opacity var(--wl-dur-fast, 0.12s) ease;
+}
+
+.wl-reading-row:hover .wl-reading-bump,
+.wl-reading-bump:focus-visible {
+  opacity: 1;
+}
+
+/* --- progress bar --------------------------------------------------------- */
+
+.wl-reading-bar {
+  width: 100%;
+  height: 4px;
+  border-radius: var(--wl-radius-pill, 999px);
+  background: var(--background-modifier-border);
+  overflow: hidden;
+}
+
+.wl-reading-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--interactive-accent);
+  transition: width var(--wl-dur-normal, 0.2s) ease;
+}
+
+/* --- toolbar and facets --------------------------------------------------- */
+
+.wl-reading-filter-btn.is-on,
+.wl-reading-filter-btn.is-open {
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+}
+
+.wl-reading-facet-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+}
+
+.wl-reading-facet-title {
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wl-reading-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  padding: var(--wl-space-1) var(--wl-space-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-pill, 999px);
+  background: transparent;
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+}
+
+/* Exclusion, not inclusion: a chip is ON until you switch it off, so the
+   struck-through state is the one that means "hidden". */
+.wl-reading-chip.is-excluded {
+  border-style: dashed;
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+
+.wl-reading-chip.is-on {
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+}
+
+.wl-reading-chip-count {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.wl-reading-rating-filter {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-3);
+  flex-wrap: wrap;
+}
+
+.wl-reading-hint {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.4;
+}
+
+/* --- the detail modal ----------------------------------------------------- */
+
+.wl-reading-detail-head {
+  display: flex;
+  gap: var(--wl-space-4);
+  align-items: flex-start;
+}
+
+.wl-reading-cover {
+  flex: 0 0 auto;
+  width: 92px;
+  height: 138px;
+  border-radius: var(--wl-radius-m, 8px);
+  overflow: hidden;
+}
+
+.wl-reading-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+  min-width: 0;
+}
+
+.wl-reading-author {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.wl-reading-detail-stars {
+  display: flex;
+  align-items: center;
+}
+
+.wl-reading-fav.is-on {
+  border-color: var(--color-red, var(--interactive-accent));
+  color: var(--color-red, var(--interactive-accent));
+}
+
+.wl-reading-detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+  margin-top: var(--wl-space-4);
+}
+
+.wl-reading-progress-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  flex-wrap: wrap;
+}
+
+.wl-reading-count {
+  width: 6.5em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.wl-reading-of,
+.wl-reading-unit-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.wl-reading-unit-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  flex-wrap: wrap;
+}
+
+.wl-reading-progress-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- the add modal -------------------------------------------------------- */
+
+.wl-reading-provider {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  margin-bottom: var(--wl-space-2);
+}
+
+.wl-reading-provider-name {
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+}
+
+/* "no key needed" is the whole point of Open Library being the default. */
+.wl-reading-provider-hint {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-style: italic;
+}
+
+/* --- the columns modal ---------------------------------------------------- */
+
+.wl-reading-column-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+  margin: var(--wl-space-3) 0;
+}
+
+.wl-reading-column-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  flex-wrap: wrap;
+}
+
+.wl-reading-column-options {
+  flex: 1 1 12em;
+  min-width: 8em;
+}
+
+.wl-reading-color {
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-s, 4px);
+  background: transparent;
+  cursor: pointer;
+}
+
+/* --- narrow screens ------------------------------------------------------- */
+
+@media (max-width: 700px) {
+  /* The author and the custom columns are the first things to go: on a phone
+     the row has to answer "what is it, how far am I" and nothing else. */
+  .wl-reading-table th:nth-child(3),
+  .wl-reading-table td:nth-child(3),
+  .wl-reading-column-head,
+  .wl-reading-column-cell {
+    display: none;
+  }
+
+  .wl-reading-cover {
+    width: 64px;
+    height: 96px;
+  }
+
+  .wl-reading-bump {
+    opacity: 1;
+  }
+}
+
+
+/* --- The book file (bookfile.ts) ------------------------------------------- */
+
+.wl-reading-file-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+}
+
+.wl-reading-file-row .wl-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Inline in the title cell: quiet until hovered, like every row affordance. */
+.wl-reading-file-open {
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--wl-space-2);
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  vertical-align: middle;
+}
+
+.wl-reading-file-open:hover {
+  color: var(--text-accent);
+}
+
+.wl-reading-file-open .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* --- Public rating + store links (community.ts) ----------------------------- */
+
+.wl-reading-community {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-3);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-reading-community-value {
+  color: var(--text-normal);
+  font-weight: var(--font-medium);
+}
+
+.wl-reading-store-links {
+  display: inline-flex;
+  gap: var(--wl-space-3);
+}
+
+.wl-reading-store-link {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.wl-reading-store-link:hover {
+  color: var(--text-accent);
+  text-decoration: underline;
+}
+
+/* Under the stars in the table's Rating cell. */
+.wl-reading-community-cell {
+  margin-top: var(--wl-space-1);
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+
+/* --- Category picker (detail modal) ----------------------------------------- */
+
+.wl-reading-category-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wl-space-2);
+}
+
+.wl-reading-category-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  cursor: pointer;
+}
+
+.wl-reading-category-chip:hover .wl-reading-category-x {
+  color: var(--text-error);
+}
+
+.wl-reading-category-x {
+  color: var(--text-faint);
+}
+
+.wl-reading-category-add {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  margin-top: var(--wl-space-2);
+}
+
+.wl-reading-category-add .is-hidden {
+  display: none;
+}

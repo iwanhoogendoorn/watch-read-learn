@@ -1,0 +1,727 @@
+/* =============================================================================
+ * WatchLog v4 — Library tab: toolbar, filter panel, grid, table, bulk bar
+ *
+ * The generic control primitives (.wl-btn, .wl-input, .wl-select, .wl-field*)
+ * live here rather than in 10-base.css because that partial is owned by the
+ * foundation lane. They are deliberately unscoped so modals can use them too.
+ *
+ * Colours: Obsidian variables only. No :root block, no hex, anywhere.
+ * ========================================================================== */
+
+/* -----------------------------------------------------------------------------
+ * Control primitives
+ * -------------------------------------------------------------------------- */
+
+.wl-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wl-space-2, 4px);
+  padding: var(--wl-space-2, 4px) var(--wl-space-3, 8px);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-s, 4px);
+  background: var(--interactive-normal);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  line-height: 1.4;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color var(--wl-dur-fast, 0.12s) ease,
+    color var(--wl-dur-fast, 0.12s) ease,
+    border-color var(--wl-dur-fast, 0.12s) ease;
+}
+
+.wl-btn:hover {
+  background: var(--interactive-hover);
+}
+
+.wl-btn:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
+.wl-btn.mod-cta {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.wl-btn.mod-cta:hover {
+  background: var(--interactive-accent-hover);
+}
+
+/* Destructive, secondary: an outlined red button.
+ *
+ * `background` is set explicitly and on purpose. Obsidian's own
+ * `button.mod-warning` paints a solid red fill with `--text-on-accent` text; our
+ * rule used to override the colour only, so the label came out red-on-red and
+ * the Delete button in the detail footer read as a blank red rectangle (QA1 B6).
+ * Whatever the host stylesheet does, these three properties agree with each
+ * other. */
+.wl-btn.mod-warning {
+  background: var(--interactive-normal);
+  color: var(--text-error);
+  border-color: color-mix(in srgb, var(--text-error) 40%, transparent);
+}
+
+.wl-btn.mod-warning:hover {
+  background: color-mix(in srgb, var(--text-error) 12%, var(--interactive-normal));
+  color: var(--text-error);
+  border-color: var(--text-error);
+}
+
+/* Destructive *and* primary — the confirm dialog's own button. Solid, with a
+   label that contrasts against the fill rather than matching it. */
+.wl-btn.mod-cta.mod-warning {
+  background: var(--background-modifier-error);
+  border-color: var(--background-modifier-error);
+  color: var(--text-on-accent);
+}
+
+.wl-btn.mod-cta.mod-warning:hover {
+  background: var(--background-modifier-error-hover, var(--background-modifier-error));
+  color: var(--text-on-accent);
+}
+
+.wl-btn.is-on,
+.wl-btn.has-active {
+  border-color: var(--interactive-accent);
+  color: var(--text-accent);
+}
+
+.wl-btn-icon {
+  display: inline-flex;
+}
+
+.wl-btn-icon .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* The one icon button: square, quiet, and **visible**. Every surface uses it —
+   toolbar toggles, the search box's clear and "?", season chevrons, the
+   Upcoming refresh, activity and settings rows. `40-upcoming.css` used to
+   declare a second copy that set `opacity: 0` for a hover-reveal it only wanted
+   on two row types, and being later in the bundle it hid all of them (QA4). */
+.wl-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--wl-radius-s, 4px);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color var(--wl-dur-fast, 0.12s) ease;
+}
+
+.wl-icon-btn .svg-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.wl-icon-btn:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.wl-icon-btn.is-danger:hover {
+  color: var(--text-error);
+}
+
+.wl-icon-btn:disabled {
+  cursor: default;
+  opacity: 0.3;
+}
+
+/* An icon button that is also a toolbar button keeps the button chrome: the
+   compound selector is qualified on purpose, so it is not a collision. */
+.wl-btn.wl-icon-btn {
+  width: auto;
+  height: auto;
+  padding: var(--wl-space-2, 4px);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--interactive-normal);
+  color: var(--text-normal);
+}
+
+.wl-small-btn {
+  padding: var(--wl-space-1, 2px) var(--wl-space-3, 8px);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-link-btn {
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-accent);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+}
+
+.wl-link-btn:hover {
+  text-decoration: underline;
+}
+
+.wl-input,
+.wl-select,
+.wl-textarea {
+  width: 100%;
+  padding: var(--wl-space-2, 4px) var(--wl-space-3, 8px);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-s, 4px);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-family: inherit;
+}
+
+.wl-textarea {
+  resize: vertical;
+}
+
+.wl-input:focus,
+.wl-select:focus,
+.wl-textarea:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+}
+
+.wl-field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--wl-space-4, 12px);
+}
+
+.wl-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-1, 2px);
+  min-width: 0;
+}
+
+.wl-field-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Inline, per-field validation — never a wall of Notices. */
+.wl-field-msg {
+  color: var(--text-error);
+  font-size: var(--font-ui-smaller);
+  min-height: 1em;
+}
+
+/* -----------------------------------------------------------------------------
+ * Layout
+ * -------------------------------------------------------------------------- */
+
+.wl-library {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-3, 8px);
+  min-height: 100%;
+}
+
+.wl-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-3, 8px);
+  position: sticky;
+  top: 0;
+  z-index: var(--wl-z-toolbar, 20);
+  padding-bottom: var(--wl-space-3, 8px);
+  background: var(--background-primary);
+}
+
+/* One control height across the row: themed buttons and the search field
+ * meet the same line instead of each bringing its own idea of "tall". */
+.wl-toolbar .wl-btn,
+.wl-searchbox {
+  min-height: var(--input-height, 30px);
+}
+
+.wl-toolbar-spacer {
+  flex: 1 1 auto;
+}
+
+.wl-infobar {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-3, 8px);
+}
+
+/* The always-on signal that a filter is doing something. */
+.wl-results-info {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-results {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* -----------------------------------------------------------------------------
+ * Search box
+ * -------------------------------------------------------------------------- */
+
+.wl-searchbox {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2, 4px);
+  flex: 1 1 220px;
+  min-width: 180px;
+  max-width: 420px;
+  padding: 0 var(--wl-space-2, 4px);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-s, 4px);
+  background: var(--background-primary);
+}
+
+.wl-searchbox:focus-within {
+  border-color: var(--interactive-accent);
+}
+
+.wl-searchbox-icon {
+  display: inline-flex;
+  color: var(--text-faint);
+}
+
+.wl-searchbox-icon .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.wl-searchbox-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--wl-space-2, 4px) 0;
+  border: none;
+  background: transparent;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+
+.wl-searchbox-input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Obsidian and most themes give input[type="search"] a border, radius and
+ * background of its own; inside the bordered searchbox that renders as a pill
+ * trapped in a box — two outlines around one field. The wrapper owns all the
+ * chrome; the input stays naked whatever the theme thinks of search fields. */
+.wl-searchbox input.wl-searchbox-input,
+.wl-searchbox input.wl-searchbox-input:hover,
+.wl-searchbox input.wl-searchbox-input:focus,
+.wl-searchbox input.wl-searchbox-input:active {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  border-radius: 0;
+  height: auto;
+}
+
+/* Chromium draws its own ✕ inside search inputs; the box has a real one. */
+.wl-searchbox input.wl-searchbox-input::-webkit-search-cancel-button,
+.wl-searchbox input.wl-searchbox-input::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.wl-searchbox-clear {
+  visibility: hidden;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.wl-searchbox-clear.is-visible {
+  visibility: visible;
+}
+
+.wl-searchbox-tips {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.wl-searchbox-tips:hover {
+  color: var(--text-accent);
+}
+
+/* -----------------------------------------------------------------------------
+ * Filters
+ * -------------------------------------------------------------------------- */
+
+.wl-filters {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wl-space-1, 2px);
+}
+
+.wl-filters-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--wl-radius-pill, 999px);
+  background: var(--interactive-accent);
+  visibility: hidden;
+}
+
+.wl-filters-dot.is-visible {
+  visibility: visible;
+}
+
+.wl-filters-clear {
+  display: none;
+  color: var(--text-muted);
+}
+
+.wl-filters-clear.is-visible {
+  display: inline-flex;
+}
+
+/* The drawer host is a placement anchor only — `display: contents` keeps the
+   panel a direct flex child of .wl-library, so a hidden panel leaves no gap. */
+.wl-filter-host {
+  display: contents;
+}
+
+.wl-filter-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-4, 12px);
+  padding: var(--wl-space-4, 12px);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-m, 8px);
+  background: var(--background-secondary);
+  box-shadow: var(--wl-shadow-2);
+}
+
+.wl-filter-panel.wl-filter-drawer {
+  position: relative;
+  z-index: var(--wl-z-popover, 40);
+  max-height: 55vh;
+  overflow-y: auto;
+}
+
+.wl-filter-startfrom {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2, 4px);
+}
+
+.wl-filter-startfrom-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-filter-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2, 4px);
+}
+
+.wl-filter-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--wl-space-3, 8px);
+}
+
+.wl-filter-section-title {
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wl-filter-section-tools {
+  display: flex;
+  gap: var(--wl-space-3, 8px);
+}
+
+.wl-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wl-space-2, 4px);
+}
+
+.wl-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wl-space-1, 2px);
+  padding: var(--wl-space-1, 2px) var(--wl-space-3, 8px);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-pill, 999px);
+  background: transparent;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+  transition:
+    background-color var(--wl-dur-fast, 0.12s) ease,
+    color var(--wl-dur-fast, 0.12s) ease,
+    border-color var(--wl-dur-fast, 0.12s) ease;
+}
+
+.wl-filter-chip .wl-filter-chip-icon {
+  display: inline-flex;
+  opacity: 0;
+}
+
+.wl-filter-chip .wl-filter-chip-icon .svg-icon {
+  width: 11px;
+  height: 11px;
+}
+
+.wl-filter-chip.is-on {
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+  color: var(--text-normal);
+}
+
+.wl-filter-chip.is-on .wl-filter-chip-icon {
+  opacity: 1;
+}
+
+.wl-filter-chip-count {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-filter-note {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-filter-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* -----------------------------------------------------------------------------
+ * Virtualised grid
+ * -------------------------------------------------------------------------- */
+
+.wl-vgrid {
+  position: relative;
+  width: 100%;
+}
+
+/* Width *and* height are written inline by `createVirtualGrid` from the measured
+   column geometry. The 2:3 fallback only ever applies if a cell is somehow
+   mounted before that first measurement lands. */
+.wl-vgrid-cell {
+  position: absolute;
+  top: 0;
+  left: 0;
+  aspect-ratio: 2 / 3;
+  will-change: transform;
+}
+
+/* -----------------------------------------------------------------------------
+ * Table view
+ * -------------------------------------------------------------------------- */
+
+.wl-tablewrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.wl-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-ui-small);
+}
+
+.wl-table th {
+  padding: var(--wl-space-2, 4px) var(--wl-space-3, 8px);
+  border-bottom: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.wl-table td {
+  padding: var(--wl-space-2, 4px) var(--wl-space-3, 8px);
+  border-bottom: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  vertical-align: middle;
+}
+
+.wl-table-title {
+  color: var(--text-normal);
+  font-weight: var(--font-medium);
+}
+
+.wl-table-row {
+  cursor: pointer;
+  transition: background-color var(--wl-dur-fast, 0.12s) ease;
+}
+
+.wl-table-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.wl-table-row.is-selected {
+  background: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+}
+
+.wl-table-row:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+
+/* -----------------------------------------------------------------------------
+ * Select mode + bulk bar
+ * -------------------------------------------------------------------------- */
+
+.wl-select-mode .wl-card,
+.wl-select-mode .wl-table-row {
+  cursor: copy;
+}
+
+.wl-select-mode .wl-card-actions {
+  display: none;
+}
+
+.wl-bulk-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--wl-z-sticky, 10);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-2, 4px);
+  padding: var(--wl-space-3, 8px);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-m, 8px);
+  background: var(--background-secondary);
+  box-shadow: var(--wl-shadow-2);
+}
+
+.wl-bulk-count {
+  margin-right: var(--wl-space-2, 4px);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.wl-bulk-tag {
+  flex: 1 1 160px;
+  max-width: 240px;
+}
+
+/* -----------------------------------------------------------------------------
+ * Empty states
+ * -------------------------------------------------------------------------- */
+
+.wl-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--wl-space-2, 4px);
+}
+
+/* -----------------------------------------------------------------------------
+ * Responsive — capability queries first, widths only where layout must change
+ * -------------------------------------------------------------------------- */
+
+@media (hover: none) {
+  .wl-filter-chip {
+    padding: var(--wl-space-2, 4px) var(--wl-space-4, 12px);
+  }
+
+  .wl-searchbox-clear {
+    visibility: visible;
+  }
+}
+
+@media (max-width: 600px) {
+  .wl-searchbox {
+    flex-basis: 100%;
+    max-width: none;
+  }
+
+  .wl-toolbar-spacer {
+    display: none;
+  }
+
+  .wl-btn .wl-btn-label {
+    display: none;
+  }
+
+  .wl-add-btn .wl-btn-label,
+  .wl-filters-btn .wl-btn-label,
+  /* A destructive button is never reduced to an unlabelled red square. */
+  .wl-btn.mod-warning .wl-btn-label {
+    display: inline;
+  }
+}
+
+/* -----------------------------------------------------------------------------
+ * Date fields
+ *
+ * A plain text input in the user's configured order rather than the host
+ * locale's native picker — see `ui/components/dates.ts`. It has to look like
+ * every other control in the form, which is half of why the native one went.
+ * -------------------------------------------------------------------------- */
+
+.wl-date-input {
+  font-variant-numeric: tabular-nums;
+}
+
+.wl-date-input.is-invalid,
+.wl-date-input.is-invalid:focus {
+  border-color: var(--text-error);
+}
+
+/* Only reserves a line once it has something to say. */
+.wl-date-msg:empty {
+  min-height: 0;
+}
+
+/* The "Tips" label next to the ? — shown only while the query is plain words,
+   so it hints at the syntax without ever demanding it. */
+.wl-searchbox-tips {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wl-space-1, 2px);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-searchbox-tips-label {
+  display: none;
+  color: var(--text-faint);
+}
+
+.wl-searchbox-tips.has-label .wl-searchbox-tips-label {
+  display: inline;
+}
+
+.wl-searchbox-tips:hover .wl-searchbox-tips-label {
+  color: var(--text-accent);
+}
+
+@media (max-width: 600px) {
+  /* A narrow box needs its width for the query itself. */
+  .wl-searchbox-tips-label {
+    display: none !important;
+  }
+}

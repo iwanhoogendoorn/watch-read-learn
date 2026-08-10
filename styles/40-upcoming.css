@@ -1,0 +1,514 @@
+/* =============================================================================
+ * WatchLog v4 — Upcoming tab, plus the primitives every aux surface shares
+ *
+ * The shared helpers (`section()`, pills, chips, thumbs, small buttons, the
+ * inline error panel) are declared here because `ui/tabs/upcoming.ts` is where
+ * they live in TypeScript — keeping the two files aligned is worth more than a
+ * perfectly literal reading of the filename.
+ *
+ * Theming policy (10-base.css): no hardcoded colours, ever. Obsidian variables
+ * and --wl-* custom props only.
+ * ========================================================================== */
+
+/* -----------------------------------------------------------------------------
+ * Sections and headers
+ * -------------------------------------------------------------------------- */
+
+.wl-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-3);
+}
+
+.wl-section.is-broken {
+  gap: 0;
+}
+
+.wl-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--wl-space-3);
+}
+
+.wl-section-title {
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+}
+
+.wl-section-meta {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+/* Error isolation — one broken section never blanks a tab. */
+.wl-error-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+  padding: var(--wl-space-4);
+  border: 1px solid var(--background-modifier-error-hover, var(--background-modifier-border));
+  border-radius: var(--wl-radius-m);
+  background: color-mix(in srgb, var(--text-error) 8%, transparent);
+}
+
+.wl-error-panel-head {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  color: var(--text-error);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+}
+
+.wl-error-panel-icon .svg-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.wl-error-panel-body {
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  word-break: break-word;
+}
+
+/* -----------------------------------------------------------------------------
+ * Empty states
+ * -------------------------------------------------------------------------- */
+
+.wl-empty-action {
+  margin-top: var(--wl-space-2);
+  cursor: pointer;
+}
+
+/* -----------------------------------------------------------------------------
+ * Pills, chips and small buttons
+ * -------------------------------------------------------------------------- */
+
+/* State modifiers only. The `.wl-pill` base lives in `20-cards.css`, which owns
+   the pill component; re-declaring it here is what silently repainted every
+   user-coloured type/status pill grey (QA4). */
+.wl-pill.is-ok {
+  background: color-mix(in srgb, var(--color-green) 22%, transparent);
+  color: var(--text-normal);
+}
+
+.wl-pill.is-warn {
+  background: color-mix(in srgb, var(--color-orange) 22%, transparent);
+  color: var(--text-normal);
+}
+
+.wl-pill.is-muted {
+  background: var(--background-modifier-border);
+  color: var(--text-faint);
+}
+
+/* Ditto for chips: the base and `.is-clickable` live in `20-cards.css`; only
+   the filter-chip state is this partial's own. */
+.wl-chip.is-active {
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+}
+
+.wl-chip-icon .svg-icon {
+  width: 13px;
+  height: 13px;
+}
+
+.wl-mini-btn {
+  padding: var(--wl-space-1) var(--wl-space-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-s);
+  background: var(--background-secondary);
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+  transition:
+    color var(--wl-dur-fast) ease,
+    border-color var(--wl-dur-fast) ease;
+}
+
+.wl-mini-btn:hover {
+  color: var(--text-normal);
+  border-color: var(--interactive-accent);
+}
+
+.wl-mini-btn.is-danger:hover {
+  color: var(--text-error);
+  border-color: var(--text-error);
+}
+
+/* Reveal-on-hover, scoped to the two row types that asked for it.
+ *
+ * This used to live on the bare `.wl-icon-btn`, which meant `opacity: 0` on
+ * EVERY icon button in the plugin — the library's view/select toggles, the
+ * search box's clear and its "?", the season chevrons, the Upcoming refresh —
+ * all invisible on a mouse-driven desktop, because only activity and colour
+ * rows ever restored it (QA4). The base lives in `30-library.css` with the
+ * other control primitives and is visible, like a button. */
+.wl-activity-row .wl-icon-btn,
+.wl-color-row .wl-icon-btn {
+  opacity: 0;
+  transition: opacity var(--wl-dur-fast) ease;
+}
+
+/* -----------------------------------------------------------------------------
+ * Poster thumbs and the interim fallback card
+ * -------------------------------------------------------------------------- */
+
+.wl-thumb {
+  position: relative;
+  flex: 0 0 auto;
+  width: 44px;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border-radius: var(--wl-radius-s);
+  background: var(--background-secondary);
+}
+
+.wl-thumb.is-small {
+  width: 32px;
+}
+
+.wl-thumb.is-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--wl-tint, var(--background-secondary));
+}
+
+.wl-thumb img,
+.wl-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.wl-thumb-initial {
+  color: var(--text-muted);
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+}
+
+.wl-fallback-card {
+  display: flex;
+  gap: var(--wl-space-3);
+  padding: var(--wl-space-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-m);
+  background: var(--background-primary);
+}
+
+.wl-fallback-card.is-clickable {
+  cursor: pointer;
+  transition: border-color var(--wl-dur-fast) ease;
+}
+
+.wl-fallback-card.is-clickable:hover {
+  border-color: var(--interactive-accent);
+}
+
+.wl-fallback-poster {
+  position: relative;
+  flex: 0 0 auto;
+  width: 48px;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border-radius: var(--wl-radius-s);
+  background: var(--wl-tint, var(--background-secondary));
+}
+
+.wl-fallback-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.wl-fallback-poster.is-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wl-fallback-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-1);
+  min-width: 0;
+}
+
+.wl-fallback-title {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-fallback-meta {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-fallback-card.is-mini .wl-fallback-poster {
+  width: 32px;
+}
+
+/* -----------------------------------------------------------------------------
+ * Progress bar
+ * -------------------------------------------------------------------------- */
+
+/* The progress bar is `20-cards.css`'s too — this partial's copy differed only
+   in being 1px taller, which is not a reason for a second definition. */
+
+/* -----------------------------------------------------------------------------
+ * The Upcoming toolbar
+ *
+ * The Library's toolbar rules (`.wl-toolbar`, `.wl-filter-*`, `.wl-searchbox`,
+ * `.wl-infobar`) are shared and stay in `30-library.css` — one class, one
+ * component, one partial. Only what is Upcoming's own is declared here.
+ * -------------------------------------------------------------------------- */
+
+.wl-upcoming-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-2);
+  position: sticky;
+  top: 0;
+  z-index: var(--wl-z-toolbar, 20);
+  padding-bottom: var(--wl-space-2);
+  background: var(--background-primary);
+}
+
+/* The filter control keeps the shared panel; this is only its toolbar slot. */
+.wl-upcoming-filters {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-1);
+}
+
+/* "8 scheduled · 3 due · 1 announced", beside the results counter. */
+.wl-upcoming-summary {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-upcoming-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-5);
+  padding-top: var(--wl-space-3);
+}
+
+/* -----------------------------------------------------------------------------
+ * The Upcoming list
+ * -------------------------------------------------------------------------- */
+
+.wl-upcoming-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+}
+
+/* The past-window tail, under everything still to come. A rule above it and a
+   quieter label: it is news you may have missed, not news you are waiting for. */
+.wl-upcoming-group.is-released {
+  padding-top: var(--wl-space-4);
+  border-top: 1px solid var(--background-modifier-border);
+  opacity: 0.85;
+}
+
+.wl-upcoming-group-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.wl-upcoming-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+}
+
+.wl-upcoming-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-4);
+  padding: var(--wl-space-3);
+  border: 1px solid var(--background-modifier-border);
+  border-left-width: 3px;
+  border-radius: var(--wl-radius-m);
+  background: var(--background-primary);
+  transition:
+    border-color var(--wl-dur-fast) ease,
+    transform var(--wl-dur-fast) ease;
+}
+
+.wl-upcoming-row.is-episode {
+  border-left-color: var(--interactive-accent);
+}
+
+.wl-upcoming-row.is-release {
+  border-left-color: var(--color-orange);
+}
+
+.wl-upcoming-row.is-season {
+  border-left-color: var(--color-purple);
+}
+
+.wl-upcoming-row.is-clickable {
+  cursor: pointer;
+}
+
+.wl-upcoming-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--wl-space-1);
+  min-width: 0;
+}
+
+.wl-upcoming-titlerow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--wl-space-3);
+  min-width: 0;
+}
+
+.wl-upcoming-name {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-upcoming-label {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-upcoming-detail,
+.wl-upcoming-meta {
+  display: flex;
+  gap: var(--wl-space-3);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-upcoming-states {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--wl-space-2);
+}
+
+.wl-countdown {
+  color: var(--text-muted);
+}
+
+.wl-countdown.is-today {
+  color: var(--text-accent);
+  font-weight: var(--font-semibold);
+}
+
+.wl-countdown.is-aired {
+  color: var(--text-faint);
+}
+
+/* -----------------------------------------------------------------------------
+ * Hover affordances — always visible where there is no hover
+ * -------------------------------------------------------------------------- */
+
+@media (hover: hover) {
+  .wl-upcoming-row.is-clickable:hover {
+    border-color: var(--interactive-accent);
+    transform: translateY(-1px);
+  }
+
+  .wl-activity-row:hover .wl-icon-btn,
+  .wl-color-row:hover .wl-icon-btn,
+  .wl-activity-row .wl-icon-btn:focus-visible,
+  .wl-color-row .wl-icon-btn:focus-visible {
+    opacity: 1;
+  }
+}
+
+@media (hover: none) {
+  /* No hover to reveal with. */
+  .wl-activity-row .wl-icon-btn,
+  .wl-color-row .wl-icon-btn {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 600px) {
+  .wl-upcoming-row {
+    flex-wrap: wrap;
+  }
+
+  .wl-upcoming-states {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wl-upcoming-row,
+  .wl-progress-fill {
+    transition: none;
+  }
+
+  .wl-upcoming-row.is-clickable:hover {
+    transform: none;
+  }
+}
+
+/* The Upcoming header's "check upstream" button. */
+.wl-upcoming-refresh {
+  margin-left: auto;
+  color: var(--text-muted);
+}
+
+.wl-upcoming-refresh:hover:not(:disabled) {
+  color: var(--text-accent);
+}
+
+.wl-upcoming-refresh:disabled {
+  cursor: progress;
+}
+
+.wl-upcoming-refresh.is-spinning .svg-icon {
+  animation: wl-spin 1s linear infinite;
+}
+
+@keyframes wl-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wl-upcoming-refresh.is-spinning .svg-icon {
+    animation: none;
+    opacity: 0.5;
+  }
+}
+
+/* Which library an Upcoming row came from, in that library's own words
+   ("Airing next" / "Reading next" / "Releasing next" — v3's resolveEntry). */
+.wl-upcoming-source {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}

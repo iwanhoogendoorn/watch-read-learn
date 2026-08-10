@@ -1,0 +1,511 @@
+/* =============================================================================
+ * WatchLog v4 — code blocks (```watchlog and the five legacy fences)
+ *
+ * SCALE OUTSIDE THE VIEW
+ * ----------------------
+ * 10-base.css declares the spacing/radius/motion scale on `.wl-view`. Code
+ * blocks and the settings tab render outside that element, so the scale is
+ * re-declared here for every out-of-view root. Custom properties inherit per
+ * element, not per file, so this one block also serves 80-settings.css.
+ * ========================================================================== */
+
+.wl-widget,
+.wl-settings,
+.wl-statusbar,
+.wl-confirm,
+.wl-palette-row {
+  --wl-space-1: 2px;
+  --wl-space-2: 4px;
+  --wl-space-3: 8px;
+  --wl-space-4: 12px;
+  --wl-space-5: 16px;
+  --wl-space-6: 24px;
+  --wl-space-7: 32px;
+  --wl-space-8: 48px;
+
+  --wl-radius-s: var(--radius-s, 4px);
+  --wl-radius-m: var(--radius-m, 8px);
+  --wl-radius-l: 12px;
+  --wl-radius-pill: 999px;
+
+  --wl-z-sticky: 10;
+
+  --wl-dur-fast: 0.12s;
+  --wl-dur-base: 0.15s;
+  --wl-dur-slow: 0.24s;
+}
+
+.wl-widget {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-3);
+  margin: var(--wl-space-3) 0;
+}
+
+.wl-widget-empty {
+  padding: var(--wl-space-4);
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: var(--wl-radius-m);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  text-align: center;
+}
+
+/* -----------------------------------------------------------------------------
+ * The error panel — prints the entire vocabulary so the user never leaves
+ * -------------------------------------------------------------------------- */
+
+.wl-widget-error {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-3);
+  padding: var(--wl-space-4);
+  border: 1px solid var(--background-modifier-border);
+  border-left: 3px solid var(--text-error);
+  border-radius: var(--wl-radius-m);
+  background: color-mix(in srgb, var(--text-error) 6%, transparent);
+}
+
+.wl-widget-error-head {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  color: var(--text-error);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+}
+
+.wl-widget-error-icon .svg-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.wl-widget-error-list {
+  margin: 0;
+  padding-left: var(--wl-space-6);
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-widget-error-help {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+  padding-top: var(--wl-space-3);
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.wl-widget-error-help-title {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.wl-widget-error-help-note {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-widget-vocab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-1);
+}
+
+.wl-widget-vocab-row {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: var(--wl-space-3);
+  align-items: baseline;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-widget-vocab-row code {
+  font-size: var(--font-ui-smaller);
+}
+
+/* -----------------------------------------------------------------------------
+ * Views
+ * -------------------------------------------------------------------------- */
+
+.wl-widget-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--wl-space-3);
+}
+
+.wl-widget-cards.is-mini {
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+
+.wl-widget-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+}
+
+.wl-widget-list-row,
+.wl-widget-upcoming-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-3);
+  padding: var(--wl-space-2);
+  border-radius: var(--wl-radius-s);
+  transition: background-color var(--wl-dur-fast) ease;
+}
+
+.wl-widget-list-row.is-clickable,
+.wl-widget-upcoming-row.is-clickable {
+  cursor: pointer;
+}
+
+.wl-widget-list-row:hover,
+.wl-widget-upcoming-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.wl-widget-list-body,
+.wl-widget-upcoming-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.wl-widget-list-name,
+.wl-widget-upcoming-name {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-widget-list-meta,
+.wl-widget-upcoming-meta {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-widget-tablewrap {
+  overflow-x: auto;
+}
+
+.wl-widget-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-ui-small);
+}
+
+.wl-widget-table th {
+  padding: var(--wl-space-2) var(--wl-space-3);
+  border-bottom: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.wl-widget-table td {
+  padding: var(--wl-space-2) var(--wl-space-3);
+  border-bottom: 1px solid var(--background-modifier-border);
+  color: var(--text-normal);
+}
+
+.wl-widget-table tr.is-clickable {
+  cursor: pointer;
+}
+
+.wl-widget-table tr.is-clickable:hover td {
+  background: var(--background-modifier-hover);
+}
+
+.wl-widget-shortlist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-1);
+}
+
+.wl-widget-shortlist-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-3);
+  padding: var(--wl-space-1) var(--wl-space-2);
+  border-radius: var(--wl-radius-s);
+  font-size: var(--font-ui-small);
+}
+
+.wl-widget-shortlist-row.is-clickable {
+  cursor: pointer;
+}
+
+.wl-widget-shortlist-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.wl-widget-shortlist-row.is-done .wl-widget-shortlist-name {
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+
+.wl-widget-shortlist-icon {
+  display: inline-flex;
+  color: var(--text-faint);
+}
+
+.wl-widget-shortlist-icon .svg-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.wl-widget-shortlist-name {
+  flex: 1 1 auto;
+  color: var(--text-normal);
+}
+
+.wl-widget-shortlist-meta {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-widget-random-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wl-space-3);
+}
+
+.wl-widget-random-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* -----------------------------------------------------------------------------
+ * `now` — pinned titles with a write-through checkbox
+ * -------------------------------------------------------------------------- */
+
+.wl-widget-now {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-3);
+}
+
+.wl-widget-now-card {
+  display: flex;
+  gap: var(--wl-space-4);
+  padding: var(--wl-space-4);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-m);
+  background: var(--background-primary);
+}
+
+.wl-widget-now-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+  min-width: 0;
+}
+
+.wl-widget-now-name {
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+}
+
+.wl-widget-now-meta {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-widget-now-next {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-3);
+  font-size: var(--font-ui-small);
+}
+
+.wl-widget-now-label {
+  color: var(--text-normal);
+}
+
+.wl-widget-now-left,
+.wl-widget-now-done {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-widget-nownext {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--wl-space-4);
+}
+
+.wl-widget-nownext-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-3);
+  min-width: 0;
+}
+
+.wl-widget-nownext-head {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* -----------------------------------------------------------------------------
+ * `stat`
+ * -------------------------------------------------------------------------- */
+
+.wl-widget-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: var(--wl-space-4);
+  padding: var(--wl-space-4);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-m);
+  background: var(--background-primary);
+}
+
+.wl-widget-stat-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-1);
+  text-align: center;
+}
+
+.wl-widget-stat-value {
+  color: var(--text-normal);
+  font-size: var(--font-ui-large);
+  font-weight: var(--font-bold);
+  line-height: 1.1;
+}
+
+.wl-widget-stat-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+/* -----------------------------------------------------------------------------
+ * Insert-widget palette rows
+ * -------------------------------------------------------------------------- */
+
+.wl-palette-name {
+  color: var(--text-normal);
+}
+
+.wl-palette-desc {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-statusbar {
+  cursor: pointer;
+}
+
+@media (max-width: 600px) {
+  .wl-widget-nownext {
+    grid-template-columns: 1fr;
+  }
+
+  .wl-widget-vocab-row {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wl-widget-list-row,
+  .wl-widget-upcoming-row {
+    transition: none;
+  }
+}
+
+/* -----------------------------------------------------------------------------
+ * `domain: reading | games` blocks
+ *
+ * One row shape for both libraries — cover, name, the domain's own headline
+ * number, status — because a code block is a summary, not a second tab.
+ * -------------------------------------------------------------------------- */
+
+.wl-widget-domain-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+}
+
+.wl-widget-domain-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-3);
+  padding: var(--wl-space-2);
+  border-radius: var(--wl-radius-s);
+}
+
+.wl-widget-domain-row.is-clickable {
+  cursor: pointer;
+}
+
+.wl-widget-domain-row.is-clickable:hover {
+  background: var(--background-modifier-hover);
+}
+
+.wl-widget-domain-cover {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border-radius: var(--wl-radius-s);
+  background: var(--background-secondary);
+}
+
+.wl-widget-domain-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.wl-widget-domain-initial {
+  color: var(--text-faint);
+  font-size: var(--font-ui-small);
+}
+
+.wl-widget-domain-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--wl-space-1);
+  min-width: 0;
+}
+
+.wl-widget-domain-name {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-widget-domain-meta {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-widget-domain-status {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}

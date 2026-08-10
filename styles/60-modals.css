@@ -1,0 +1,775 @@
+/* =============================================================================
+ * WatchLog v4 — modals: add, detail, seasons, confirm, tips, preset
+ *
+ * Modals mount into Obsidian's own modal container, outside `.wl-view`, so the
+ * spacing/radius/motion scale from 10-base.css does not cascade into them. It is
+ * re-declared here on `.wl-modal` — same names, same values, one extra root.
+ *
+ * Colours: Obsidian variables only.
+ * ========================================================================== */
+
+.wl-modal {
+  --wl-space-0: 0;
+  --wl-space-1: 2px;
+  --wl-space-2: 4px;
+  --wl-space-3: 8px;
+  --wl-space-4: 12px;
+  --wl-space-5: 16px;
+  --wl-space-6: 24px;
+  --wl-space-7: 32px;
+  --wl-space-8: 48px;
+
+  --wl-radius-s: var(--radius-s, 4px);
+  --wl-radius-m: var(--radius-m, 8px);
+  --wl-radius-l: 12px;
+  --wl-radius-pill: 999px;
+
+  /* Same theme-driven elevation as `10-base.css`; modals render outside
+     `.wl-view`, so the scale has to be declared in this scope as well. */
+  --wl-shadow-1: var(--shadow-s, 0 1px 2px var(--background-modifier-box-shadow));
+  --wl-shadow-2: var(--shadow-l, 0 4px 12px var(--background-modifier-box-shadow));
+
+  --wl-z-sticky: 10;
+  --wl-z-toolbar: 20;
+  --wl-z-popover: 40;
+  --wl-z-overlay: 60;
+
+  --wl-dur-fast: 0.12s;
+  --wl-dur-base: 0.15s;
+  --wl-dur-slow: 0.24s;
+}
+
+.wl-modal .wl-modal-title {
+  margin: 0 0 var(--wl-space-3);
+  font-size: var(--font-ui-large);
+}
+
+.wl-modal .wl-modal-message {
+  margin: 0 0 var(--wl-space-3);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.wl-modal .wl-modal-detail {
+  margin: 0 0 var(--wl-space-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-modal .wl-modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--wl-space-2);
+  margin-top: var(--wl-space-5);
+}
+
+.wl-modal .wl-modal-check {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  margin: var(--wl-space-3) 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+/* -----------------------------------------------------------------------------
+ * Add modal
+ * -------------------------------------------------------------------------- */
+
+.wl-add-modal .wl-add-search {
+  margin-bottom: var(--wl-space-3);
+}
+
+.wl-add-modal .wl-add-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--wl-space-2);
+  padding: var(--wl-space-3);
+  border-radius: var(--wl-radius-s);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-add-modal .wl-add-notice-icon .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.wl-add-modal .wl-add-status {
+  min-height: 1.2em;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-add-modal .wl-add-status.is-error {
+  color: var(--text-error);
+}
+
+.wl-add-modal .wl-add-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.wl-add-result {
+  display: flex;
+  gap: var(--wl-space-3);
+  padding: var(--wl-space-2);
+  border-radius: var(--wl-radius-m);
+  cursor: pointer;
+  transition: background-color var(--wl-dur-fast) ease;
+}
+
+.wl-add-result:hover {
+  background: var(--background-modifier-hover);
+}
+
+.wl-add-result:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+
+.wl-add-result.is-disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.wl-add-result-poster {
+  flex: 0 0 auto;
+  width: 46px;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--wl-radius-s);
+  overflow: hidden;
+}
+
+.wl-add-result-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-1);
+}
+
+.wl-add-result-title {
+  color: var(--text-normal);
+  font-weight: var(--font-medium);
+}
+
+.wl-add-result-meta {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-add-result-overview {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.wl-add-result-flags {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-1);
+  align-items: flex-end;
+}
+
+.wl-flag {
+  padding: 1px var(--wl-space-2);
+  border-radius: var(--wl-radius-pill);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+
+.wl-flag.is-ok {
+  background: color-mix(in srgb, var(--color-green, var(--interactive-accent)) 18%, transparent);
+  color: var(--color-green, var(--text-accent));
+}
+
+.wl-flag.is-tracked {
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.wl-add-modal .wl-add-manual-toggle {
+  margin-top: var(--wl-space-3);
+}
+
+.wl-add-modal .wl-add-manual {
+  margin-top: var(--wl-space-3);
+}
+
+/* -----------------------------------------------------------------------------
+ * Detail modal
+ * -------------------------------------------------------------------------- */
+
+.wl-detail-modal {
+  max-width: 720px;
+}
+
+.wl-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-5);
+}
+
+.wl-detail-header {
+  display: flex;
+  gap: var(--wl-space-4);
+}
+
+.wl-detail-poster {
+  flex: 0 0 auto;
+  width: 110px;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--wl-radius-m);
+  overflow: hidden;
+}
+
+.wl-detail-head-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+}
+
+.wl-detail-title {
+  color: var(--text-normal);
+  font-size: var(--font-ui-large);
+  font-weight: var(--font-semibold);
+  line-height: 1.2;
+  border-radius: var(--wl-radius-s);
+}
+
+.wl-detail-title.is-editing {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.wl-detail-pills,
+.wl-detail-rating,
+.wl-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-2);
+}
+
+.wl-detail-year {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-detail-community {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-detail-community-icon .svg-icon {
+  width: 13px;
+  height: 13px;
+}
+
+.wl-detail-overview {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: 1.5;
+}
+
+.wl-detail-chipsection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+}
+
+.wl-detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-3);
+  padding-top: var(--wl-space-4);
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.wl-detail-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wl-space-3);
+}
+
+.wl-detail-note {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-detail-progress-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--wl-space-3);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+/* Reserved for the trailer iframe the integration lane drops in. */
+.wl-trailer-slot:not(:empty) {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--wl-radius-m);
+  overflow: hidden;
+  background: var(--background-secondary);
+}
+
+.wl-trailer-slot iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+.wl-request-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  padding: var(--wl-space-1) var(--wl-space-3);
+  border-radius: var(--wl-radius-pill);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-request-pill-icon .svg-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.wl-request-pill.is-ok {
+  background: color-mix(in srgb, var(--color-green, var(--interactive-accent)) 18%, transparent);
+  color: var(--color-green, var(--text-accent));
+}
+
+.wl-request-pill.is-pending {
+  background: color-mix(in srgb, var(--interactive-accent) 16%, transparent);
+  color: var(--text-accent);
+}
+
+.wl-request-pill.is-warn {
+  background: color-mix(in srgb, var(--text-error) 16%, transparent);
+  color: var(--text-error);
+}
+
+.wl-detail-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: var(--wl-space-4);
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+/* -----------------------------------------------------------------------------
+ * Season grid
+ * -------------------------------------------------------------------------- */
+
+.wl-season {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+}
+
+.wl-season-head {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-3);
+}
+
+.wl-season-collapse {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.wl-season-name {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
+}
+
+.wl-season-count {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-ep-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
+  gap: var(--wl-space-2);
+}
+
+.wl-ep {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: var(--wl-space-1) var(--wl-space-2);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-s);
+  background: var(--background-primary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+  transition:
+    background-color var(--wl-dur-fast) ease,
+    color var(--wl-dur-fast) ease,
+    border-color var(--wl-dur-fast) ease;
+}
+
+.wl-ep:hover {
+  border-color: var(--interactive-accent);
+}
+
+.wl-ep.is-watched {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.wl-ep.is-skipped {
+  opacity: 0.5;
+  text-decoration: line-through;
+  cursor: not-allowed;
+}
+
+/* Presence on Plex, as a dot rather than another word competing for space. */
+.wl-ep-plex {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--wl-radius-pill);
+  background: var(--color-green, var(--interactive-accent));
+}
+
+/* -----------------------------------------------------------------------------
+ * Season editor
+ * -------------------------------------------------------------------------- */
+
+.wl-seasons-modal .wl-season-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1.4fr 1.4fr auto;
+  gap: var(--wl-space-2);
+  align-items: center;
+  padding: var(--wl-space-1) 0;
+}
+
+.wl-seasons-modal .wl-season-row.is-header {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wl-seasons-modal .wl-season-rows {
+  display: flex;
+  flex-direction: column;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.wl-seasons-modal .wl-season-add {
+  margin-top: var(--wl-space-3);
+}
+
+.wl-seasons-modal .wl-season-summary {
+  margin-top: var(--wl-space-3);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-seasons-modal .wl-season-empty {
+  padding: var(--wl-space-4) 0;
+  color: var(--text-faint);
+  font-size: var(--font-ui-small);
+}
+
+/* -----------------------------------------------------------------------------
+ * Search tips
+ * -------------------------------------------------------------------------- */
+
+.wl-tips-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+}
+
+.wl-tips-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) 2fr;
+  gap: var(--wl-space-4);
+  align-items: baseline;
+}
+
+.wl-qtok {
+  padding: var(--wl-space-1) var(--wl-space-2);
+  border-radius: var(--wl-radius-s);
+  background: var(--background-secondary);
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+
+.wl-qtok-field {
+  color: var(--text-accent);
+}
+
+.wl-qtok-value {
+  color: var(--text-normal);
+}
+
+.wl-qtok-quote {
+  color: var(--color-green, var(--text-accent));
+}
+
+.wl-qtok-op {
+  color: var(--text-muted);
+}
+
+.wl-qtok-neg {
+  color: var(--text-error);
+}
+
+.wl-qtok-or {
+  color: var(--text-accent);
+  font-weight: var(--font-bold);
+}
+
+.wl-qtok-term {
+  color: var(--text-normal);
+}
+
+.wl-tips-desc {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.wl-tips-subhead {
+  margin: var(--wl-space-5) 0 var(--wl-space-2);
+  font-size: var(--font-ui-small);
+}
+
+/* -----------------------------------------------------------------------------
+ * Responsive
+ * -------------------------------------------------------------------------- */
+
+@media (hover: none) {
+  .wl-ep {
+    min-height: 36px;
+  }
+}
+
+@media (max-width: 600px) {
+  .wl-detail-header {
+    flex-direction: column;
+  }
+
+  .wl-detail-poster {
+    width: 96px;
+  }
+
+  .wl-tips-row {
+    grid-template-columns: 1fr;
+    gap: var(--wl-space-1);
+  }
+
+  .wl-seasons-modal .wl-season-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .wl-add-result-flags {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Trailer modal (SPEC 4.3) — the player plus its always-present escape hatch.
+ * ------------------------------------------------------------------------- */
+
+.wl-trailer-modal {
+  width: min(880px, 92vw);
+}
+
+.wl-trailer-modal .wl-modal-buttons {
+  justify-content: flex-start;
+}
+
+/* ---------------------------------------------------------------------------
+ * Season picker (SPEC 4.2) — what a TV request is actually asking for.
+ * ------------------------------------------------------------------------- */
+
+.wl-season-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-1);
+  max-height: 48vh;
+  overflow-y: auto;
+  margin: var(--wl-space-3) 0;
+  padding-right: var(--wl-space-2);
+}
+
+.wl-season-picker-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--wl-space-3);
+  padding: var(--wl-space-2) var(--wl-space-3);
+  border-radius: var(--wl-radius-s);
+  cursor: pointer;
+}
+
+.wl-season-picker-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.wl-season-picker-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-season-picker-meta {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+
+.wl-season-picker-row input:disabled + .wl-season-picker-name {
+  color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wl-modal *,
+  .wl-modal *::before,
+  .wl-modal *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* -----------------------------------------------------------------------------
+ * Inline notices inside the detail modal
+ *
+ * Used by the "not matched upstream" state: loud enough to be read, quiet
+ * enough not to look like an error the user caused.
+ * -------------------------------------------------------------------------- */
+
+.wl-detail-notice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+  padding: var(--wl-space-3);
+  border: 1px solid color-mix(in srgb, var(--color-yellow, var(--text-muted)) 45%, transparent);
+  border-radius: var(--wl-radius-m);
+  background: color-mix(in srgb, var(--color-yellow, var(--text-muted)) 10%, transparent);
+}
+
+.wl-detail-notice-head {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+}
+
+.wl-detail-notice-icon {
+  display: inline-flex;
+  color: var(--color-yellow, var(--text-muted));
+}
+
+.wl-detail-notice-icon .svg-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.wl-modal-note {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+/* --- Surprise me ----------------------------------------------------------- */
+
+.wl-surprise-modal .wl-surprise-filter {
+  margin-bottom: var(--wl-space-4);
+}
+
+.wl-surprise-card {
+  display: flex;
+  gap: var(--wl-space-5);
+  align-items: flex-start;
+}
+
+.wl-surprise-poster {
+  flex: 0 0 160px;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--wl-radius-m);
+  overflow: hidden;
+  background: var(--background-secondary);
+}
+
+.wl-surprise-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.wl-surprise-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-3);
+}
+
+.wl-surprise-title {
+  font-size: var(--font-ui-large);
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+}
+
+.wl-surprise-facts {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.wl-surprise-genres {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-surprise-overview {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  line-height: var(--line-height-normal);
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.wl-surprise-empty {
+  color: var(--text-muted);
+  padding: var(--wl-space-5) 0;
+}

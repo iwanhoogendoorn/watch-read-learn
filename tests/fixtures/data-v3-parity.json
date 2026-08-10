@@ -1,0 +1,173 @@
+{
+  "schemaVersion": 3,
+  "titles": [
+    {
+      "id": "dexter",
+      "title": "Dexter",
+      "type": "TV Show",
+      "status": "Completed",
+      "totalEpisodes": 12,
+      "watchedEpisodes": [1, 2, 3]
+    }
+  ],
+  "groups": [],
+  "history": [],
+  "reading": {
+    "books": [
+      {
+        "id": "dune",
+        "title": "Dune",
+        "author": "Frank Herbert",
+        "status": "Completed",
+        "favorite": true,
+        "dateFavorited": "2024-02-02T10:00:00.000Z",
+        "rating": 5,
+        "pagesRead": 528,
+        "totalPages": 528,
+        "progressUnit": "pages",
+        "wordsRead": 0,
+        "totalWords": 0,
+        "chaptersRead": 0,
+        "totalChapters": 0,
+        "coverUrl": "https://covers.openlibrary.org/b/isbn/9780441013593-M.jpg",
+        "googleBooksId": "B1hSG45JCX4C",
+        "vaultPage": "WatchLog/Reading/Dune.md",
+        "externalLink": "",
+        "dateStarted": "2024-01-01",
+        "dateFinished": "2024-02-01",
+        "releaseDate": "1965-08-01",
+        "dateAdded": "2024-01-01T09:00:00.000Z",
+        "dateModified": "2024-02-01T09:00:00.000Z",
+        "customFields": { "col-1": "Sci-Fi" },
+        "shelfLocation": "top shelf, left",
+        "lentTo": "Marta"
+      },
+      {
+        "id": "half-filled",
+        "title": "A Half-Written Row",
+        "status": "Reading",
+        "progressUnit": "words",
+        "wordsRead": 12500,
+        "totalWords": 90000
+      }
+    ],
+    "manga": [
+      {
+        "id": "berserk",
+        "title": "Berserk",
+        "author": "Kentaro Miura",
+        "status": "Reading",
+        "favorite": false,
+        "rating": 4.5,
+        "chaptersRead": 300,
+        "totalChapters": 374,
+        "volumesRead": 34,
+        "totalVolumes": 42,
+        "malId": 2,
+        "coverUrl": "none",
+        "vaultPage": "",
+        "externalLink": "",
+        "dateStarted": "2023-05-01",
+        "dateFinished": null,
+        "releaseDate": "1989-08-25",
+        "dateAdded": "2023-05-01T09:00:00.000Z",
+        "dateModified": "2024-06-01T09:00:00.000Z",
+        "customFields": {},
+        "physicalCopies": 12
+      }
+    ],
+    "bookColumns": [
+      { "id": "col-1", "name": "Genre", "type": "select", "options": ["Sci-Fi", "Crime"], "color": "#7F77DD" },
+      { "id": "col-2", "name": "Notes to self", "type": "weird-type" }
+    ],
+    "mangaColumns": [],
+    "settings": {
+      "defaultFolder": "Books",
+      "defaultStatus": "Reading",
+      "bookCustomFieldStyle": "fill",
+      "mangaCustomFieldStyle": "text",
+      "statusColors": { "Reading": "#123456" },
+      "savedFilterPreset": { "statusExclude": ["Dropped"], "sort": "title" },
+      "readingViewDensity": "cosy"
+    },
+    "legacyImportedFrom": "goodreads-2019"
+  },
+  "games": {
+    "games": [
+      {
+        "id": "hades",
+        "title": "Hades",
+        "developer": "Supergiant Games",
+        "publisher": "Supergiant Games",
+        "type": "RPG",
+        "status": "Finished",
+        "priority": "High",
+        "favorite": true,
+        "wishlist": false,
+        "rating": 5,
+        "progress": 100,
+        "playtimeMinutes": 4210,
+        "achievementsEarned": 49,
+        "achievementsTotal": 49,
+        "platforms": ["Windows PC", "Nintendo Switch 2"],
+        "singleplayer": true,
+        "coop": false,
+        "multiplayer": false,
+        "storeUrl": "https://store.steampowered.com/app/1145360/Hades/",
+        "coverUrl": "",
+        "apiSource": "igdb",
+        "apiId": 113112,
+        "steamAppId": 1145360,
+        "lastPlayed": "2024-11-02",
+        "externalLink": "",
+        "vaultPage": "WatchLog/Games/Hades.md",
+        "releaseDate": "2020-09-17",
+        "dateStarted": "2024-09-01",
+        "dateFinished": "2024-11-02",
+        "dateAdded": "2024-09-01T09:00:00.000Z",
+        "dateModified": "2024-11-02T09:00:00.000Z",
+        "howLongToBeat": 96,
+        "modsInstalled": ["Hell Mode"]
+      },
+      {
+        "id": "silksong",
+        "title": "Hollow Knight: Silksong",
+        "status": "Wishlist",
+        "releaseDate": "2026-12-01"
+      }
+    ],
+    "groups": [
+      { "id": "backlog", "name": "Backlog", "gameIds": ["silksong"], "dateAdded": "2024-01-01T09:00:00.000Z" }
+    ],
+    "settings": {
+      "defaultFolder": "WatchLog/Games",
+      "defaultStatus": "Not started",
+      "statuses": [
+        { "name": "Playing", "color": "#3B82F6" },
+        { "name": "Not started", "color": "#6B7280" },
+        { "name": "Finished", "color": "#22C55E" }
+      ],
+      "types": [{ "name": "RPG", "color": "#3B82F6" }],
+      "platforms": [{ "name": "Windows PC", "color": "#378ADD" }],
+      "gamesGridDensity": "compact"
+    },
+    "recommendedDaily": { "date": "2024-11-02", "gameId": "hades" }
+  },
+  "drafts": {
+    "dismissed": ["some old idea"],
+    "added": ["dune"],
+    "firstSeen": { "dune": "2024-01-01T09:00:00.000Z" },
+    "titleDisplay": { "dune": "Dune" },
+    "scannerVersion": 2
+  },
+  "settings": {
+    "googleBooksApiKey": "carried-over-books-key",
+    "draftsVaultTag": "#toread",
+    "customListsFolder": "Lists",
+    "typeApiMapping": { "Anime": "anime", "Docu": "" },
+    "animeApiSource": "jikan",
+    "gamesApiSource": "rawg",
+    "rawgApiKey": "dead-key-but-kept"
+  },
+  "maybe": [{ "id": "maybe-something", "releaseDate": "2027-01-01" }]
+}

@@ -1,0 +1,661 @@
+/* =============================================================================
+ * WatchLog v4 — cards and the small chrome they share
+ *
+ * Colours: Obsidian CSS variables and injected --wl-* custom properties only.
+ * The scrim and every tint are built with color-mix() over --background-primary,
+ * so they invert with the theme instead of assuming a dark poster grid.
+ *
+ * Injected properties used here:
+ *   --wl-pill    a type/status colour from the user's settings (hex, validated)
+ *   --wl-rating  the active rating tier's colour
+ *   --wl-tint    placeholder tint strength for a poster-less card
+ * ========================================================================== */
+
+/* -----------------------------------------------------------------------------
+ * Poster + placeholder
+ * -------------------------------------------------------------------------- */
+
+.wl-poster {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: inherit;
+  background: var(--background-secondary);
+}
+
+.wl-poster-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity var(--wl-dur-slow, 0.24s) ease;
+}
+
+.wl-poster-img.is-loaded {
+  opacity: 1;
+}
+
+.wl-poster.is-placeholder {
+  /* Deterministic per-title tint: the strength is hashed, the hue is the theme's. */
+  background: color-mix(in srgb, var(--interactive-accent) var(--wl-tint, 14%), var(--background-secondary));
+}
+
+.wl-poster-initial {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  font-size: 2.4em;
+  font-weight: var(--font-bold);
+  user-select: none;
+}
+
+/* -----------------------------------------------------------------------------
+ * Full card
+ * -------------------------------------------------------------------------- */
+
+.wl-card {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Belt to the grid's braces. Every child of a full card is absolutely
+     positioned, so the card has no content height of its own: if it is ever
+     mounted inside a box with an auto height (`height: 100%` resolving against
+     `auto`), the poster ratio is the only thing left to size it — without these
+     two the whole card collapses to the scrim. `height` still wins whenever the
+     cell has a definite one, which is the normal path. */
+  aspect-ratio: 2 / 3;
+  min-height: 90px;
+  /* Every card keeps the same outline. Without it the edge was the poster's:
+     a dark poster ended in a crisp line and a pale one dissolved into the page,
+     so a grid of mixed art read as a grid of mismatched components. */
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-m, 8px);
+  overflow: hidden;
+  background: var(--background-secondary);
+  box-shadow: var(--wl-shadow-1);
+  transition:
+    transform var(--wl-dur-base, 0.15s) ease,
+    box-shadow var(--wl-dur-base, 0.15s) ease;
+}
+
+.wl-card.is-clickable {
+  cursor: pointer;
+}
+
+.wl-card:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.wl-card.is-selected {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+
+.wl-card-poster {
+  position: absolute;
+  inset: 0;
+}
+
+/**
+ * The hand-off from poster to caption — and nothing more.
+ *
+ * It used to carry the legibility on its own: a tall fade to the theme's
+ * background across most of the card. That made every card look different,
+ * because how far up it *read* depended entirely on the poster underneath — a
+ * dark poster faded gently, a bright one turned into a hard white band. The
+ * caption sits on a solid panel now, so this only has to blend into it.
+ */
+.wl-card-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to top,
+    var(--background-primary) 0%,
+    color-mix(in srgb, var(--background-primary) 60%, transparent) 24%,
+    transparent 44%
+  );
+}
+
+.wl-card-body {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2, 4px);
+  padding: var(--wl-space-3, 8px);
+  /* The progress bar is the only optional row at the very bottom, and a
+     single-episode title never has one — so a film's last line of text sat
+     7px (one gap plus the bar) below a show's on the same row, and a grid of
+     mixed types read as ragged. The strip is reserved on every card and the
+     bar is drawn into it, so every card's text shares one baseline. */
+  padding-bottom: calc(var(--wl-space-3, 8px) + var(--wl-space-2, 4px) + 3px);
+  /* One surface for the caption on every card, whatever the poster is doing
+     behind it: the text is theme text on theme background, always. */
+  background: var(--background-primary);
+  /* …and one size, so every poster is cropped on exactly the same line. Every
+     part of the caption below is bounded so the content fits this box by
+     construction rather than by luck: two title lines are always reserved, the
+     pills are one row, the meta is one line, and the airing chips float above
+     the panel instead of growing it. */
+  /* No fixed height, and none needed: with the title reserving both its lines,
+     the pills capped at one row, the meta at one line and the airing chips
+     floated out of the flow, the caption's content is the *same shape* on every
+     card. Sizing it to that content instead of to a share of the card is what
+     keeps it honest at every card size and every theme font scale — a
+     percentage that fits at 215px wide clips the last line at 120px. */
+}
+
+.wl-card-body .wl-progress {
+  position: absolute;
+  right: var(--wl-space-3, 8px);
+  bottom: var(--wl-space-3, 8px);
+  left: var(--wl-space-3, 8px);
+  width: auto;
+}
+
+.wl-card-title {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  /* Reserved whether or not the title needs it: a one-line title that pulled
+     everything below it up by 16px is exactly what made no two cards match. */
+  min-height: 2.5em;
+}
+
+.wl-card-meta {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  /* One line, always. The year and the progress are both short; a long custom
+     type is the only thing that could ever wrap, and it truncates instead. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wl-card-pills,
+.wl-card-airing {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wl-space-2, 4px);
+}
+
+/* One row of pills inside a card caption: a second row moved everything above
+   it and cost the card its shared crop line. Each pill gives way rather than
+   wrapping, so "Plan to watch" shortens instead of jumping down a line. */
+.wl-card-pills {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.wl-card-pills .wl-pill {
+  flex: 0 1 auto;
+  min-width: 0;
+  /* Tighter than a pill elsewhere: a type and a status have to share one row
+     of a ~170px card, and the alternative is a second row that moves the crop
+     line. If a name is still too long the text ellipses rather than clipping. */
+  padding: 1px var(--wl-space-2, 4px);
+  font-size: 0.92em;
+}
+
+.wl-card-pills .wl-pill-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The type is the one the caption no longer repeats anywhere else, so it keeps
+   its full name and the status is the one that gives way. */
+.wl-card-pills .wl-pill:first-child {
+  flex: 0 0 auto;
+}
+
+/**
+ * The airing chips float ABOVE the caption, over the poster's fade.
+ *
+ * They are the one part of a card that only some titles have, so leaving them
+ * in the panel meant the panel — and therefore the poster crop — was a
+ * different height on every card that airs. Each chip carries its own
+ * background, so it stays legible over any poster.
+ */
+.wl-card-body .wl-card-airing {
+  position: absolute;
+  right: var(--wl-space-3, 8px);
+  bottom: 100%;
+  left: var(--wl-space-3, 8px);
+  margin-bottom: var(--wl-space-2, 4px);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--wl-space-1, 2px);
+}
+
+/* Over an image now rather than over the panel, so each one carries the surface
+   it needs — the same trick the Plex badge in the opposite corner uses. */
+.wl-card-body .wl-airing-chip {
+  max-width: 100%;
+  padding: 1px var(--wl-space-2, 4px);
+  border-radius: var(--wl-radius-pill, 999px);
+  background: color-mix(in srgb, var(--background-primary) 88%, transparent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wl-card-badges {
+  position: absolute;
+  top: var(--wl-space-2, 4px);
+  left: var(--wl-space-2, 4px);
+  display: flex;
+  gap: var(--wl-space-2, 4px);
+}
+
+.wl-card-fav {
+  position: absolute;
+  top: var(--wl-space-2, 4px);
+  right: var(--wl-space-2, 4px);
+  display: inline-flex;
+  color: var(--color-red, var(--text-accent));
+}
+
+.wl-card-fav .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* -----------------------------------------------------------------------------
+ * Hover actions — revealed on hover, always visible on touch
+ * -------------------------------------------------------------------------- */
+
+.wl-card-actions {
+  position: absolute;
+  top: var(--wl-space-2, 4px);
+  right: var(--wl-space-2, 4px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-1, 2px);
+  opacity: 0;
+  transition: opacity var(--wl-dur-fast, 0.12s) ease;
+}
+
+.wl-card-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: var(--wl-radius-s, 4px);
+  background: color-mix(in srgb, var(--background-primary) 82%, transparent);
+  box-shadow: var(--wl-shadow-1);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.wl-card-action:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.wl-card-action .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+@media (hover: hover) {
+  .wl-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--wl-shadow-2);
+  }
+
+  .wl-card:hover .wl-card-actions,
+  .wl-card:focus-within .wl-card-actions {
+    opacity: 1;
+  }
+}
+
+@media (hover: none) {
+  /* No hover to reveal with — and bigger targets for fingers. */
+  .wl-card-actions {
+    opacity: 1;
+  }
+
+  .wl-card-action {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+/* -----------------------------------------------------------------------------
+ * Compact row + mini card
+ * -------------------------------------------------------------------------- */
+
+.wl-card-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-3, 8px);
+  padding: var(--wl-space-2, 4px);
+  border-radius: var(--wl-radius-m, 8px);
+  transition: background-color var(--wl-dur-fast, 0.12s) ease;
+}
+
+.wl-card-row.is-clickable {
+  cursor: pointer;
+}
+
+.wl-card-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.wl-card-row-poster {
+  flex: 0 0 auto;
+  width: 40px;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--wl-radius-s, 4px);
+  overflow: hidden;
+}
+
+.wl-card-row-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-1, 2px);
+}
+
+.wl-card-row-title {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-card-row-meta {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-card-row-side {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2, 4px);
+}
+
+.wl-card-mini {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2, 4px);
+  width: 100%;
+}
+
+.wl-card-mini.is-clickable {
+  cursor: pointer;
+}
+
+.wl-card-mini-poster {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--wl-radius-m, 8px);
+  overflow: hidden;
+}
+
+.wl-card-mini-title {
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* -----------------------------------------------------------------------------
+ * Pills, badges and chips
+ * -------------------------------------------------------------------------- */
+
+/* The one pill. `--wl-pill` carries the user's configured colour, which is the
+   whole reason this never hardcodes one (SPEC §6) — and exactly what a second
+   `.wl-pill` base in `40-upcoming.css` used to paint over in flat grey. State
+   modifiers (`.is-ok`, `.is-warn`, `.is-muted`) live there and ride on this. */
+.wl-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wl-space-1, 2px);
+  max-width: 100%;
+  padding: 1px var(--wl-space-2, 4px);
+  border-radius: var(--wl-radius-pill, 999px);
+  /* --wl-pill is injected from the user's palette; the theme accent is the floor. */
+  background: color-mix(in srgb, var(--wl-pill, var(--interactive-accent)) 18%, transparent);
+  color: var(--wl-pill, var(--text-muted));
+  font-size: var(--font-ui-smaller);
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wl-pill-icon .svg-icon {
+  width: 11px;
+  height: 11px;
+}
+
+.wl-plex-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wl-space-1, 2px);
+  padding: 1px var(--wl-space-2, 4px);
+  border-radius: var(--wl-radius-pill, 999px);
+  background: color-mix(in srgb, var(--background-primary) 85%, transparent);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+
+.wl-plex-badge.is-available {
+  color: var(--color-green, var(--text-success));
+}
+
+.wl-plex-badge.is-partial {
+  color: var(--color-yellow, var(--text-muted));
+}
+
+.wl-plex-badge-icon .svg-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.wl-airing-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wl-space-1, 2px);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+
+.wl-airing-chip-icon .svg-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.wl-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wl-space-2, 4px);
+}
+
+/* The one chip: detail-modal credits, dashboard credits, activity filters and
+   the search-tips list all use this. `40-upcoming.css` used to declare a second,
+   bordered version of the same class and — being later in the bundle — won
+   everywhere, which is the sort of thing nobody notices until two lanes disagree
+   about what a chip is (QA4). The bordered look is the one that survived. */
+.wl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wl-space-2, 4px);
+  padding: 2px var(--wl-space-3, 8px);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-pill, 999px);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.6;
+  cursor: default;
+}
+
+.wl-chip.is-clickable {
+  cursor: pointer;
+  transition:
+    color var(--wl-dur-fast, 0.12s) ease,
+    border-color var(--wl-dur-fast, 0.12s) ease;
+}
+
+.wl-chip.is-clickable:hover,
+.wl-chip.is-clickable:focus-visible {
+  color: var(--text-normal);
+  border-color: var(--interactive-accent);
+  outline: none;
+}
+
+.wl-chip.is-overflow {
+  background: transparent;
+  color: var(--text-faint);
+}
+
+/* -----------------------------------------------------------------------------
+ * Progress bar
+ * -------------------------------------------------------------------------- */
+
+.wl-progress {
+  width: 100%;
+  height: 3px;
+  border-radius: var(--wl-radius-pill, 999px);
+  background: var(--background-modifier-border);
+  overflow: hidden;
+}
+
+.wl-progress-fill {
+  /* Cards set `style.width` directly; the widget code-blocks set `--wl-progress`
+     instead. Inline width wins over this default, so both work off one rule. */
+  width: var(--wl-progress, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--interactive-accent);
+  transition: width var(--wl-dur-slow, 0.24s) ease;
+}
+
+/* -----------------------------------------------------------------------------
+ * Stars
+ *
+ * Two stacked icons per star: an outline, and a filled copy clipped by width,
+ * which is what allows arbitrary fractional fill rather than only halves.
+ * -------------------------------------------------------------------------- */
+
+.wl-stars {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wl-space-2, 4px);
+}
+
+.wl-stars-row {
+  display: inline-flex;
+  gap: 1px;
+}
+
+.wl-stars[role="slider"] {
+  cursor: pointer;
+}
+
+.wl-stars[role="slider"]:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: var(--wl-radius-s, 4px);
+}
+
+.wl-star {
+  position: relative;
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+}
+
+.wl-star-bg,
+.wl-star-fill {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  overflow: hidden;
+}
+
+.wl-star-bg {
+  color: var(--text-faint);
+}
+
+.wl-star-fill {
+  width: 0;
+  color: var(--wl-rating, var(--text-accent));
+  transition: width var(--wl-dur-fast, 0.12s) ease;
+}
+
+/* The fill layer is a SOLID star, not a coloured outline over a faint one.
+ * Lucide icons are stroke-only; without this rule a five-star rating renders
+ * as five thin coloured rings and the tier colour never lands. */
+.wl-star-fill .svg-icon {
+  fill: currentColor;
+}
+
+.wl-star .svg-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+.wl-stars-tier {
+  color: var(--wl-rating, var(--text-muted));
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-stars.is-previewing .wl-star-fill {
+  transition: none;
+}
+
+/* Read-only + unrated: absence reads as "—", not as five hollow stars. The
+ * placeholder span exists only when the caller opted in (`unratedPlaceholder`);
+ * editable widgets always keep their stars — they are the input surface. */
+.wl-stars-unrated {
+  display: none;
+  color: var(--text-faint);
+}
+
+.wl-stars.is-readonly.is-unrated .wl-stars-row {
+  display: none;
+}
+
+.wl-stars.is-readonly.is-unrated .wl-stars-unrated {
+  display: inline;
+}
+
+/* Multi-season context: where you are, or that a finished show has grown. */
+.wl-airing-chip.is-new-season {
+  color: var(--color-green, var(--text-accent));
+  font-weight: var(--font-medium);
+}
+
+.wl-airing-chip.is-next-up {
+  color: var(--text-muted);
+}

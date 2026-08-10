@@ -1,0 +1,10 @@
+node_modules/
+build/
+*.log
+.DS_Store
+.vitest/
+coverage/
+
+# A copy of an installed plugin folder, kept locally for reference. Contains a
+# real data.json (someone's library) and a third-party build — never commit it.
+watchlog/

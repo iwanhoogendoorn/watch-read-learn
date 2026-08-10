@@ -1,0 +1,498 @@
+/* =============================================================================
+ * WatchLog v4 — Dashboard and Activity tabs
+ *
+ * Activity shares this partial rather than getting its own: it is one list and
+ * a chip row, and the SPEC's file plan has no 5x slot for it.
+ *
+ * Charts are plain CSS — a percentage-width bar and an SVG stroke offset. No
+ * chart library, no hardcoded colours.
+ * ========================================================================== */
+
+/* A dashboard panel.
+ *
+ * Named `.wl-panel`, not `.wl-card`, and that is the whole bug this file once
+ * carried: `.wl-card` is the **poster card** in `20-cards.css`, and one class
+ * shared by two unrelated components means each lane silently inherits the
+ * other's geometry. When the poster card gained `aspect-ratio: 2 / 3` and
+ * `min-height` (QA1 B1), every panel on this tab became a 2:3 box with
+ * `overflow: hidden` — a screenful of empty rectangle with its content clipped
+ * off the bottom. That is what "the dashboard looks broken" was. */
+.wl-panel {
+  padding: var(--wl-space-4) var(--wl-space-5);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-l);
+  background: var(--background-primary);
+}
+
+/* The dashboard is a two-column grid of sections, not a stack of stripes.
+ *
+ * A section is full-width by default; the ones whose content is a narrow list
+ * or chart opt into half width with `.is-half`, so By status sits beside
+ * By year, Recently watched beside Recently added, and the page stops
+ * spending a screen-wide row on forty characters of text. Collapses back to
+ * one column where two would crush the content. */
+.wl-tab-panel-dashboard {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--wl-space-4);
+  align-content: start;
+}
+
+.wl-tab-panel-dashboard > .wl-section {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.wl-tab-panel-dashboard > .wl-section.is-half {
+  grid-column: auto / span 1;
+}
+
+@media (max-width: 760px) {
+  .wl-tab-panel-dashboard > .wl-section.is-half {
+    grid-column: 1 / -1;
+  }
+}
+
+/* -----------------------------------------------------------------------------
+ * Unified overview card
+ * -------------------------------------------------------------------------- */
+
+.wl-overview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-6);
+}
+
+.wl-stat-grid {
+  display: grid;
+  flex: 1 1 240px;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: var(--wl-space-4);
+}
+
+.wl-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-1);
+}
+
+.wl-stat-value {
+  color: var(--text-normal);
+  font-size: var(--font-ui-large);
+  font-weight: var(--font-bold);
+  line-height: 1.1;
+}
+
+.wl-stat-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+/* -----------------------------------------------------------------------------
+ * Progress ring
+ * -------------------------------------------------------------------------- */
+
+/* Sized by one custom property so a context can shrink the whole assembly —
+ * svg, centred label — with a single override instead of four. */
+.wl-ring {
+  --wl-ring-size: 88px;
+  position: relative;
+  flex: 0 0 auto;
+  width: var(--wl-ring-size);
+  text-align: center;
+}
+
+.wl-ring svg {
+  width: var(--wl-ring-size);
+  height: var(--wl-ring-size);
+}
+
+.wl-ring-track {
+  stroke: var(--background-modifier-border);
+  stroke-width: 8;
+}
+
+.wl-ring-value {
+  stroke: var(--interactive-accent);
+  stroke-width: 8;
+  transition: stroke-dashoffset var(--wl-dur-slow) ease-out;
+}
+
+.wl-ring-value-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: var(--wl-ring-size);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-bold);
+}
+
+.wl-ring-caption {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+/* -----------------------------------------------------------------------------
+ * Per-type cards
+ * -------------------------------------------------------------------------- */
+
+.wl-type-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--wl-space-3);
+}
+
+/* Ring on the left, words on the right: the compact card. The old layout —
+ * name above a 110px donut above a metadata line, centred — spent ~150px of
+ * height to say "3 of 4". */
+.wl-type-card {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--wl-space-4);
+  padding: var(--wl-space-4);
+  text-align: left;
+}
+
+.wl-type-card .wl-ring {
+  --wl-ring-size: 52px;
+}
+
+.wl-type-card .wl-ring-value-label {
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-type-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-1);
+  min-width: 0;
+}
+
+.wl-type-name {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+}
+
+.wl-type-meta {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+/* -----------------------------------------------------------------------------
+ * Bar and column charts
+ * -------------------------------------------------------------------------- */
+
+.wl-bars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+}
+
+.wl-bar-row {
+  display: grid;
+  grid-template-columns: minmax(80px, 140px) 1fr auto;
+  align-items: center;
+  gap: var(--wl-space-3);
+}
+
+.wl-bar-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-bar-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: var(--wl-radius-pill);
+  background: var(--background-modifier-border);
+}
+
+.wl-bar-fill {
+  width: var(--wl-bar-pct, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--interactive-accent) 80%, transparent);
+  transition: width var(--wl-dur-slow) ease;
+}
+
+.wl-bar-count {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
+.wl-columns {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--wl-space-2);
+  height: 64px;
+}
+
+.wl-column {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: var(--wl-space-2);
+  height: 100%;
+}
+
+.wl-column-bar {
+  height: var(--wl-col-pct, 0%);
+  min-height: 2px;
+  border-radius: var(--wl-radius-s) var(--wl-radius-s) 0 0;
+  background: color-mix(in srgb, var(--interactive-accent) 65%, transparent);
+  transition: height var(--wl-dur-slow) ease;
+}
+
+.wl-column-label {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  text-align: center;
+}
+
+.wl-chart-empty {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+/* -----------------------------------------------------------------------------
+ * Credits
+ * -------------------------------------------------------------------------- */
+
+.wl-credit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--wl-space-4);
+}
+
+/* Plain columns: the section is a panel now, and a box inside a box is the
+ * kind of chrome this tab had too much of. */
+.wl-credit-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-3);
+}
+
+.wl-credit-heading {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.wl-credit-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+}
+
+.wl-credit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wl-space-3);
+}
+
+.wl-credit-count {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
+/* -----------------------------------------------------------------------------
+ * Shelves and recency lists
+ * -------------------------------------------------------------------------- */
+
+.wl-shelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--wl-space-3);
+}
+
+.wl-recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+}
+
+.wl-recent-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-3);
+  padding: var(--wl-space-2);
+  border-radius: var(--wl-radius-s);
+  transition: background-color var(--wl-dur-fast) ease;
+}
+
+.wl-recent-row.is-clickable {
+  cursor: pointer;
+}
+
+.wl-recent-row.is-clickable:hover {
+  background: var(--background-modifier-hover);
+}
+
+.wl-recent-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.wl-recent-name {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-recent-meta {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+/* -----------------------------------------------------------------------------
+ * Activity tab
+ * -------------------------------------------------------------------------- */
+
+.wl-activity-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-3);
+}
+
+.wl-activity-search {
+  flex: 1 1 180px;
+  min-width: 140px;
+}
+
+.wl-activity-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wl-space-2);
+}
+
+.wl-activity-day {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+  margin-bottom: var(--wl-space-5);
+}
+
+.wl-activity-daylabel {
+  position: sticky;
+  top: 0;
+  z-index: var(--wl-z-sticky);
+  padding: var(--wl-space-1) 0;
+  background: var(--background-primary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.wl-activity-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.wl-activity-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-3);
+  padding: var(--wl-space-2) var(--wl-space-2) var(--wl-space-2) var(--wl-space-3);
+  border-left: 2px solid var(--background-modifier-border);
+  transition: background-color var(--wl-dur-fast) ease;
+}
+
+.wl-activity-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.wl-activity-row.is-added,
+.wl-activity-row.is-available {
+  border-left-color: color-mix(in srgb, var(--color-green) 60%, transparent);
+}
+
+.wl-activity-row.is-deleted {
+  border-left-color: color-mix(in srgb, var(--text-error) 60%, transparent);
+}
+
+.wl-activity-row.is-requested,
+.wl-activity-row.is-airing {
+  border-left-color: color-mix(in srgb, var(--color-orange) 60%, transparent);
+}
+
+.wl-activity-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-faint);
+}
+
+.wl-activity-icon .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.wl-activity-body {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--wl-space-3);
+  min-width: 0;
+}
+
+.wl-activity-message {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+
+.wl-activity-time {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 600px) {
+  .wl-overview {
+    justify-content: center;
+  }
+
+  .wl-bar-row {
+    grid-template-columns: minmax(70px, 100px) 1fr auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wl-ring-value,
+  .wl-bar-fill,
+  .wl-column-bar {
+    transition: none;
+  }
+}
+
+/* The Watchlist/Reading/Games switch above the per-library charts (v3 §2.2).
+   The chips themselves are `.wl-chip` from 20-cards.css — this only places them. */
+.wl-source-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wl-space-2);
+}

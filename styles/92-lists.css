@@ -1,0 +1,801 @@
+/* =============================================================================
+ * WatchLog v4 — Lists, Drafts, CSV and Groups (the W8-extras lane)
+ *
+ * Namespaces owned here, and only here:
+ *   .wl-list-*        the Lists tab and its table
+ *   .wl-listcols-*    .wl-listname-*  .wl-listexport-*  .wl-listimport-*
+ *   .wl-drafts-*      .wl-drafttarget-*
+ *   .wl-csv-*
+ *   .wl-group-*       .wl-groups-*    .wl-chips-host
+ *
+ * One class, one component — `tests/styles.test.ts` enforces it. Note the
+ * collision hazards this file has to respect: `.wl-list` alone would be far too
+ * generic, `30-library.css` owns `.wl-results`/`.wl-chip`/`.wl-chips`, and
+ * `60-modals.css` owns `.wl-modal-*`. Everything below stays inside the
+ * prefixes above.
+ *
+ * Zero hardcoded colours: Obsidian variables and --wl-* custom properties only.
+ * ========================================================================== */
+
+/* -----------------------------------------------------------------------------
+ * Lists — sub-tabs
+ * -------------------------------------------------------------------------- */
+
+.wl-lists {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-3);
+  min-height: 0;
+}
+
+.wl-list-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-2);
+  padding-bottom: var(--wl-space-2);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.wl-list-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  padding: var(--wl-space-1) var(--wl-space-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-pill);
+  background: var(--background-secondary);
+  cursor: pointer;
+  transition: background var(--wl-dur-fast) ease, border-color var(--wl-dur-fast) ease;
+}
+
+.wl-list-tab:hover {
+  background: var(--background-modifier-hover);
+}
+
+.wl-list-tab.is-active {
+  border-color: var(--interactive-accent);
+  background: var(--background-primary);
+}
+
+.wl-list-tab.is-dragging {
+  opacity: 0.5;
+}
+
+.wl-list-tab.is-drop-target {
+  border-color: var(--interactive-accent);
+}
+
+.wl-list-tab-name {
+  font-size: var(--font-ui-small);
+  font-weight: 500;
+}
+
+.wl-list-tab-del {
+  color: var(--text-faint);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.wl-list-tab-del:hover {
+  color: var(--text-error);
+}
+
+.wl-list-tab-add {
+  padding: var(--wl-space-1) var(--wl-space-2);
+}
+
+/* -----------------------------------------------------------------------------
+ * Lists — body, toolbar and table
+ * -------------------------------------------------------------------------- */
+
+.wl-list-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-3);
+  min-height: 0;
+}
+
+.wl-list-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-2);
+}
+
+.wl-list-toolbar-spacer {
+  flex: 1 1 auto;
+}
+
+.wl-list-search {
+  flex: 0 1 220px;
+}
+
+.wl-list-sort {
+  max-width: 180px;
+}
+
+.wl-list-tablewrap {
+  overflow-x: auto;
+  min-height: 0;
+}
+
+.wl-list-count {
+  padding-bottom: var(--wl-space-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-list-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-ui-small);
+}
+
+.wl-list-table th,
+.wl-list-table td {
+  padding: var(--wl-space-1) var(--wl-space-2);
+  border-bottom: 1px solid var(--background-modifier-border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.wl-list-table th {
+  color: var(--text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.wl-list-th-tick,
+.wl-list-th-num,
+.wl-list-th-actions {
+  width: 1%;
+}
+
+.wl-list-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.wl-list-row.is-checked .wl-list-td-name {
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+
+.wl-list-td-num {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.wl-list-td-tick,
+.wl-list-td-actions {
+  white-space: nowrap;
+}
+
+.wl-list-tick {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.wl-list-tick.is-on {
+  color: var(--interactive-accent);
+}
+
+.wl-list-cell {
+  width: 100%;
+  min-width: 90px;
+  padding: 2px var(--wl-space-1);
+  border: 1px solid transparent;
+  background: transparent;
+}
+
+.wl-list-cell:hover {
+  border-color: var(--background-modifier-border);
+}
+
+.wl-list-cell:focus {
+  border-color: var(--interactive-accent);
+  background: var(--background-primary);
+}
+
+/* A freshly duplicated row: the name is the thing you have to change. */
+.wl-list-cell.is-duplicated {
+  border-color: var(--interactive-accent);
+}
+
+.wl-list-cell-check {
+  margin: 0;
+}
+
+.wl-list-cell-select {
+  min-width: 110px;
+}
+
+.wl-list-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--wl-space-2);
+  padding: var(--wl-space-7) var(--wl-space-4);
+  text-align: center;
+}
+
+.wl-list-empty-icon {
+  color: var(--text-faint);
+}
+
+.wl-list-empty-title {
+  font-size: var(--font-ui-medium);
+  font-weight: 600;
+}
+
+.wl-list-empty-body {
+  max-width: 46ch;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.wl-list-emptyrows {
+  padding: var(--wl-space-5);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  text-align: center;
+}
+
+/* -----------------------------------------------------------------------------
+ * Lists — dialogs
+ * -------------------------------------------------------------------------- */
+
+.wl-modal-error {
+  color: var(--text-error);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-listcols-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.wl-listcols-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+}
+
+.wl-listcols-row.is-dragging {
+  opacity: 0.5;
+}
+
+.wl-listcols-row.is-drop-target {
+  outline: 1px solid var(--interactive-accent);
+}
+
+.wl-listcols-grip {
+  color: var(--text-faint);
+  cursor: grab;
+}
+
+.wl-listcols-options {
+  flex: 1 1 40%;
+}
+
+.wl-listcols-add {
+  align-self: flex-start;
+  margin-top: var(--wl-space-2);
+}
+
+.wl-listcols-empty {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.wl-listimport-input {
+  width: 100%;
+  font-family: var(--font-monospace);
+}
+
+.wl-listimport-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-1);
+  margin-top: var(--wl-space-2);
+}
+
+.wl-listimport-count {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.wl-listimport-warn {
+  color: var(--text-warning);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-listimport-error {
+  color: var(--text-error);
+  font-size: var(--font-ui-smaller);
+}
+
+/* -----------------------------------------------------------------------------
+ * Drafts — a panel in the Library, not a tab (SPEC2 §D-EXTRAS). The button
+ * lives in the Library toolbar; the panel drops into the same host the filter
+ * drawer uses.
+ * -------------------------------------------------------------------------- */
+
+.wl-drafts-btn {
+  position: relative;
+}
+
+.wl-drafts-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 15px;
+  padding: 0 3px;
+  border-radius: var(--wl-radius-pill);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 9px;
+  line-height: 15px;
+  text-align: center;
+}
+
+.wl-drafts-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-3);
+  padding: var(--wl-space-4);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-m);
+  background: var(--background-secondary);
+}
+
+.wl-drafts-head {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+}
+
+.wl-drafts-title {
+  font-size: var(--font-ui-medium);
+  font-weight: 600;
+}
+
+.wl-drafts-count {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-drafts-note {
+  max-width: 70ch;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.wl-drafts-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+  max-height: 44vh;
+  overflow-y: auto;
+}
+
+.wl-drafts-card {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-3);
+  padding: var(--wl-space-2) var(--wl-space-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-s);
+  background: var(--background-primary);
+}
+
+/* Already tracked, or already acted on: still visible, no longer shouting. */
+.wl-drafts-card.is-resolved {
+  opacity: 0.6;
+}
+
+.wl-drafts-card-title {
+  flex: 1 1 auto;
+  font-weight: 500;
+}
+
+.wl-drafts-card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-drafts-source {
+  color: var(--text-accent);
+  cursor: pointer;
+}
+
+.wl-drafts-source-more {
+  color: var(--text-faint);
+}
+
+.wl-drafts-match {
+  padding: 0 var(--wl-space-2);
+  border-radius: var(--wl-radius-pill);
+  background: var(--background-modifier-border);
+}
+
+.wl-drafts-card-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-1);
+}
+
+.wl-drafts-added {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-drafts-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  padding-top: var(--wl-space-2);
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.wl-drafts-foot-label {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-drafttarget-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--wl-space-2);
+}
+
+.wl-drafttarget-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  height: auto;
+  padding: var(--wl-space-3);
+  text-align: left;
+}
+
+.wl-drafttarget-label {
+  font-weight: 600;
+}
+
+.wl-drafttarget-hint {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+/* -----------------------------------------------------------------------------
+ * CSV
+ * -------------------------------------------------------------------------- */
+
+.wl-csv-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-3);
+}
+
+.wl-csv-scopes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--wl-space-2);
+}
+
+.wl-csv-scope {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  height: auto;
+  padding: var(--wl-space-3);
+  text-align: left;
+}
+
+.wl-csv-scope.is-active {
+  border-color: var(--interactive-accent);
+}
+
+.wl-csv-scope-label {
+  font-weight: 600;
+}
+
+.wl-csv-scope-count {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-csv-file {
+  width: 100%;
+}
+
+.wl-csv-map {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-1);
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.wl-csv-map-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--wl-space-2);
+}
+
+.wl-csv-map-header {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-csv-map-sample {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-csv-warn {
+  color: var(--text-warning);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-csv-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 34vh;
+  overflow-y: auto;
+}
+
+.wl-csv-preview-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--wl-space-2);
+  padding: 2px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.wl-csv-preview-row.is-duplicate {
+  color: var(--text-muted);
+}
+
+.wl-csv-preview-title {
+  font-weight: 500;
+}
+
+.wl-csv-preview-meta {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wl-csv-preview-flag {
+  margin-left: auto;
+  color: var(--text-warning);
+}
+
+.wl-csv-preview-more {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-csv-progress {
+  height: 6px;
+  overflow: hidden;
+  border-radius: var(--wl-radius-pill);
+  background: var(--background-modifier-border);
+}
+
+.wl-csv-progress-fill {
+  width: 0;
+  height: 100%;
+  background: var(--interactive-accent);
+  transition: width var(--wl-dur-fast) linear;
+}
+
+.wl-csv-progress-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+/* -----------------------------------------------------------------------------
+ * Groups — chips above the Library results, plus their dialogs
+ * -------------------------------------------------------------------------- */
+
+.wl-chips-host:empty {
+  display: none;
+}
+
+.wl-group-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-2);
+  padding: var(--wl-space-1) 0;
+}
+
+.wl-group-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wl-space-1);
+  height: auto;
+  padding: 2px var(--wl-space-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-pill);
+  background: var(--background-secondary);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+}
+
+.wl-group-chip:hover {
+  background: var(--background-modifier-hover);
+}
+
+.wl-group-chip.is-active {
+  border-color: var(--interactive-accent);
+  background: var(--background-primary);
+  color: var(--text-accent);
+}
+
+.wl-group-chip-icon {
+  display: inline-flex;
+  color: var(--text-faint);
+}
+
+.wl-group-chip-label {
+  font-weight: 500;
+}
+
+.wl-group-chip-count {
+  padding: 0 5px;
+  border-radius: var(--wl-radius-pill);
+  background: var(--background-modifier-border);
+  font-variant-numeric: tabular-nums;
+}
+
+.wl-group-chip-rating {
+  color: var(--text-muted);
+}
+
+.wl-group-chip-manage {
+  color: var(--text-muted);
+}
+
+.wl-groups-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+  max-height: 44vh;
+  overflow-y: auto;
+}
+
+.wl-groups-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+}
+
+.wl-groups-row.is-pinned {
+  border-left: 2px solid var(--interactive-accent);
+  padding-left: var(--wl-space-2);
+}
+
+.wl-groups-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wl-groups-meta {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+
+.wl-groups-empty {
+  max-width: 60ch;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.wl-groups-create {
+  display: flex;
+  gap: var(--wl-space-2);
+  margin-top: var(--wl-space-3);
+}
+
+.wl-group-membercount {
+  padding: var(--wl-space-2) 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-group-memberlist {
+  display: flex;
+  flex-direction: column;
+  max-height: 44vh;
+  overflow-y: auto;
+}
+
+.wl-group-memberrow {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  padding: var(--wl-space-1) 0;
+  cursor: pointer;
+}
+
+.wl-group-memberrow:hover {
+  background: var(--background-modifier-hover);
+}
+
+.wl-group-membername {
+  flex: 1 1 auto;
+}
+
+.wl-group-membermeta {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-group-memberempty {
+  padding: var(--wl-space-4);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  text-align: center;
+}
+
+@media (max-width: 600px) {
+  .wl-csv-map-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wl-list-search {
+    flex: 1 1 100%;
+  }
+}
+
+/* A list whose edit could not be landed: both versions exist, and the user
+   picks. Warning-coloured rather than error — nothing has been lost. */
+.wl-list-conflict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-3);
+  padding: var(--wl-space-3);
+  border: 1px solid color-mix(in srgb, var(--color-orange, var(--text-muted)) 45%, transparent);
+  border-radius: var(--wl-radius-m);
+  background: color-mix(in srgb, var(--color-orange, var(--text-muted)) 10%, transparent);
+}
+
+.wl-list-conflict-icon {
+  display: inline-flex;
+  color: var(--color-orange, var(--text-muted));
+}
+
+.wl-list-conflict-text {
+  flex: 1 1 240px;
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-list-conflict-actions {
+  display: flex;
+  gap: var(--wl-space-2);
+}

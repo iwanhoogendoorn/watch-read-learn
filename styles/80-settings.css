@@ -1,0 +1,335 @@
+/* =============================================================================
+ * WatchLog v4 — settings tab
+ *
+ * Nav rail + body pane, grouped panels with a live status chip, inline help,
+ * masked key fields and a danger zone.
+ *
+ * The --wl-* scale for `.wl-settings` is declared once in 70-widgets.css, next
+ * to the other out-of-view roots. Custom properties inherit per element, so it
+ * applies to everything below.
+ * ========================================================================== */
+
+.wl-settings-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--wl-space-6);
+}
+
+/* -----------------------------------------------------------------------------
+ * Nav rail
+ * -------------------------------------------------------------------------- */
+
+.wl-settings-nav {
+  position: sticky;
+  top: var(--wl-space-3);
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: var(--wl-space-1);
+  min-width: 150px;
+}
+
+.wl-settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-3);
+  padding: var(--wl-space-2) var(--wl-space-3);
+  border-radius: var(--wl-radius-s);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+  transition:
+    color var(--wl-dur-fast) ease,
+    background-color var(--wl-dur-fast) ease;
+}
+
+.wl-settings-nav-item:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.wl-settings-nav-item.is-active {
+  background: var(--background-modifier-active-hover, var(--background-modifier-hover));
+  color: var(--text-normal);
+  font-weight: var(--font-semibold);
+}
+
+.wl-settings-nav-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.wl-settings-nav-icon .svg-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.wl-settings-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--wl-space-5);
+  min-width: 0;
+}
+
+/* -----------------------------------------------------------------------------
+ * Groups with a live status chip
+ * -------------------------------------------------------------------------- */
+
+.wl-sgroup {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-l);
+  overflow: hidden;
+}
+
+.wl-sgroup-head {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-3);
+  padding: var(--wl-space-4) var(--wl-space-5);
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+
+.wl-sgroup-icon {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.wl-sgroup-icon .svg-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.wl-sgroup-titles {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wl-sgroup-title {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+}
+
+.wl-sgroup-sub {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-sgroup-body {
+  padding: 0 var(--wl-space-5);
+}
+
+.wl-sgroup-body .setting-item:last-child {
+  border-bottom: none;
+}
+
+/* Chip tones — same vocabulary as the state pills. */
+.wl-chip.is-pending {
+  border-color: var(--interactive-accent);
+  color: var(--text-muted);
+}
+
+.wl-chip.is-ok {
+  border-color: color-mix(in srgb, var(--color-green) 55%, transparent);
+  color: var(--text-normal);
+}
+
+.wl-chip.is-warn {
+  border-color: color-mix(in srgb, var(--color-orange) 60%, transparent);
+  color: var(--text-normal);
+}
+
+/* -----------------------------------------------------------------------------
+ * Inline help, secrets and warnings
+ * -------------------------------------------------------------------------- */
+
+.wl-setting-help {
+  flex-basis: 100%;
+  margin-top: var(--wl-space-2);
+  padding: var(--wl-space-3);
+  border-radius: var(--wl-radius-s);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-secret-input {
+  font-family: var(--font-monospace);
+}
+
+.wl-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--wl-space-3);
+  padding: var(--wl-space-4);
+  border: 1px solid color-mix(in srgb, var(--color-orange) 45%, transparent);
+  border-radius: var(--wl-radius-m);
+  background: color-mix(in srgb, var(--color-orange) 8%, transparent);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-warning-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--color-orange);
+}
+
+.wl-warning-icon .svg-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.wl-danger-setting .setting-item-name {
+  color: var(--text-error);
+}
+
+/* -----------------------------------------------------------------------------
+ * Colour list editors
+ * -------------------------------------------------------------------------- */
+
+.wl-color-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+  padding: var(--wl-space-4) 0;
+}
+
+.wl-color-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-3);
+  padding: var(--wl-space-2) 0;
+}
+
+.wl-color-row input[type="text"] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wl-color-row input[type="color"] {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-s);
+  background: transparent;
+  cursor: pointer;
+}
+
+.wl-color-index {
+  flex: 0 0 auto;
+  width: 30px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+/* -----------------------------------------------------------------------------
+ * Reference tables and widget preset cards
+ * -------------------------------------------------------------------------- */
+
+.wl-doc-table {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+  padding: var(--wl-space-4) 0;
+}
+
+.wl-doc-row {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: var(--wl-space-3);
+  align-items: baseline;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-widget-preset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+  padding: var(--wl-space-4) 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.wl-widget-preset:last-child {
+  border-bottom: none;
+}
+
+.wl-widget-preset-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--wl-space-3);
+}
+
+.wl-widget-preset-name {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+}
+
+.wl-widget-preset-desc {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-widget-preset-code {
+  margin: 0;
+  padding: var(--wl-space-3);
+  overflow-x: auto;
+  border-radius: var(--wl-radius-s);
+  background: var(--background-secondary);
+  font-size: var(--font-ui-smaller);
+}
+
+/* -----------------------------------------------------------------------------
+ * Confirm modal
+ * -------------------------------------------------------------------------- */
+
+.wl-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--wl-space-3);
+  margin-top: var(--wl-space-5);
+}
+
+@media (max-width: 700px) {
+  .wl-settings-layout {
+    flex-direction: column;
+  }
+
+  .wl-settings-nav {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .wl-doc-row {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wl-settings-nav-item {
+    transition: none;
+  }
+}
+
+/* A parity section that is scaffolded but whose domain is not built yet. Says
+   so once, at the top, rather than pretending its controls do something. */
+.wl-parity-note {
+  padding: var(--wl-space-3);
+  border-left: 2px solid var(--interactive-accent);
+  border-radius: var(--wl-radius-s);
+  background: color-mix(in srgb, var(--interactive-accent) 8%, transparent);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.5;
+}

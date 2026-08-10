@@ -1,0 +1,38 @@
+{
+  "name": "watch-read-learn",
+  "version": "1.0.0",
+  "description": "Watch, Read and Learn — films, TV, books, manga and games tracked in Obsidian, with Plex availability and Overseerr requests",
+  "private": true,
+  "type": "module",
+  "main": "build/main.js",
+  "scripts": {
+    "build": "tsc --noEmit && node esbuild.config.mjs production",
+    "version": "node scripts/version-bump.mjs && git add manifest.json versions.json",
+    "dev": "node esbuild.config.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "smoke:plex": "node scripts/smoke-plex.mjs",
+    "smoke:upcoming": "node scripts/smoke-upcoming.mjs",
+    "smoke:dashboard": "node scripts/smoke-dashboard.mjs",
+    "smoke:domains": "node scripts/smoke-domains.mjs",
+    "smoke:reading": "node scripts/smoke-domains.mjs --only reading",
+    "smoke:games": "node scripts/smoke-domains.mjs --only games"
+  },
+  "keywords": [
+    "obsidian",
+    "plugin",
+    "watchlog"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "fuse.js": "^7.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "builtin-modules": "^4.0.0",
+    "esbuild": "^0.24.2",
+    "obsidian": "^1.8.7",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

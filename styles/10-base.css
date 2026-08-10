@@ -1,0 +1,227 @@
+/* =============================================================================
+ * WatchLog v4 — base layer
+ *
+ * THEMING POLICY (binding, SPEC §6):
+ *   Zero hardcoded colours. Every colour comes from an Obsidian CSS variable or
+ *   from a --wl-* custom property injected by JS from user settings. There is no
+ *   :root colour block anywhere in this stylesheet, which is what makes dark
+ *   mode work for free.
+ *
+ * The scale below is the one thing foodspot lacked: spacing, radius, shadow and
+ * z-index as named steps instead of ad-hoc pixels. Use them.
+ * ========================================================================== */
+
+.wl-view {
+  /* spacing scale */
+  --wl-space-0: 0;
+  --wl-space-1: 2px;
+  --wl-space-2: 4px;
+  --wl-space-3: 8px;
+  --wl-space-4: 12px;
+  --wl-space-5: 16px;
+  --wl-space-6: 24px;
+  --wl-space-7: 32px;
+  --wl-space-8: 48px;
+
+  /* radius scale — pill is for chips and badges */
+  --wl-radius-s: var(--radius-s, 4px);
+  --wl-radius-m: var(--radius-m, 8px);
+  --wl-radius-l: 12px;
+  --wl-radius-pill: 999px;
+
+  /* elevation — Obsidian's own elevation vars, so a theme controls these too.
+     The fallbacks still derive their colour from a theme variable rather than a
+     literal rgba(); if a theme defines neither, the declaration is simply
+     dropped and the surface renders flat. */
+  --wl-shadow-1: var(--shadow-s, 0 1px 2px var(--background-modifier-box-shadow));
+  --wl-shadow-2: var(--shadow-l, 0 4px 12px var(--background-modifier-box-shadow));
+
+  /* layering — keep every z-index in this list */
+  --wl-z-sticky: 10;
+  --wl-z-toolbar: 20;
+  --wl-z-popover: 40;
+  --wl-z-overlay: 60;
+
+  /* motion — durations cluster deliberately; see styles guidance in SPEC §6 */
+  --wl-dur-fast: 0.12s;
+  --wl-dur-base: 0.15s;
+  --wl-dur-slow: 0.24s;
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+}
+
+/* Global state class, declared once. */
+.is-hidden {
+  display: none !important;
+}
+
+/* -----------------------------------------------------------------------------
+ * Tab bar
+ * -------------------------------------------------------------------------- */
+
+.wl-tab-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wl-space-1);
+  padding: var(--wl-space-3) var(--wl-space-4) 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  position: sticky;
+  top: 0;
+  z-index: var(--wl-z-toolbar);
+  background: var(--background-primary);
+}
+
+.wl-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  padding: var(--wl-space-2) var(--wl-space-4);
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--wl-radius-s) var(--wl-radius-s) 0 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+  transition:
+    color var(--wl-dur-fast) ease,
+    background-color var(--wl-dur-fast) ease,
+    border-color var(--wl-dur-fast) ease;
+}
+
+.wl-tab:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.wl-tab.is-active {
+  color: var(--text-normal);
+  border-bottom-color: var(--interactive-accent);
+}
+
+.wl-tab-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.wl-tab-icon .svg-icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* -----------------------------------------------------------------------------
+ * Tab content
+ * -------------------------------------------------------------------------- */
+
+.wl-tab-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--wl-space-5);
+}
+
+.wl-tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-5);
+  min-height: 100%;
+}
+
+/* -----------------------------------------------------------------------------
+ * Empty states — always bespoke, never a bare "nothing here"
+ * -------------------------------------------------------------------------- */
+
+.wl-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--wl-space-3);
+  padding: var(--wl-space-8) var(--wl-space-5);
+  margin: auto;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.wl-empty-icon .svg-icon {
+  width: 40px;
+  height: 40px;
+  color: var(--text-faint);
+}
+
+.wl-empty-title {
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+}
+
+.wl-empty-body {
+  max-width: 42ch;
+  font-size: var(--font-ui-small);
+}
+
+/* An empty state sitting inside a panel rather than owning the whole pane. */
+.wl-empty.is-inline {
+  align-items: flex-start;
+  gap: var(--wl-space-2);
+  margin: 0 0 var(--wl-space-4);
+  padding: var(--wl-space-4);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-m);
+  background: var(--background-secondary);
+  text-align: left;
+}
+
+.wl-empty.is-inline .wl-empty-body {
+  max-width: none;
+}
+
+/* -----------------------------------------------------------------------------
+ * Settings
+ * -------------------------------------------------------------------------- */
+
+.wl-settings-note {
+  margin: var(--wl-space-2) 0 var(--wl-space-5);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-settings-note li {
+  margin-left: var(--wl-space-5);
+}
+
+/* -----------------------------------------------------------------------------
+ * Capability queries, not platform classes
+ * -------------------------------------------------------------------------- */
+
+@media (hover: none) {
+  /* Touch has no hover to reveal affordances with — show them always. */
+  .wl-tab {
+    padding: var(--wl-space-3) var(--wl-space-4);
+  }
+}
+
+@media (max-width: 600px) {
+  .wl-tab-content {
+    padding: var(--wl-space-4) var(--wl-space-3);
+  }
+
+  .wl-tab-label {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wl-view *,
+  .wl-view *::before,
+  .wl-view *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
