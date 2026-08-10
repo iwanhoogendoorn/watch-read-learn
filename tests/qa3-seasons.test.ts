@@ -19,7 +19,12 @@ import {
   seasonRebuildPlan,
   seasonSyncPlan,
 } from "../src/services/airing";
-import { getWatchedCount, sanitizeWatchedEpisodes, withAddedSeason } from "../src/data/episodes";
+import {
+  getWatchedCount,
+  rememberSeasonGeometry,
+  sanitizeWatchedEpisodes,
+  withAddedSeason,
+} from "../src/data/episodes";
 import { buildUpcomingEntries, formatCountdown } from "../src/ui/tabs/upcoming";
 import { identityMatches, typeFamilyOf, typeRepairFor } from "../src/services/match";
 import { hasUnwatchedNewSeason, nextUpText, progressText } from "../src/ui/components/pills";
@@ -664,5 +669,66 @@ describe("rebuilding a season structure from upstream", () => {
     });
     const plan = seasonRebuildPlan(flattened(), withSpecials);
     expect(plan?.seasons.map((s) => s.seasonNumber)).toEqual([1]);
+  });
+});
+
+describe("a repair must not cost the user their progress", () => {
+  it("keeps every watched episode when one fake season becomes four real ones", () => {
+    // The live failure: Reacher stored as 1x32 with episodes 1-24 watched.
+    // Rebasing read 24 as "season 1, episode 24", found the new season 1 only
+    // has 8, and threw 16 episodes of progress away.
+    const store = new WatchLogStore(fakePlugin() as never);
+    const title = createTitle({ id: "reacher", title: "Reacher", type: "TV Show" });
+    title.seasons = [{ name: "Season 1", episodes: 32, offset: 0, skippedEpisodes: [] }];
+    title.totalEpisodes = 32;
+    title.watchedEpisodes = Array.from({ length: 24 }, (_, i) => i + 1);
+    store.data.titles.push(title);
+    rememberSeasonGeometry(title);
+
+    const seasons = [1, 2, 3, 4].map((n) => ({
+      name: `Season ${n}`,
+      episodes: 8,
+      offset: (n - 1) * 8,
+      skippedEpisodes: [],
+      seasonNumber: n,
+    }));
+    store.updateTitle("reacher", { seasons, totalEpisodes: 32 }, "seasons-repaired", {
+      autoStatus: false,
+      preserveAbsoluteEpisodes: true,
+    });
+
+    const after = store.getTitle("reacher");
+    expect(after?.watchedEpisodes).toHaveLength(24);
+    expect(after?.watchedEpisodes[23]).toBe(24);
+    expect(getWatchedCount(after as TitleV4)).toBe(24);
+  });
+
+  it("still rebases when a season genuinely grows, which is the other case", () => {
+    const store = new WatchLogStore(fakePlugin() as never);
+    const title = createTitle({ id: "show", title: "Show", type: "TV Show" });
+    title.seasons = [
+      { name: "Season 1", episodes: 8, offset: 0, skippedEpisodes: [], seasonNumber: 1 },
+      { name: "Season 2", episodes: 8, offset: 8, skippedEpisodes: [], seasonNumber: 2 },
+    ];
+    title.totalEpisodes = 16;
+    title.watchedEpisodes = [9]; // season 2, episode 1
+    store.data.titles.push(title);
+    rememberSeasonGeometry(title);
+
+    // Season 1 turns out to have 10 episodes, so season 2 starts two later —
+    // and "season 2 episode 1" must follow it to 11.
+    store.updateTitle(
+      "show",
+      {
+        seasons: [
+          { name: "Season 1", episodes: 10, offset: 0, skippedEpisodes: [], seasonNumber: 1 },
+          { name: "Season 2", episodes: 8, offset: 10, skippedEpisodes: [], seasonNumber: 2 },
+        ],
+        totalEpisodes: 18,
+      },
+      "season-length-filled",
+      { autoStatus: false },
+    );
+    expect(store.getTitle("show")?.watchedEpisodes).toEqual([11]);
   });
 });

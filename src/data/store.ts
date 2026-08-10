@@ -644,13 +644,21 @@ export class WatchLogStore implements WatchLogStoreApi {
     id: string,
     patch: TitlePatch,
     reason = "title-updated",
-    options: { autoStatus?: boolean } = {},
+    options: { autoStatus?: boolean; preserveAbsoluteEpisodes?: boolean } = {},
   ): TitleV4 | undefined {
     const title = this.getTitle(id);
     if (!title) return undefined;
     Object.assign(title, patch);
     title.dateModified = new Date().toISOString();
     if (patch.watchedEpisodes || patch.seasons || patch.totalEpisodes !== undefined) {
+      // `preserveAbsoluteEpisodes` is for a *repair*, where the old season list
+      // was wrong rather than smaller. The rebase below reads each watched
+      // number as season-relative and re-anchors it in the season of the same
+      // number — correct when a season grew, catastrophic when one fake
+      // 32-episode "Season 1" becomes four real ones, because everything past
+      // the new season 1's length is dropped as "removed". Adopting the new
+      // geometry first makes the rebase a no-op, so absolute numbers stand.
+      if (options.preserveAbsoluteEpisodes) rememberSeasonGeometry(title);
       // A season edit changes what an absolute episode number *means*, so the
       // stored numbers are translated through the geometry change before they
       // are re-sanitised, and the new seasons become the basis for the next one.

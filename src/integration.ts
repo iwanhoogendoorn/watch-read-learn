@@ -523,7 +523,9 @@ export class Integrations {
             title.id,
             { seasons: plan.seasons, totalEpisodes: plan.totalEpisodes },
             "seasons-repaired",
-            { autoStatus: false },
+            // Absolute episode numbers are exactly what survives a repair —
+            // see the note in updateTitle for what rebasing them would cost.
+            { autoStatus: false, preserveAbsoluteEpisodes: true },
           );
           repaired.push(`${title.title} (${before} → ${plan.seasons.length} seasons)`);
           this.store.logActivity({

@@ -765,12 +765,16 @@ export interface WatchLogStoreApi {
   /**
    * `options.autoStatus: false` suppresses the complete/un-complete rules — for
    * writes the user did not make, such as a season synced in from upstream.
+   *
+   * `options.preserveAbsoluteEpisodes: true` says the new season list *corrects*
+   * the old one rather than extending it, so watched episode numbers mean the
+   * same before and after and must not be rebased through the change.
    */
   updateTitle(
     id: string,
     patch: TitlePatch,
     reason?: string,
-    options?: { autoStatus?: boolean },
+    options?: { autoStatus?: boolean; preserveAbsoluteEpisodes?: boolean },
   ): TitleV4 | undefined;
   /**
    * Write a derived cache (`plex`, `airing`, `request`) *without* stamping
