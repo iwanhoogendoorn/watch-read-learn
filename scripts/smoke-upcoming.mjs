@@ -44,7 +44,7 @@ function flag(name, fallback) {
 const DATA_PATH = flag(
   "data",
   process.env.WATCHLOG_DATA ??
-    "/Users/iwanhoogendoorn/Documents/IWAN-REMOTE-VAULT/.obsidian/plugins/watchlog-v4/data.json",
+    "/Users/iwanhoogendoorn/Documents/IWAN-REMOTE-VAULT/.obsidian/plugins/watch-read-learn/data.json",
 );
 /** A substring of the title that MUST produce an announced-season row. */
 const EXPECT = flag("expect", "Dexter");
