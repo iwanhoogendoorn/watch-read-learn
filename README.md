@@ -60,23 +60,11 @@ git push && git push --tags
 The tag must equal the manifest version with no leading `v` (`1.1.0`, not
 `v1.1.0`).
 
-The release workflow lives at [`ci/release.yml`](ci/release.yml) rather than
-under `.github/workflows/`, because pushing to that path needs a token with the
-`workflow` scope. To turn it on:
-
-```
-gh auth refresh -s workflow
-mkdir -p .github/workflows && git mv ci/release.yml .github/workflows/release.yml
-git commit -m "Enable the release workflow" && git push
-```
-
-Until then, releases are cut by hand:
-
-```
-npm run build
-gh release create <version> --title "Watch, Read and Learn <version>" \
-  build/main.js build/manifest.json build/styles.css
-```
+Pushing the tag is all it takes:
+[`release.yml`](.github/workflows/release.yml) checks that the tag matches the
+manifest version, runs the test suite, builds, and attaches `main.js`,
+`manifest.json` and `styles.css` to a GitHub release — the three files BRAT
+installs.
 
 ## Commands
 
