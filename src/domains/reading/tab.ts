@@ -747,8 +747,9 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
       if (categories.length === 0) {
         categoryCell.setText("—");
       } else {
+        const chips = categoryCell.createDiv({ cls: "wl-reading-category-chips" });
         for (const name of categories) {
-          const chip = categoryCell.createEl("button", {
+          const chip = chips.createEl("button", {
             cls: "wl-reading-category-chip",
             text: name,
             attr: { type: "button", title: `Show everything in ${name}` },

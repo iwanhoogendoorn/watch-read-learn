@@ -473,11 +473,20 @@
 /* Inline in the title cell: quiet until hovered, like every row affordance. */
 /* --- category chips, the vault column, and setting a missing total ------- */
 
+/*
+ * The cell stays a table-cell. Giving a `td` `display: flex` takes it out of
+ * the table layout algorithm entirely — it stops sizing with its column and
+ * paints over its neighbour — so the flex box is an element inside it.
+ */
 .wl-reading-category-cell {
+  max-width: 14rem;
+}
+
+.wl-reading-category-chips {
   display: flex;
   flex-wrap: wrap;
   gap: var(--wl-space-1);
-  align-content: flex-start;
+  align-items: center;
 }
 
 .wl-reading-category-chip {

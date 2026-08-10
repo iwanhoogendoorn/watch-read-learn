@@ -177,6 +177,9 @@ describe("the category column", () => {
     controller.refresh();
 
     expect(el.querySelectorAll("th").map((cell) => cell.textContent)).toContain("Category");
+    // The chips live in an element inside the cell, never on the `td` itself:
+    // a flex `td` drops out of the table layout and paints over its neighbour.
+    expect(el.querySelectorAll(".wl-reading-category-chips").length).toBeGreaterThan(0);
     const chips = el.querySelectorAll(".wl-reading-category-chip").map((c) => c.textContent);
     expect(chips).toContain("Hacking");
     expect(chips).toContain("NSX-T");
