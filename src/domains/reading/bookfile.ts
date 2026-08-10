@@ -180,18 +180,21 @@ export interface PdfProgressAction {
  *
  * The rules that keep it honest:
  *
- *   - **Furthest page, not current page.** Scrolling back to check a diagram
- *     must not erase progress; `read` only ever grows.
+ *   - **Current page, in both directions.** Progress answers "where am I in
+ *     this book", so turning back sets it back. An earlier version kept a
+ *     high-water mark so that checking a diagram could not cost you progress,
+ *     but that makes the number unfixable by the obvious means: going back to
+ *     where you actually are and finding it ignored.
  *   - **A book with no page total adopts the PDF's** (once, while it is 0) —
  *     that is what turns "—" into a real bar for a book added by hand.
  *   - **Disagreeing totals disable auto-progress.** If the user typed a print
  *     total and the PDF has a different count, page 87 of the PDF is NOT page
  *     87 of the book, and writing it would corrupt a counter they own. The
  *     bookmark still works; the bar stays theirs.
- *   - **Throttled.** A flush happens when the furthest page has advanced by
- *     `stride` since the last one, or on reaching the final page (so
- *     Completed lands the moment it is true). `flushedAt` (path → last
- *     flushed page) is the caller's persistent bookkeeping between ticks.
+ *   - **Throttled, symmetrically.** A flush happens when the page has moved
+ *     `stride` in *either* direction since the last one, or on reaching the
+ *     final page (so Completed lands the moment it is true). `flushedAt`
+ *     (path → last flushed page) is the caller's bookkeeping between ticks.
  *   - Books measured in words are left alone entirely.
  */
 export function pdfProgressActions(
@@ -211,19 +214,19 @@ export function pdfProgressActions(
       if (total <= 0) continue;
       if (book.totalPages > 0 && pageCount !== undefined && pageCount !== book.totalPages) continue;
 
-      const furthest = Math.max(book.pagesRead, Math.min(page, total));
+      const current = Math.max(0, Math.min(page, total));
       const baseline = flushedAt.get(path) ?? book.pagesRead;
-      const advanced = furthest > baseline;
-      const finished = furthest >= total;
+      const moved = Math.abs(current - baseline);
+      const finished = current >= total;
       // Adoption always emits (the bar needs its denominator now, not in
-      // `stride` pages); otherwise only a stride's worth of advance or the
-      // finish line is worth a write.
-      if (!adopting && !(advanced && (furthest - baseline >= stride || finished))) continue;
+      // `stride` pages); otherwise a write needs a stride's worth of movement
+      // — forwards or back — or the finish line.
+      if (!adopting && !(moved > 0 && (moved >= stride || finished))) continue;
 
-      const action: PdfProgressAction = { id: book.id, read: furthest };
+      const action: PdfProgressAction = { id: book.id, read: current };
       if (adopting && pageCount !== undefined) action.adoptTotal = pageCount;
       actions.push(action);
-      flushedAt.set(path, furthest);
+      flushedAt.set(path, current);
     }
   }
   return actions;

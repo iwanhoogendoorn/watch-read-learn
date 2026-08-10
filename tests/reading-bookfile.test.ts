@@ -167,13 +167,31 @@ describe("pdfProgressActions", () => {
     ]);
   });
 
-  it("never moves progress backwards when the reader scrolls back", () => {
+  it("follows the reader backwards, because progress is where you are", () => {
     const actions = pdfProgressActions(
       [tracked({ pagesRead: 100, totalPages: 320 })],
       open(3, 320),
       new Map(),
     );
-    expect(actions).toEqual([]);
+    expect(actions).toEqual([{ id: "dune", read: 3 }]);
+  });
+
+  it("throttles going back by the same stride as going forward", () => {
+    const flushed = new Map([["Books/Dune.pdf", 100]]);
+    // Two pages back is a glance, not a move.
+    expect(
+      pdfProgressActions([tracked({ pagesRead: 100, totalPages: 320 })], open(98, 320), flushed),
+    ).toEqual([]);
+    expect(
+      pdfProgressActions([tracked({ pagesRead: 100, totalPages: 320 })], open(97, 320), flushed),
+    ).toEqual([{ id: "dune", read: 97 }]);
+  });
+
+  it("says nothing while the page has not moved at all", () => {
+    const flushed = new Map([["Books/Dune.pdf", 100]]);
+    expect(
+      pdfProgressActions([tracked({ pagesRead: 100, totalPages: 320 })], open(100, 320), flushed),
+    ).toEqual([]);
   });
 
   it("refuses auto-progress when the user's total disagrees with the PDF", () => {

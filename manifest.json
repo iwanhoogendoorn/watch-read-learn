@@ -1,7 +1,7 @@
 {
   "id": "watch-read-learn",
   "name": "Watch, Read and Learn",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "minAppVersion": "1.11.0",
   "description": "Track films, TV, books, manga and games in one place — with Plex availability, Overseerr requests, trailers, ratings and airing schedules.",
   "author": "Iwan Hoogendoorn",
