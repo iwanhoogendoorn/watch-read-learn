@@ -26,9 +26,11 @@ import {
   type MediaType,
   type OverseerrClient,
   type OverseerrDetails,
+  type Season,
   type TitleV4,
   type TmdbClient,
 } from "../types";
+import { recomputeOffsets, totalFromSeasons } from "../data/episodes";
 import { createRateLimiter, realClock, type LimiterClock, type RateLimiter } from "./ratelimit";
 
 /** Deliberate stagger for the refresh queue: one request per second. */
@@ -341,6 +343,74 @@ export function seasonSyncPlan(title: TitleV4, details: OverseerrDetails): Seaso
 
 export function isEmptySyncPlan(plan: SeasonSyncPlan | undefined): boolean {
   return !plan || (plan.added.length === 0 && plan.grown.length === 0);
+}
+
+// ---------------------------------------------------------------------------
+// Repair
+// ---------------------------------------------------------------------------
+
+/**
+ * Replace a show's season structure with upstream's.
+ *
+ * `seasonSyncPlan` deliberately only appends and grows, which is right for a
+ * library someone curates — but it cannot fix a structure that was wrong when
+ * it was written. A show imported as one flat "Season 1" holding every episode
+ * ever made is not missing seasons; the seasons it has are a lie, and syncing
+ * would cheerfully append four more on top of it.
+ *
+ * So this is the explicit repair, and it is destructive in one specific way:
+ * whatever season shape the title had is replaced by upstream's. What it must
+ * NOT disturb is which episodes are watched. Those are stored as absolute
+ * numbers across the whole show, and rebuilding the seasons underneath them
+ * keeps that ordering — episode 17 is still episode 17 whether the show is
+ * stored as 1×32 or 4×8, so progress survives the repair untouched.
+ *
+ * Returns null when there is nothing to fix, so a caller can say "already
+ * correct" rather than rewriting an identical structure.
+ */
+export function seasonRebuildPlan(
+  title: TitleV4,
+  details: OverseerrDetails,
+): { seasons: Season[]; totalEpisodes: number } | null {
+  if (details.mediaType !== "tv") return null;
+  // Season 0 is specials, which the tracker has never counted.
+  const upstream = (details.seasons ?? [])
+    .filter((season) => season.seasonNumber > 0)
+    .sort((a, b) => a.seasonNumber - b.seasonNumber);
+  if (upstream.length === 0) return null;
+
+  const existing = new Map(
+    title.seasons.map((season, index) => [season.seasonNumber ?? index + 1, season]),
+  );
+
+  const seasons: Season[] = upstream.map((season) => {
+    const previous = existing.get(season.seasonNumber);
+    return {
+      name: season.name || `Season ${season.seasonNumber}`,
+      episodes: Math.max(0, season.episodeCount),
+      offset: 0, // recomputed below
+      // A skip is the user's own note about an episode they chose to pass; it
+      // belongs to the season number, so it rides along when one survives.
+      skippedEpisodes: previous?.skippedEpisodes ? [...previous.skippedEpisodes] : [],
+      seasonNumber: season.seasonNumber,
+      ...(season.airDate ? { airDate: season.airDate } : {}),
+    };
+  });
+  recomputeOffsets(seasons);
+
+  const same =
+    seasons.length === title.seasons.length &&
+    seasons.every((season, index) => {
+      const before = title.seasons[index];
+      return (
+        before !== undefined &&
+        before.episodes === season.episodes &&
+        (before.seasonNumber ?? index + 1) === season.seasonNumber
+      );
+    });
+  if (same) return null;
+
+  return { seasons, totalEpisodes: Math.max(1, totalFromSeasons(seasons)) };
 }
 
 export interface ComputeAiringOptions {

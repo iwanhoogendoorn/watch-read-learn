@@ -25,6 +25,7 @@ import {
   createAiringService,
   isEmptySyncPlan,
   mediaTypeForTitle,
+  seasonRebuildPlan,
   shouldTrackAiring,
   type AiringRefreshResult,
   type AiringService,
@@ -484,6 +485,71 @@ export class Integrations {
    * new season, a status flip, a rescheduled episode — which is what turns the
    * Activity tab into a log of the outside world rather than of your own clicks.
    */
+  /**
+   * Rebuild season structures that upstream disagrees with.
+   *
+   * Separate from `refreshAiring` because it is the one season operation that
+   * *replaces* rather than appends. A show imported as a single flat season
+   * holding every episode ever made cannot be repaired by syncing — sync would
+   * append the real seasons on top of the fake one and double the count — so
+   * the repair is explicit, reports what it changed, and is never automatic.
+   *
+   * Watched episodes are absolute numbers across the show, so re-cutting the
+   * seasons underneath them leaves progress meaning exactly what it did.
+   */
+  async repairSeasons(): Promise<string> {
+    if (!this.overseerr.configured() && !this.tmdb.configured()) {
+      return "No metadata provider configured — add Overseerr (or a TMDB token) in the plugin's settings.";
+    }
+    if (this.busy.has("airing")) return "An airing refresh is already running.";
+    this.busy.add("airing");
+    try {
+      const shows = this.store
+        .allTitles()
+        .filter((title) => title.tmdbId && mediaTypeForTitle(title) === "tv");
+      if (shows.length === 0) return "No shows with a provider link to check.";
+
+      const repaired: string[] = [];
+      let failed = 0;
+      for (const title of shows) {
+        try {
+          const details = this.overseerr.configured()
+            ? await this.overseerr.details(title.tmdbId as number, "tv")
+            : await this.tmdb.details(title.tmdbId as number, "tv");
+          const plan = seasonRebuildPlan(title, details);
+          if (!plan) continue;
+          const before = title.seasons.length;
+          this.store.updateTitle(
+            title.id,
+            { seasons: plan.seasons, totalEpisodes: plan.totalEpisodes },
+            "seasons-repaired",
+            { autoStatus: false },
+          );
+          repaired.push(`${title.title} (${before} → ${plan.seasons.length} seasons)`);
+          this.store.logActivity({
+            action: "season",
+            message: `Season structure of «${title.title}» rebuilt from upstream`,
+            titleId: title.id,
+            titleName: title.title,
+            source: "Watchlist",
+          });
+        } catch (err) {
+          failed += 1;
+          console.warn("[wrl] season repair failed for", title.title, err);
+        }
+      }
+      if (repaired.length === 0) {
+        return failed > 0
+          ? `No structures repaired; ${failed} lookup(s) failed.`
+          : "Every show's seasons already match upstream.";
+      }
+      const tail = failed > 0 ? `, ${failed} failed` : "";
+      return `Rebuilt: ${repaired.join("; ")}${tail}.`;
+    } finally {
+      this.busy.delete("airing");
+    }
+  }
+
   async refreshAiring(options: { force?: boolean } = {}): Promise<string> {
     if (!this.overseerr.configured() && !this.tmdb.configured()) {
       return "No metadata provider configured — add Overseerr (or a TMDB token) in the plugin's settings.";

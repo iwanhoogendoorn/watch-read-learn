@@ -1333,6 +1333,17 @@ export default class WatchLogPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "repair-seasons",
+      name: "Rebuild season structure from upstream",
+      callback: () => {
+        void this.runRefresh(
+          () => this.integrations.repairSeasons(),
+          "Checking season structures…",
+        );
+      },
+    });
+
+    this.addCommand({
       id: "refresh-airing",
       name: "Refresh airing data",
       callback: () => {

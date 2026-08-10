@@ -16,6 +16,7 @@ import {
   computeAiring,
   detectPendingSeason,
   isEmptySyncPlan,
+  seasonRebuildPlan,
   seasonSyncPlan,
 } from "../src/services/airing";
 import { getWatchedCount, sanitizeWatchedEpisodes, withAddedSeason } from "../src/data/episodes";
@@ -577,5 +578,91 @@ describe("W6-5 — multi-season context on the card", () => {
         twoSeasons({ status: "Completed", watchedEpisodes: Array.from({ length: 18 }, (_, i) => i + 1) }),
       ),
     ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Repair — a structure that was wrong when it was written
+// ---------------------------------------------------------------------------
+
+describe("rebuilding a season structure from upstream", () => {
+  /** What a flattened import looks like: one "season" holding every episode. */
+  const flattened = () =>
+    show({
+      title: "Reacher",
+      totalEpisodes: 32,
+      seasons: [{ name: "Season 1", episodes: 32, offset: 0, skippedEpisodes: [] }],
+      watchedEpisodes: Array.from({ length: 24 }, (_, i) => i + 1),
+    });
+
+  const fourSeasons = () =>
+    details({
+      numberOfSeasons: 4,
+      numberOfEpisodes: 32,
+      seasons: [
+        { seasonNumber: 1, name: "Season 1", episodeCount: 8, airDate: "2022-02-03" },
+        { seasonNumber: 2, name: "Season 2", episodeCount: 8, airDate: "2023-12-15" },
+        { seasonNumber: 3, name: "Season 3", episodeCount: 8, airDate: "2025-02-20" },
+        { seasonNumber: 4, name: "Season 4", episodeCount: 8, airDate: "2026-08-12" },
+      ],
+    });
+
+  it("replaces one fake season with the real ones", () => {
+    const plan = seasonRebuildPlan(flattened(), fourSeasons());
+    expect(plan).not.toBeNull();
+    expect(plan?.seasons.map((s) => [s.seasonNumber, s.episodes, s.offset])).toEqual([
+      [1, 8, 0],
+      [2, 8, 8],
+      [3, 8, 16],
+      [4, 8, 24],
+    ]);
+    expect(plan?.totalEpisodes).toBe(32);
+  });
+
+  it("leaves watched progress meaning the same thing", () => {
+    // The whole safety argument: episode 24 is the last episode of season 3
+    // before the repair and after it, because absolute numbering is preserved.
+    const plan = seasonRebuildPlan(flattened(), fourSeasons());
+    const seasons = plan?.seasons ?? [];
+    const season3 = seasons[2];
+    expect((season3?.offset ?? 0) + (season3?.episodes ?? 0)).toBe(24);
+  });
+
+  it("says nothing when the structure already matches", () => {
+    const correct = show({
+      seasons: [
+        { name: "Season 1", episodes: 8, offset: 0, skippedEpisodes: [], seasonNumber: 1 },
+        { name: "Season 2", episodes: 8, offset: 8, skippedEpisodes: [], seasonNumber: 2 },
+        { name: "Season 3", episodes: 8, offset: 16, skippedEpisodes: [], seasonNumber: 3 },
+        { name: "Season 4", episodes: 8, offset: 24, skippedEpisodes: [], seasonNumber: 4 },
+      ],
+    });
+    expect(seasonRebuildPlan(correct, fourSeasons())).toBeNull();
+  });
+
+  it("carries a user's skipped episodes across for a season that survives", () => {
+    const withSkips = show({
+      seasons: [
+        { name: "Season 1", episodes: 8, offset: 0, skippedEpisodes: [3], seasonNumber: 1 },
+        { name: "Season 2", episodes: 24, offset: 8, skippedEpisodes: [], seasonNumber: 2 },
+      ],
+    });
+    const plan = seasonRebuildPlan(withSkips, fourSeasons());
+    expect(plan?.seasons[0]?.skippedEpisodes).toEqual([3]);
+  });
+
+  it("refuses to touch a film", () => {
+    expect(seasonRebuildPlan(flattened(), details({ mediaType: "movie" }))).toBeNull();
+  });
+
+  it("ignores specials, which the tracker has never counted", () => {
+    const withSpecials = details({
+      seasons: [
+        { seasonNumber: 0, name: "Specials", episodeCount: 5, airDate: null },
+        { seasonNumber: 1, name: "Season 1", episodeCount: 8, airDate: "2022-02-03" },
+      ],
+    });
+    const plan = seasonRebuildPlan(flattened(), withSpecials);
+    expect(plan?.seasons.map((s) => s.seasonNumber)).toEqual([1]);
   });
 });
