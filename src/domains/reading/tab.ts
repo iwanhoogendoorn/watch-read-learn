@@ -58,7 +58,7 @@ import {
   totalPatchFor,
   type ReadingEntry,
 } from "./progress";
-import { readPdfPageCount } from "./pdfpages";
+import { fillPageCountsFromFiles } from "./pdfpages";
 import { ReadingSearchEngine } from "./query";
 import { createReadingStore, type ReadingStore } from "./store";
 import {
@@ -863,15 +863,27 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
     );
     if (pending.length === 0) return;
 
-    let filled = 0;
-    for (const entry of pending) {
-      if (destroyed) return;
-      const pages = await readPdfPageCount(app.vault.adapter, (entry.filePath ?? "").trim());
-      if (pages === null) continue;
-      reading.update(kind, entry.id, totalPatchFor(entry, pages), "reading-pages-from-file");
-      filled += 1;
-    }
-    if (filled > 0 && !destroyed) render();
+    const byId = new Map(pending.map((entry) => [entry.id, entry]));
+    const result = await fillPageCountsFromFiles({
+      adapter: app.vault.adapter,
+      candidates: pending.map((entry) => ({
+        id: entry.id,
+        title: entry.title,
+        filePath: entry.filePath,
+      })),
+      cancelled: () => destroyed,
+      apply: (id, pages) => {
+        const entry = byId.get(id);
+        if (entry) {
+          reading.update(kind, id, totalPatchFor(entry, pages), "reading-pages-from-file");
+        }
+      },
+    });
+    console.log(
+      `[wrl] page counts: filled ${result.filled} of ${pending.length} from linked PDFs` +
+        (result.unknown.length > 0 ? `; could not tell for ${result.unknown.join(", ")}` : ""),
+    );
+    if (result.filled > 0 && !destroyed) render();
   }
 
   /** Put a query in the box and show its results — the handoff every chip uses. */

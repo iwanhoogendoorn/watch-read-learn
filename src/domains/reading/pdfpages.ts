@@ -41,6 +41,30 @@ function pdfjs(): PdfJsLike | null {
 const SCAN_LIMIT = 4_000_000;
 
 /**
+ * How long pdf.js gets before we stop waiting.
+ *
+ * Not a performance knob — a liveness one. `getDocument` returns a promise that
+ * never settles when its worker is missing, and "never" is not an error anyone
+ * can catch.
+ */
+const PDFJS_TIMEOUT_MS = 10_000;
+
+/** Resolves to `null` if `work` has not settled in time. Never rejects late. */
+async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), ms);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+/**
  * Page count from raw bytes, or null when the file does not say plainly.
  *
  * Exported for tests: this is the fallback path, so it is the one most likely
@@ -96,14 +120,77 @@ export async function readPdfPageCount(
     try {
       // pdf.js takes ownership of the buffer it is handed, so it gets a copy —
       // otherwise the fallback below would be scanning a detached array.
-      const doc = await lib.getDocument({ data: buffer.slice(0) }).promise;
-      const pages = doc.numPages;
-      await doc.destroy?.();
-      if (Number.isInteger(pages) && pages > 0) return pages;
+      //
+      // Raced against a timer because this can *hang* rather than fail: pdf.js
+      // with no worker configured leaves a promise that never settles, and an
+      // await on it would stall the whole sweep behind one file.
+      const pages = await withTimeout(
+        lib.getDocument({ data: buffer.slice(0) }).promise.then((doc) => {
+          const count = doc.numPages;
+          void doc.destroy?.();
+          return count;
+        }),
+        PDFJS_TIMEOUT_MS,
+      );
+      if (typeof pages === "number" && Number.isInteger(pages) && pages > 0) return pages;
     } catch {
       // Fall through: a PDF pdf.js will not open may still name its own count.
     }
   }
 
   return pdfPageCountFromBytes(new Uint8Array(buffer));
+}
+
+/** The slice of an entry this sweep needs. Structural, so tests need no store. */
+export interface PageCountCandidate {
+  id: string;
+  title: string;
+  filePath?: string;
+}
+
+export interface FillPageCountsDeps {
+  adapter: PdfPageCountDeps;
+  /** Entries to consider — the caller decides which shelf and what is missing. */
+  candidates: readonly PageCountCandidate[];
+  /** Persist one answer. */
+  apply(id: string, pages: number): void;
+  /** Checked between files so a torn-down tab stops the work. */
+  cancelled?: () => boolean;
+}
+
+export interface FillPageCountsResult {
+  filled: number;
+  /** Files that could not answer — reported, never guessed at. */
+  unknown: string[];
+}
+
+/**
+ * Fill in page counts from linked PDFs, one file at a time.
+ *
+ * Sequential because these are tens-of-megabytes reads and a shelf of them at
+ * once is a stutter the user feels. Every file is isolated: one that throws,
+ * hangs past its timeout, or simply will not say leaves the others alone.
+ */
+export async function fillPageCountsFromFiles(
+  deps: FillPageCountsDeps,
+): Promise<FillPageCountsResult> {
+  const result: FillPageCountsResult = { filled: 0, unknown: [] };
+  for (const candidate of deps.candidates) {
+    if (deps.cancelled?.()) return result;
+    const path = (candidate.filePath ?? "").trim();
+    if (!path.toLowerCase().endsWith(".pdf")) continue;
+    let pages: number | null = null;
+    try {
+      pages = await readPdfPageCount(deps.adapter, path);
+    } catch (err) {
+      console.warn("[wrl] could not read a page count from", path, err);
+    }
+    if (pages === null) {
+      result.unknown.push(candidate.title);
+      continue;
+    }
+    deps.apply(candidate.id, pages);
+    result.filled += 1;
+  }
+  return result;
 }

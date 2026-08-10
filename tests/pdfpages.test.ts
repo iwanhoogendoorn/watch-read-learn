@@ -6,7 +6,11 @@
  * matters, because a wrong total silently rewrites someone's progress.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { pdfPageCountFromBytes, readPdfPageCount } from "../src/domains/reading/pdfpages";
+import {
+  fillPageCountsFromFiles,
+  pdfPageCountFromBytes,
+  readPdfPageCount,
+} from "../src/domains/reading/pdfpages";
 
 const bytes = (text: string): Uint8Array =>
   Uint8Array.from(text, (c) => c.charCodeAt(0) & 0xff);
@@ -81,5 +85,78 @@ describe("reading a page count out of the vault", () => {
       throw new Error("gone");
     };
     expect(await readPdfPageCount({ readBinary }, "book.pdf")).toBeNull();
+  });
+
+  it("does not wait forever on a pdf.js that never answers", async () => {
+    vi.useFakeTimers();
+    try {
+      // The real failure this guards: pdf.js with no worker returns a promise
+      // that never settles, which is not an error anything can catch.
+      (globalThis as { pdfjsLib?: unknown }).pdfjsLib = {
+        getDocument: () => ({ promise: new Promise(() => undefined) }),
+      };
+      const pending = readPdfPageCount(deps("/Count 42"), "book.pdf");
+      await vi.advanceTimersByTimeAsync(11_000);
+      expect(await pending).toBe(42);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("sweeping a shelf", () => {
+  afterEach(() => {
+    delete (globalThis as { pdfjsLib?: unknown }).pdfjsLib;
+  });
+
+  const shelf = [
+    { id: "a", title: "Answers", filePath: "a.pdf" },
+    { id: "b", title: "Silent", filePath: "b.pdf" },
+    { id: "c", title: "Not a pdf", filePath: "c.epub" },
+  ];
+
+  function adapterFor(files: Record<string, string>) {
+    return {
+      readBinary: async (path: string) => {
+        const body = files[path];
+        if (body === undefined) throw new Error("missing " + path);
+        return bytes(body).buffer as ArrayBuffer;
+      },
+    };
+  }
+
+  it("fills what it can and names what it could not", async () => {
+    const applied: Array<[string, number]> = [];
+    const result = await fillPageCountsFromFiles({
+      adapter: adapterFor({ "a.pdf": "/Count 120", "b.pdf": "%PDF /ObjStm soup" }),
+      candidates: shelf,
+      apply: (id, pages) => applied.push([id, pages]),
+    });
+    expect(applied).toEqual([["a", 120]]);
+    expect(result.filled).toBe(1);
+    expect(result.unknown).toEqual(["Silent"]);
+  });
+
+  it("keeps going when one file throws", async () => {
+    const applied: Array<[string, number]> = [];
+    const result = await fillPageCountsFromFiles({
+      // a.pdf is missing entirely; b.pdf must still be read.
+      adapter: adapterFor({ "b.pdf": "/Count 7" }),
+      candidates: shelf,
+      apply: (id, pages) => applied.push([id, pages]),
+    });
+    expect(applied).toEqual([["b", 7]]);
+    expect(result.filled).toBe(1);
+  });
+
+  it("stops when the caller has gone away", async () => {
+    const applied: Array<[string, number]> = [];
+    await fillPageCountsFromFiles({
+      adapter: adapterFor({ "a.pdf": "/Count 1", "b.pdf": "/Count 2" }),
+      candidates: shelf,
+      cancelled: () => true,
+      apply: (id, pages) => applied.push([id, pages]),
+    });
+    expect(applied).toEqual([]);
   });
 });

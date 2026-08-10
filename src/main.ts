@@ -43,6 +43,8 @@ import {
 import { openPdfPages, pdfProgressActions, recordBookPage } from "./domains/reading/bookfile";
 import { progressPatch } from "./domains/reading/progress";
 import { communityRatingPatch, fetchBookRating } from "./domains/reading/community";
+import { fillPageCountsFromFiles } from "./domains/reading/pdfpages";
+import { totalPatchFor } from "./domains/reading/progress";
 import { createGoogleBooksClient } from "./services/googlebooks";
 import { createOpenLibraryClient } from "./services/openlibrary";
 import { totalFromSeasons, withAddedSeason } from "./data/episodes";
@@ -1413,6 +1415,14 @@ export default class WatchLogPlugin extends Plugin {
       },
     });
 
+    this.addCommand({
+      id: "fill-page-counts",
+      name: "Fill in page counts from linked book files",
+      callback: () => {
+        void this.fillPageCounts();
+      },
+    });
+
     // A plugin that can reload itself turns "toggle it off and on in Community
     // plugins" into one click after every deploy of a new build.
     this.addCommand({
@@ -1464,6 +1474,50 @@ export default class WatchLogPlugin extends Plugin {
    * the rate-limited Google client. Books stamped within the last day are
    * skipped, so re-running after adding one book asks about one book.
    */
+  /**
+   * Read page counts out of the linked PDFs for every book still missing one.
+   *
+   * The Reading tab does this on mount too; this is the same sweep with a
+   * handle on it, for when the tab is not the thing you are looking at — and
+   * for saying out loud which files could not answer, rather than leaving a
+   * silent dash.
+   */
+  private async fillPageCounts(): Promise<void> {
+    const readingStore = this.reading;
+    if (!readingStore) return;
+    const due = this.store.reading.books.filter(
+      (book) =>
+        (book.progressUnit === "words" ? book.totalWords : book.totalPages) === 0 &&
+        (book.filePath ?? "").toLowerCase().endsWith(".pdf"),
+    );
+    if (due.length === 0) {
+      new Notice("Every book with a linked PDF already has a page count.");
+      return;
+    }
+    const notice = new Notice(`Reading page counts from ${due.length} file(s)…`, 0);
+    try {
+      const result = await fillPageCountsFromFiles({
+        adapter: this.app.vault.adapter,
+        candidates: due.map((book) => ({
+          id: book.id,
+          title: book.title,
+          filePath: book.filePath,
+        })),
+        apply: (id, pages) => {
+          const book = this.store.reading.books.find((candidate) => candidate.id === id);
+          if (book) {
+            readingStore.updateBook(id, totalPatchFor(book, pages), "reading-pages-from-file");
+          }
+        },
+      });
+      const missed =
+        result.unknown.length > 0 ? ` ${result.unknown.length} file(s) did not say.` : "";
+      new Notice(`Filled ${result.filled} page count(s) from your files.${missed}`, 8000);
+    } finally {
+      notice.hide();
+    }
+  }
+
   private async refreshBookRatings(): Promise<void> {
     const google = this.clients.googleBooks;
     const readingStore = this.reading;
