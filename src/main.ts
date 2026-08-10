@@ -33,6 +33,7 @@ import {
   type AdoptionCandidate,
 } from "./data/adopt";
 import { ensureV3Backup, readV3Backup, type SourceState } from "./data/backup";
+import { repathAfterRename } from "./data/paths";
 import {
   createReadingStore,
   ReadingNoteWriter,
@@ -655,6 +656,19 @@ export default class WatchLogPlugin extends Plugin {
         const titleId = notes.titleIdForPath(file.path);
         if (!titleId) return;
         void this.readNotesBack(titleId);
+      }),
+    );
+
+    // Vault → data.json: the paths we store are not links, so Obsidian's own
+    // rename handling never touches them. Renaming a folder fires once for the
+    // folder, so descendants are matched by prefix.
+    this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => {
+        const result = repathAfterRename(this.store.data, oldPath, file.path);
+        if (result.changed === 0) return;
+        this.store.save("vault-rename");
+        this.store.emitChanged({ reason: "vault-rename" });
+        console.log(`[wrl] followed a rename: ${result.changed} stored path(s) updated`);
       }),
     );
 

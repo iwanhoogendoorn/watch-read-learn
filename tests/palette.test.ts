@@ -110,7 +110,7 @@ describe("buildWidgetPresets", () => {
     );
     expect(presets.length).toBeGreaterThan(8);
     for (const preset of presets) {
-      expect(preset.snippet.startsWith("```watchlog\n")).toBe(true);
+      expect(preset.snippet.startsWith("```watch-read-learn\n")).toBe(true);
       expect(preset.snippet.trimEnd().endsWith("```")).toBe(true);
       expect(preset.name.length).toBeGreaterThan(0);
       expect(preset.description.length).toBeGreaterThan(0);

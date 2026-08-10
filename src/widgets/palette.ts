@@ -9,7 +9,7 @@
  * `buildWidgetPresets` is pure and unit-tested; the modal is a thin shell over it.
  */
 import { FuzzySuggestModal, type App, type Editor, type FuzzyMatch } from "obsidian";
-import { FENCE_WATCHLOG, STATUS_PLAN_TO_WATCH, STATUS_WATCHING } from "../constants";
+import { FENCE_ALIAS, STATUS_PLAN_TO_WATCH, STATUS_WATCHING } from "../constants";
 import type { Settings, TitleV4, WatchLogStoreApi } from "../types";
 
 export interface WidgetPreset {
@@ -55,7 +55,9 @@ export function pinCandidate(titles: readonly TitleV4[], watchingStatus: string)
 }
 
 function fence(body: string): string {
-  return "```" + FENCE_WATCHLOG + "\n" + body.trim() + "\n```\n";
+  // New blocks get the plugin's own name; `watchlog` stays registered
+  // forever for the ones already written into people's notes.
+  return "```" + FENCE_ALIAS + "\n" + body.trim() + "\n```\n";
 }
 
 /**

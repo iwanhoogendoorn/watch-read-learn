@@ -815,14 +815,14 @@ export class WatchLogSettingTab extends PluginSettingTab {
     this.addHelp(
       new Setting(drafts.content).setName("Vault tag").addText((text) =>
         text
-          .setPlaceholder("#watchlog")
+          .setPlaceholder("#watch-read-learn")
           .setValue(settings.draftsVaultTag)
           .onChange((value) => {
             settings.draftsVaultTag = value.trim();
             this.save();
           }),
       ),
-      "Everything after this tag on a line, comma-separated, becomes a draft candidate — so “#watchlog Dune, Arrival” queues two. Drafts appear in a panel in the Library rather than a tab of their own.",
+      "Everything after this tag on a line, comma-separated, becomes a draft candidate — so “#watch-read-learn Dune, Arrival” queues two. Drafts appear in a panel in the Library rather than a tab of their own.",
     );
     new Setting(drafts.content)
       .setName("After adding a draft")
@@ -1267,7 +1267,7 @@ export class WatchLogSettingTab extends PluginSettingTab {
     const reference = this.group(parent, {
       icon: "book-open",
       title: "Reference",
-      subtitle: "Every key the watchlog fence accepts.",
+      subtitle: "Every key the watch-read-learn fence accepts.",
     });
 
     const table = reference.content.createDiv({ cls: "wl-doc-table" });
@@ -1484,7 +1484,7 @@ export class WatchLogSettingTab extends PluginSettingTab {
       ],
       [
         "Code blocks",
-        "One watchlog fence; the view: key picks the renderer. The five v3 fences still work.",
+        "One watch-read-learn fence; the view: key picks the renderer. The older watchlog fences still work.",
       ],
       [
         "Where data lives",

@@ -482,7 +482,7 @@ describe("legacy — v3 watchlog body", () => {
 
   it("reports a body with no id line", () => {
     expect(parseLegacyWatchlog("nothing here").issues.map((issue) => issue.message)).toEqual([
-      "watchlog: the block needs an `id:` line.",
+      "watch-read-learn: the block needs an `id:` line.",
     ]);
   });
 });

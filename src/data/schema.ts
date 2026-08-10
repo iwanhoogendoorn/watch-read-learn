@@ -144,7 +144,7 @@ export function createDefaultSettings(): Settings {
     customListsFolder: "Watch Read Learn/CustomLists",
     customListTabOrder: [],
     defaultCustomColumns: [],
-    draftsVaultTag: "#watchlog",
+    draftsVaultTag: "#watch-read-learn",
     draftsAfterAdding: "keep",
 
     generateReadingNotes: true,

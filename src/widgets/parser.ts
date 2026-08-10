@@ -755,7 +755,7 @@ export function parseLegacyWatchlog(source: string): LegacyParseResult {
   spec.limit = 1;
   const issues: WidgetIssue[] = [];
   if (id === "") {
-    issues.push(issue(1, "id", "", "watchlog: the block needs an `id:` line."));
+    issues.push(issue(1, "id", "", "watch-read-learn: the block needs an `id:` line."));
   } else {
     spec.ids = [id];
   }
