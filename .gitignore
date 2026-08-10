@@ -8,3 +8,14 @@ coverage/
 # A copy of an installed plugin folder, kept locally for reference. Contains a
 # real data.json (someone's library) and a third-party build — never commit it.
 watchlog/
+
+# Working notes that stay on this machine: the specs, the review transcripts,
+# the QA logs and the research the design came from. `git add -A` would
+# otherwise sweep them into a public repo.
+AGENTS.md
+SPEC.md
+SPEC2-PARITY.md
+REVIEW.md
+REVIEW-W8.md
+BUGS-QA1.md
+docs/research/

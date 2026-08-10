@@ -1,0 +1,56 @@
+# Build and publish a GitHub release whenever a version tag is pushed.
+#
+# BRAT (and plain manual installs) consume the three attached assets:
+# main.js, manifest.json, styles.css. The tag must equal the version in
+# manifest.json, with no leading "v" — that is what BRAT looks up.
+#
+#   npm version minor        # bumps package.json + manifest.json + versions.json
+#   git push && git push --tags
+
+name: Release Obsidian plugin
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Check tag matches manifest version
+        run: |
+          manifest_version=$(node -p "require('./manifest.json').version")
+          if [ "${GITHUB_REF#refs/tags/}" != "$manifest_version" ]; then
+            echo "Tag ${GITHUB_REF#refs/tags/} != manifest version $manifest_version" >&2
+            exit 1
+          fi
+
+      - name: Create release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          gh release create "$tag" \
+            --title "Watch, Read and Learn $tag" \
+            --generate-notes \
+            build/main.js build/manifest.json build/styles.css

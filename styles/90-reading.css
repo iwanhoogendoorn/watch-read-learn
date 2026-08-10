@@ -471,6 +471,72 @@
 }
 
 /* Inline in the title cell: quiet until hovered, like every row affordance. */
+/* --- category chips, the vault column, and setting a missing total ------- */
+
+.wl-reading-category-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wl-space-1);
+  align-content: flex-start;
+}
+
+.wl-reading-category-chip {
+  padding: 1px var(--wl-space-2);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-pill);
+  background: var(--background-secondary);
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--font-smallest);
+  line-height: 1.5;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.wl-reading-category-chip:hover {
+  border-color: var(--text-accent);
+  color: var(--text-accent);
+}
+
+/* An icon column: no wider than the glyph it holds. */
+.wl-reading-vault-cell {
+  width: 1%;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.wl-reading-vault-empty {
+  color: var(--text-faint);
+}
+
+/* The icon used to sit beside a title, where it needed the gap. It does not now. */
+.wl-reading-vault-cell .wl-reading-file-open {
+  margin-left: 0;
+}
+
+.wl-reading-set-total {
+  margin-top: var(--wl-space-1);
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-faint);
+  font-size: var(--font-smallest);
+  text-decoration: underline dotted;
+  cursor: pointer;
+}
+
+.wl-reading-set-total:hover {
+  color: var(--text-accent);
+}
+
+.wl-reading-set-total-input {
+  width: 6ch;
+  margin-top: var(--wl-space-1);
+  padding: 0 var(--wl-space-1);
+  font-size: var(--font-smallest);
+}
+
 .wl-reading-file-open {
   display: inline-flex;
   align-items: center;

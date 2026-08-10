@@ -75,6 +75,17 @@ function nonNegative(value: unknown): number {
 }
 
 /** The counter the entry's own settings say it is tracked by. */
+/**
+ * The patch that sets an entry's *primary* total, whatever that entry counts
+ * in. A book measured in words wants `totalWords`; manga counts chapters. One
+ * place decides, so a caller never has to know which field it is filling.
+ */
+export function totalPatchFor(entry: ReadingEntry, total: number): ReadingPatch {
+  const value = Math.max(0, Math.floor(total));
+  if (!isBook(entry)) return { totalChapters: value };
+  return entry.progressUnit === "words" ? { totalWords: value } : { totalPages: value };
+}
+
 export function primaryCounter(entry: ReadingEntry): ProgressCounter {
   if (isBook(entry)) {
     if (entry.progressUnit === "words") {

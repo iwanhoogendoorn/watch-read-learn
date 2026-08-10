@@ -168,6 +168,135 @@ describe("the two shelves are two libraries", () => {
   });
 });
 
+describe("the category column", () => {
+  it("gives categories a column of their own", async () => {
+    const { el, reading, controller } = await mount();
+    const book = reading.allBooks()[0];
+    if (!book) throw new Error("fixture has no books");
+    reading.update("book", book.id, { categories: ["Hacking", "NSX-T"] }, "test");
+    controller.refresh();
+
+    expect(el.querySelectorAll("th").map((cell) => cell.textContent)).toContain("Category");
+    const chips = el.querySelectorAll(".wl-reading-category-chip").map((c) => c.textContent);
+    expect(chips).toContain("Hacking");
+    expect(chips).toContain("NSX-T");
+    controller.destroy();
+  });
+
+  it("filters to a category when its chip is clicked", async () => {
+    const { el, reading, controller } = await mount();
+    const [first, second] = reading.allBooks();
+    if (!first || !second) throw new Error("fixture needs two books");
+    reading.update("book", first.id, { categories: ["Hacking"] }, "test");
+    reading.update("book", second.id, { categories: ["Cooking"] }, "test");
+    controller.refresh();
+    expect(rows(el)).toHaveLength(2);
+
+    const chip = el
+      .querySelectorAll(".wl-reading-category-chip")
+      .find((c) => c.textContent === "Hacking");
+    chip?.fire("click", { stopPropagation: () => undefined });
+
+    expect(rows(el)).toHaveLength(1);
+    expect(el.textContent).toContain(first.title);
+    controller.destroy();
+  });
+
+  it("says nothing rather than an empty chip when a book has no categories", async () => {
+    const { el, reading, controller } = await mount();
+    for (const book of reading.allBooks()) {
+      reading.update("book", book.id, { categories: [] }, "test");
+    }
+    controller.refresh();
+    expect(el.querySelectorAll(".wl-reading-category-chip")).toHaveLength(0);
+    controller.destroy();
+  });
+});
+
+describe("the in-vault column", () => {
+  it("offers the book file when one is linked", async () => {
+    const { el, reading, controller } = await mount();
+    const book = reading.allBooks()[0];
+    if (!book) throw new Error("fixture has no books");
+    reading.update("book", book.id, { filePath: "Books/Dune.pdf" }, "test");
+    controller.refresh();
+
+    expect(el.querySelectorAll("th").map((cell) => cell.textContent)).toContain("In vault");
+    expect(el.querySelectorAll(".wl-reading-vault-cell").length).toBe(rows(el).length);
+    // Rows are sorted, so find the one that belongs to this book.
+    const row = rows(el).find((r) => r.textContent?.includes(book.title));
+    expect(row?.querySelectorAll(".wl-reading-file-open")).toHaveLength(1);
+    controller.destroy();
+  });
+
+  it("shows a dash for a book that is not in the vault at all", async () => {
+    const { el, reading, controller } = await mount();
+    for (const book of reading.allBooks()) {
+      reading.update("book", book.id, { filePath: "", vaultPage: "" }, "test");
+    }
+    controller.refresh();
+    const cells = el.querySelectorAll(".wl-reading-vault-cell");
+    expect(cells[0]?.querySelectorAll(".wl-reading-file-open")).toHaveLength(0);
+    expect(cells[0]?.textContent).toBe("—");
+    controller.destroy();
+  });
+});
+
+describe("a total nobody knows", () => {
+  it("offers to set one instead of showing a bare dash", async () => {
+    const { el, reading, controller } = await mount();
+    const book = reading.allBooks()[0];
+    if (!book) throw new Error("fixture has no books");
+    reading.update("book", book.id, { totalPages: 0, pagesRead: 0 }, "test");
+    controller.refresh();
+
+    const setter = el.querySelectorAll(".wl-reading-set-total")[0];
+    expect(setter?.textContent).toBe("Set pages");
+    controller.destroy();
+  });
+
+  it("writes the number typed into the right field and shows it", async () => {
+    const { el, reading, controller } = await mount();
+    const book = reading.allBooks()[0];
+    if (!book) throw new Error("fixture has no books");
+    reading.update("book", book.id, { totalPages: 0, pagesRead: 0 }, "test");
+    controller.refresh();
+
+    el.querySelectorAll(".wl-reading-set-total")[0]?.fire("click", {
+      stopPropagation: () => undefined,
+    });
+    const input = el.querySelectorAll(".wl-reading-set-total-input")[0];
+    if (!input) throw new Error("no input appeared");
+    input.value = "356";
+    input.fire("keydown", { key: "Enter" });
+
+    expect(reading.allBooks().find((b) => b.id === book.id)?.totalPages).toBe(356);
+    expect(el.textContent).toContain("0 / 356 pages");
+    controller.destroy();
+  });
+
+  it("ignores a total that is not a number rather than zeroing the book", async () => {
+    const { el, reading, controller } = await mount();
+    const book = reading.allBooks()[0];
+    if (!book) throw new Error("fixture has no books");
+    // pagesRead must go too: a book with pages read but no total legitimately
+    // shows "N pages" rather than the setter.
+    reading.update("book", book.id, { totalPages: 0, pagesRead: 0 }, "test");
+    controller.refresh();
+
+    const setter = el.querySelectorAll(".wl-reading-set-total")[0];
+    if (!setter) throw new Error("no setter appeared");
+    setter.fire("click", { stopPropagation: () => undefined });
+    const input = el.querySelectorAll(".wl-reading-set-total-input")[0];
+    if (!input) throw new Error("no input appeared");
+    input.value = "not a number";
+    input.fire("keydown", { key: "Enter" });
+
+    expect(reading.allBooks().find((b) => b.id === book.id)?.totalPages).toBe(0);
+    controller.destroy();
+  });
+});
+
 describe("the one-click action", () => {
   it("bumps the progress of the row it belongs to", async () => {
     const { el, reading, controller } = await mount();

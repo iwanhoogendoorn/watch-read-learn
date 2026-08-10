@@ -194,6 +194,16 @@ export default class WatchLogPlugin extends Plugin {
   override async onload(): Promise<void> {
     this.store = new WatchLogStore(this);
 
+    // The way in comes first, before anything that reads a disk. The view
+    // factory is lazy — it runs when a leaf opens, by which time the store has
+    // loaded — so registering here costs nothing and means a slow vault, a
+    // failed backup or an unreadable data.json can never leave the user
+    // without the icon they open the plugin with.
+    this.registerView(VIEW_TYPE_WATCHLOG, (leaf: WorkspaceLeaf) => new WatchLogView(leaf, this));
+    this.addRibbonIcon(VIEW_ICON, VIEW_DISPLAY_NAME, () => {
+      void this.activateView();
+    });
+
     const dir = this.manifest.dir;
 
     // The rename changed the plugin's id, and Obsidian keys the data folder off
@@ -259,12 +269,6 @@ export default class WatchLogPlugin extends Plugin {
     });
 
     this.wireHooks();
-
-    this.registerView(VIEW_TYPE_WATCHLOG, (leaf: WorkspaceLeaf) => new WatchLogView(leaf, this));
-
-    this.addRibbonIcon(VIEW_ICON, VIEW_DISPLAY_NAME, () => {
-      void this.activateView();
-    });
 
     this.registerCommands();
     this.registerUriHandler();

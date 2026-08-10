@@ -52,10 +52,13 @@ import {
   bumpPatch,
   derivedStatus,
   isBook,
+  primaryCounter,
   progressLabel,
   readingProgress,
+  totalPatchFor,
   type ReadingEntry,
 } from "./progress";
+import { readPdfPageCount } from "./pdfpages";
 import { ReadingSearchEngine } from "./query";
 import { createReadingStore, type ReadingStore } from "./store";
 import {
@@ -138,6 +141,8 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
   let sort = state.sort;
   let secondarySort = state.secondarySort;
   let rows: ReadingEntry[] = [];
+  /** Set on teardown; async work checks it before touching anything. */
+  let destroyed = false;
   let drawerOpen = false;
 
   function readKind(): ReadingKind {
@@ -594,12 +599,86 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
     counterEl.setText(filtered ? `${rows.length} of ${total} ${noun}` : `${total} ${noun}`);
   }
 
+  /**
+   * The "In vault" cell: the book file if one is linked, else the generated
+   * note, else nothing. Both open on click; the row's own click handler is
+   * suppressed so opening a file never also opens the detail modal.
+   */
+  function renderVaultLink(cell: HTMLElement, entry: ReadingEntry): void {
+    const filePath = (entry.filePath ?? "").trim();
+    if (filePath !== "") {
+      const button = cell.createEl("button", {
+        cls: "wl-reading-file-open",
+        attr: { type: "button", "aria-label": "Open the book", title: `Open ${filePath}` },
+      });
+      setIcon(button, "book-open");
+      button.addEventListener("click", (event: MouseEvent) => {
+        event.stopPropagation();
+        openBookFile(app, filePath, entry.filePage);
+      });
+      return;
+    }
+
+    const notePath = (entry.vaultPage ?? "").trim();
+    if (notePath !== "" && deps.onOpenNote) {
+      const button = cell.createEl("button", {
+        cls: "wl-reading-file-open is-note",
+        attr: { type: "button", "aria-label": "Open the note", title: `Open ${notePath}` },
+      });
+      setIcon(button, "file-text");
+      button.addEventListener("click", (event: MouseEvent) => {
+        event.stopPropagation();
+        deps.onOpenNote?.(entry, kind);
+      });
+      return;
+    }
+
+    cell.createSpan({ cls: "wl-reading-vault-empty", text: "—" });
+  }
+
+  /**
+   * Set a total nobody could look up. Clicking swaps in a number field rather
+   * than opening a modal — it is one number, and the table is where the gap is
+   * visible.
+   */
+  function renderSetTotal(cell: HTMLElement, entry: ReadingEntry): void {
+    const button = cell.createEl("button", {
+      cls: "wl-reading-set-total",
+      text: "Set pages",
+      attr: { type: "button", title: "Say how long this is" },
+    });
+    button.addEventListener("click", (event: MouseEvent) => {
+      event.stopPropagation();
+      button.remove();
+      const input = cell.createEl("input", {
+        cls: "wl-reading-set-total-input",
+        attr: { type: "number", min: "1", step: "1", placeholder: "pages" },
+      });
+      input.focus();
+      const commit = (): void => {
+        const total = Math.floor(Number(input.value));
+        if (!Number.isFinite(total) || total <= 0) {
+          render();
+          return;
+        }
+        reading.update(kind, entry.id, totalPatchFor(entry, total), "reading-total-pages");
+        render();
+      };
+      input.addEventListener("keydown", (keyEvent: KeyboardEvent) => {
+        if (keyEvent.key === "Enter") commit();
+        if (keyEvent.key === "Escape") render();
+      });
+      input.addEventListener("blur", commit);
+      input.addEventListener("click", (inner: MouseEvent) => inner.stopPropagation());
+    });
+  }
+
   function renderTable(): void {
     const wrap = resultsHost.createDiv({ cls: "wl-tablewrap" });
     const table = wrap.createEl("table", { cls: "wl-table wl-reading-table" });
     const head = table.createEl("thead").createEl("tr");
 
-    const labels = ["", "Title", "Author", "Status", "Progress", "Rating"];
+    const labels = ["", "Title", "Author", "Category", "Status", "Progress", "Rating", "In vault"];
     for (const label of labels) head.createEl("th", { text: label });
     // Classed so the narrow-screen rule can hide the header and its cells
     // together — hiding one without the other shears the whole table.
@@ -659,20 +738,27 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
 
       const titleCell = row.createEl("td", { cls: "wl-table-title" });
       titleCell.createSpan({ text: entry.title });
-      // The book itself, one click away — only when a file is actually linked.
-      const filePath = (entry.filePath ?? "").trim();
-      if (filePath !== "") {
-        const fileButton = titleCell.createEl("button", {
-          cls: "wl-reading-file-open",
-          attr: { type: "button", "aria-label": "Open the book", title: "Open the book" },
-        });
-        setIcon(fileButton, "book-open");
-        fileButton.addEventListener("click", (event: MouseEvent) => {
-          event.stopPropagation();
-          openBookFile(app, filePath, entry.filePage);
-        });
-      }
       row.createEl("td", { text: entry.author || "—" });
+
+      // Categories, as chips that filter — the same move the Library's genres
+      // make, so "show me the rest of the hacking shelf" is one click.
+      const categoryCell = row.createEl("td", { cls: "wl-reading-category-cell" });
+      const categories = (entry.categories ?? []).filter((name) => name.trim() !== "");
+      if (categories.length === 0) {
+        categoryCell.setText("—");
+      } else {
+        for (const name of categories) {
+          const chip = categoryCell.createEl("button", {
+            cls: "wl-reading-category-chip",
+            text: name,
+            attr: { type: "button", title: `Show everything in ${name}` },
+          });
+          chip.addEventListener("click", (event: MouseEvent) => {
+            event.stopPropagation();
+            setQuery(`category:"${name}"`);
+          });
+        }
+      }
 
       const statusCell = row.createEl("td");
       const status = derivedStatus(entry);
@@ -689,6 +775,9 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
         cls: "wl-reading-progress-text",
         text: progressLabel(entry) || "—",
       });
+      // A book whose total nobody knows — no linked file, no provider data —
+      // gets a way to say so rather than a dash that means "ask again never".
+      if (progressLabel(entry) === "") renderSetTotal(progressCell, entry);
 
       const ratingCell = row.createEl("td");
       createStars(ratingCell, {
@@ -704,6 +793,11 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
           text: `★ ${formatCommunityRating(entry.communityRating ?? 0, entry.communityVotes ?? 0)}`,
         });
       }
+
+      // Is the thing itself here? A column of its own, because "I own this and
+      // can open it right now" is a different question from what it is called.
+      const vaultCell = row.createEl("td", { cls: "wl-reading-vault-cell" });
+      renderVaultLink(vaultCell, entry);
 
       for (const column of columns()) {
         const cell = row.createEl("td", { cls: "wl-reading-column-cell" });
@@ -750,18 +844,53 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
     }
   }
 
+  /**
+   * Fill in totals nobody had to type.
+   *
+   * A book with the PDF linked already carries its own page count; neither
+   * Open Library nor Google reliably does. Runs once per mount, only for
+   * entries whose total is still zero, and writes nothing when the file cannot
+   * answer — a guessed total would quietly rescale someone's progress bar.
+   *
+   * Sequential on purpose: these are tens-of-megabytes files, and a shelf of
+   * them read at once is a stutter the user would feel.
+   */
+  async function fillTotalsFromFiles(): Promise<void> {
+    const pending = pool().filter(
+      (entry) =>
+        primaryCounter(entry).total === 0 &&
+        (entry.filePath ?? "").toLowerCase().endsWith(".pdf"),
+    );
+    if (pending.length === 0) return;
+
+    let filled = 0;
+    for (const entry of pending) {
+      if (destroyed) return;
+      const pages = await readPdfPageCount(app.vault.adapter, (entry.filePath ?? "").trim());
+      if (pages === null) continue;
+      reading.update(kind, entry.id, totalPatchFor(entry, pages), "reading-pages-from-file");
+      filled += 1;
+    }
+    if (filled > 0 && !destroyed) render();
+  }
+
+  /** Put a query in the box and show its results — the handoff every chip uses. */
+  function setQuery(next: string): void {
+    query = next;
+    searchBox.setValue(next);
+    render();
+  }
+
   buildSubTabs();
   syncSortButton();
   render();
+  // Reads files, so it never blocks the first paint.
+  void fillTotalsFromFiles();
 
   return {
     id: "reading",
     el,
-    applyQuery(next: string): void {
-      query = next;
-      searchBox.setValue(next);
-      render();
-    },
+    applyQuery: setQuery,
     refresh(): void {
       buildSubTabs();
       presets.refresh();
@@ -770,6 +899,9 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
       render();
     },
     destroy(): void {
+      // Stops the file sweep writing into — and re-rendering — a tab that has
+      // already been torn down; reading a 30MB PDF outlives a tab switch.
+      destroyed = true;
       persistViewState();
       searchBox.destroy();
       presets.destroy();

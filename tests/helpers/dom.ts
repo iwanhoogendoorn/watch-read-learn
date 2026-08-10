@@ -169,6 +169,19 @@ export class StubEl {
     this.remove();
   }
 
+  /**
+   * Focus is a no-op here — there is no focus ring to move — but code that
+   * puts the cursor in a field it just created is doing the right thing, and
+   * it must not crash for want of the method.
+   */
+  focus(): void {
+    /* no-op */
+  }
+
+  blur(): void {
+    /* no-op */
+  }
+
   remove(): void {
     const parent = this.parentElement;
     if (!parent) return;
