@@ -352,6 +352,21 @@
   min-width: 0;
 }
 
+/*
+ * One rhythm for every list on this tab.
+ *
+ * The panels sit side by side, so a row in "Recently watched" is read against
+ * a row in "Up next" whether or not they were built by the same function. They
+ * get the same poster size (in the markup), the same row height, and the same
+ * left edge for their text — which is what "the same information in the same
+ * place" actually means once there is more than one list on screen.
+ */
+.wl-panel .wl-recent-row,
+.wl-panel .wl-upcoming-row {
+  min-height: calc(44px + 2 * var(--wl-space-2));
+  align-items: center;
+}
+
 .wl-recent-name {
   color: var(--text-normal);
   font-size: var(--font-ui-small);

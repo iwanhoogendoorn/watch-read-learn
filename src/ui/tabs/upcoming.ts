@@ -1209,9 +1209,11 @@ export function renderUpcomingRow(parent: HTMLElement, entry: UpcomingEntry, dep
   titleRow.createSpan({ cls: "wl-upcoming-name", text: title.title });
   titleRow.createSpan({ cls: "wl-upcoming-label", text: entry.label });
 
-  // An empty detail is deliberate — see the release rows in
-  // `buildUpcomingEntries`. Rendering the empty div anyway leaves a gap.
-  if (entry.detail) body.createDiv({ cls: "wl-upcoming-detail", text: entry.detail });
+  // Always rendered, empty or not. Some rows genuinely have no detail (see the
+  // release rows in `buildUpcomingEntries`) — and a row that drops the line is
+  // a row shorter than the one above it, which is what makes a list ragged.
+  // The gap is the point: it holds the date line at the same height on every row.
+  body.createDiv({ cls: "wl-upcoming-detail", text: entry.detail ?? "" });
 
   const meta = body.createDiv({ cls: "wl-upcoming-meta" });
   const dateText = formatDate(entry.date, deps.store.settings.dateFormat);
@@ -1359,12 +1361,12 @@ export function renderUnifiedRow(
         ? row.entry.value.game.coverUrl
         : "";
   if (coverUrl) {
-    const img = el.createEl("img", { cls: "wl-thumb is-small wl-thumb-img" });
+    const img = el.createEl("img", { cls: "wl-thumb wl-thumb-img" });
     img.setAttribute("alt", "");
     img.setAttribute("loading", "lazy");
     img.src = coverUrl;
   } else {
-    const cover = el.createDiv({ cls: "wl-thumb is-small is-placeholder" });
+    const cover = el.createDiv({ cls: "wl-thumb is-placeholder" });
     cover.createSpan({ cls: "wl-thumb-initial", text: (row.name[0] ?? "?").toUpperCase() });
   }
 
@@ -1372,7 +1374,7 @@ export function renderUnifiedRow(
   const titleRow = body.createDiv({ cls: "wl-upcoming-titlerow" });
   titleRow.createSpan({ cls: "wl-upcoming-name", text: row.name });
   titleRow.createSpan({ cls: "wl-upcoming-label", text: row.label });
-  if (row.detail) body.createDiv({ cls: "wl-upcoming-detail", text: row.detail });
+  body.createDiv({ cls: "wl-upcoming-detail", text: row.detail ?? "" });
 
   const meta = body.createDiv({ cls: "wl-upcoming-meta" });
   const dateText = formatDate(row.date, deps.store.settings.dateFormat);

@@ -83,3 +83,47 @@ describe("every card has the same caption rows", () => {
     expect(classes.slice(0, 3)).toEqual(["wl-card-title", "wl-card-pills", "wl-card-meta"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The dashboard's lists, which are read side by side
+// ---------------------------------------------------------------------------
+
+describe("dashboard rows share one shape", () => {
+  it("gives every row the same poster size", async () => {
+    const { renderUpcomingRow } = await import("../src/ui/tabs/upcoming");
+    const host = createHost(900);
+    const title = createTitle({ id: "t", title: "A Show", type: "TV Show" });
+    const deps = { store: storeOf() } as never;
+    renderUpcomingRow(host as unknown as HTMLElement, {
+      title,
+      kind: "episode",
+      label: "S1E1",
+      detail: "",
+      date: "2026-08-12",
+      daysUntil: 1,
+    } as never, deps);
+
+    // `is-small` was the 32px variant that made one panel's posters smaller
+    // than its neighbour's. No list on the dashboard uses it any more.
+    expect(host.querySelectorAll(".wl-thumb.is-small")).toHaveLength(0);
+    expect(host.querySelectorAll(".wl-thumb").length).toBeGreaterThan(0);
+  });
+
+  it("keeps the detail line even when a row has no detail", async () => {
+    const { renderUpcomingRow } = await import("../src/ui/tabs/upcoming");
+    const host = createHost(900);
+    const title = createTitle({ id: "t", title: "A Film", type: "Movie" });
+    const deps = { store: storeOf() } as never;
+    // A release row genuinely has nothing to say here; the line is held so the
+    // date below it sits where every other row's date sits.
+    renderUpcomingRow(host as unknown as HTMLElement, {
+      title,
+      kind: "release",
+      label: "Release",
+      detail: "",
+      date: "2026-08-14",
+      daysUntil: 3,
+    } as never, deps);
+    expect(host.querySelectorAll(".wl-upcoming-detail")).toHaveLength(1);
+  });
+});

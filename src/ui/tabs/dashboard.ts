@@ -563,7 +563,10 @@ function renderShelf(
 /** Compact row used by the two recency lists — cheaper than a full card. */
 function renderRecentRow(parent: HTMLElement, title: TitleV4, deps: TabDeps, meta: string): void {
   const row = parent.createDiv({ cls: "wl-recent-row" });
-  renderPosterThumb(row, title, deps, "wl-thumb is-small");
+  // One thumbnail size across every dashboard panel: a 32px poster in
+  // "Recently watched" beside a 44px one in "Up next" is the first thing
+  // the eye catches, and neither is more important than the other.
+  renderPosterThumb(row, title, deps, "wl-thumb");
   const body = row.createDiv({ cls: "wl-recent-body" });
   body.createDiv({ cls: "wl-recent-name", text: title.title });
   body.createDiv({ cls: "wl-recent-meta", text: meta });

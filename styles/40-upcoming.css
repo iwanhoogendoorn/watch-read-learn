@@ -408,6 +408,13 @@
   font-size: var(--font-ui-smaller);
 }
 
+/* Held even when the row has no detail to give — see the note in
+   `renderUpcomingRow`. Without it, a release row is one line shorter than the
+   episode row above it and the dates stop lining up down the list. */
+.wl-upcoming-detail {
+  min-height: 1.35em;
+}
+
 .wl-upcoming-states {
   display: flex;
   flex: 0 0 auto;
