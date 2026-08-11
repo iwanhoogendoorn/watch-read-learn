@@ -511,3 +511,11 @@
   flex-wrap: wrap;
   gap: var(--wl-space-2);
 }
+
+/* The library switch, hoisted out of "More statistics" to the top of the tab —
+   it governs every panel now, so it belongs above them rather than inside one. */
+.wl-source-bar {
+  display: flex;
+  align-items: center;
+  margin-bottom: calc(-1 * var(--wl-space-2));
+}

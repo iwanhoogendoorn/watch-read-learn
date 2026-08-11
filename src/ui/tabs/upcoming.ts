@@ -85,10 +85,24 @@ export type CardFactory = (parent: HTMLElement, title: TitleV4, ctx: CardContext
  * a tab that is handed none of them still renders — with a plain fallback card
  * and inert affordances — which is what keeps this lane independently testable.
  */
-/** The slice of a ranked suggestion the dashboard renders. */
+/**
+ * A suggestion as the dashboard needs it, whatever produced it.
+ *
+ * Films come from TMDB and books from Open Library, and the two share no id
+ * space and no metadata shape — so rather than bending books into a film
+ * envelope, an item carries its own actions. The panel renders and calls; it
+ * never learns which library it is looking at.
+ */
 export interface SuggestionLite {
-  result: OverseerrSearchResult;
+  /** Stable id for dismissal: a TMDB id for a film, an Open Library key for a book. */
+  key: string;
+  title: string;
+  year: number | null;
+  posterUrl: string;
   reasons: string[];
+  /** Resolves true when it landed in the library. */
+  add?: () => Promise<boolean>;
+  dismiss?: () => void;
 }
 
 export interface TabDeps {
@@ -115,6 +129,12 @@ export interface TabDeps {
    * panel is simply not offered — as it is not when no provider is configured.
    */
   onSuggest?: () => Promise<{ suggestions: SuggestionLite[]; note: string }>;
+  /**
+   * The same, for the shelf. A separate hook rather than a parameter because
+   * the two come from different providers entirely — TMDB knows nothing about
+   * books, and Open Library knows nothing about films.
+   */
+  onSuggestBooks?: () => Promise<{ suggestions: SuggestionLite[]; note: string }>;
   /** Open the wizard. `fromLibrary` skips the questions. */
   onOpenSuggestWizard?: (fromLibrary: boolean) => void;
   /** Add a suggested title to the library. */

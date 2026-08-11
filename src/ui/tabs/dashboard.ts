@@ -34,7 +34,7 @@ import {
   type TitleV4,
 } from "../../types";
 import { bookStats, mangaStats } from "../../domains/reading/stats";
-import { derivedStatus } from "../../domains/reading/progress";
+import { derivedStatus, progressLabel, readingProgress } from "../../domains/reading/progress";
 import { formatPlaytime, gamesCompletedStat, timePlayedStat } from "../../domains/games/stats";
 import {
   buildUpcomingEntries,
@@ -97,6 +97,13 @@ export interface DashboardModel {
   upNext: UpcomingEntry[];
   recentlyWatched: TitleV4[];
   recentlyAdded: TitleV4[];
+}
+
+/** 90 000 → "90 000": a wall of digits is not a statistic either. */
+function formatCount(value: number): string {
+  return Math.round(value)
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, "\u2009");
 }
 
 export const DASHBOARD_SHELF_LIMIT = 8;
@@ -573,12 +580,15 @@ function renderShelf(
  * empty box: "nothing came back" and "your server is not answering" are
  * different problems and the user can only act on one of them.
  */
-function renderSuggestions(parent: HTMLElement, deps: TabDeps): void {
+function renderSuggestions(
+  parent: HTMLElement,
+  deps: TabDeps,
+  fetch: NonNullable<TabDeps["onSuggest"]>,
+): void {
   const host = parent.createDiv({ cls: "wl-suggest-panel" });
   host.createDiv({ cls: "wl-suggest-empty", text: "Looking for something you might like…" });
 
-  void deps
-    .onSuggest?.()
+  void fetch()
     .then((outcome) => {
       host.empty();
       if (outcome.note) host.createDiv({ cls: "wl-suggest-note", text: outcome.note });
@@ -593,7 +603,7 @@ function renderSuggestions(parent: HTMLElement, deps: TabDeps): void {
       }
       const list = host.createDiv({ cls: "wl-suggest-mini-list" });
       for (const suggestion of outcome.suggestions.slice(0, 6)) {
-        renderSuggestionMini(list, suggestion, deps);
+        renderSuggestionMini(list, suggestion);
       }
     })
     .catch((err) => {
@@ -606,42 +616,45 @@ function renderSuggestions(parent: HTMLElement, deps: TabDeps): void {
 }
 
 /** One suggestion, in the dashboard's row rhythm rather than the wizard's. */
-function renderSuggestionMini(parent: HTMLElement, suggestion: SuggestionLite, deps: TabDeps): void {
-  const { result } = suggestion;
+function renderSuggestionMini(parent: HTMLElement, suggestion: SuggestionLite): void {
   const row = parent.createDiv({ cls: "wl-recent-row wl-suggest-mini" });
 
   const poster = row.createDiv({ cls: "wl-thumb" });
-  if (result.posterUrl) {
+  if (suggestion.posterUrl) {
     const img = poster.createEl("img", { cls: "wl-thumb-img" });
     img.setAttribute("alt", "");
     img.setAttribute("loading", "lazy");
-    img.src = result.posterUrl;
+    img.addEventListener("error", () => {
+      img.remove();
+      renderPosterPlaceholder(poster, suggestion.title);
+    });
+    img.src = suggestion.posterUrl;
   } else {
-    renderPosterPlaceholder(poster, result.title);
+    renderPosterPlaceholder(poster, suggestion.title);
   }
 
   const body = row.createDiv({ cls: "wl-recent-body" });
   body.createDiv({
     cls: "wl-recent-name",
-    text: result.year ? `${result.title} (${result.year})` : result.title,
+    text: suggestion.year ? `${suggestion.title} (${suggestion.year})` : suggestion.title,
   });
   // Always rendered, so every row in this list is the same height as every row
   // in the list beside it.
   body.createDiv({ cls: "wl-recent-meta", text: suggestion.reasons[0] ?? "" });
 
   const actions = row.createDiv({ cls: "wl-suggest-mini-actions" });
-  if (deps.onAddSuggestion) {
+  if (suggestion.add) {
     const add = actions.createEl("button", {
       cls: "wl-mini-btn",
       text: "Add",
-      attr: { type: "button", title: `Add ${result.title} to your library` },
+      attr: { type: "button", title: `Add ${suggestion.title} to your library` },
     });
     add.addEventListener("click", (event: MouseEvent) => {
       event.stopPropagation();
       add.disabled = true;
-      void deps.onAddSuggestion?.(result).then((title) => {
-        if (title) {
-          new Notice(`Added «${result.title}».`);
+      void suggestion.add?.().then((ok) => {
+        if (ok) {
+          new Notice(`Added «${suggestion.title}».`);
           row.remove();
         } else {
           add.disabled = false;
@@ -649,7 +662,7 @@ function renderSuggestionMini(parent: HTMLElement, suggestion: SuggestionLite, d
       });
     });
   }
-  if (deps.onDismissSuggestion) {
+  if (suggestion.dismiss) {
     const no = actions.createEl("button", {
       cls: "wl-icon-btn",
       attr: { type: "button", "aria-label": "Not interested", title: "Not interested" },
@@ -657,8 +670,72 @@ function renderSuggestionMini(parent: HTMLElement, suggestion: SuggestionLite, d
     setIcon(no, "x");
     no.addEventListener("click", (event: MouseEvent) => {
       event.stopPropagation();
-      deps.onDismissSuggestion?.(result.tmdbId);
+      suggestion.dismiss?.();
       row.remove();
+    });
+  }
+}
+
+/**
+ * One row for something that is not a film.
+ *
+ * Books and games are not `TitleV4`, so they cannot go through the card
+ * factory or `renderRecentRow` — but they should *look* identical, or the tab
+ * reads as two products stapled together. Same classes, same rhythm, same
+ * thumbnail size as everything else on this tab.
+ */
+/** One "by type" card: a ring, a name, and what it counts. */
+function renderTypeCard(grid: HTMLElement, type: TypeStats): void {
+  const card = grid.createDiv({ cls: "wl-panel wl-type-card" });
+  renderRing(card, type.percent, "");
+  const body = card.createDiv({ cls: "wl-type-body" });
+  body.createDiv({ cls: "wl-type-name", text: type.type });
+  body.createDiv({ cls: "wl-type-meta", text: `${type.completed} of ${type.total} completed` });
+  // "0m watched · 0m left" says nothing; time appears once there is some.
+  if (type.timeWatched > 0 || type.timeRemaining > 0) {
+    body.createDiv({
+      cls: "wl-type-meta",
+      text:
+        `${formatMinutes(type.timeWatched)} watched` +
+        (type.timeRemaining > 0 ? ` · ${formatMinutes(type.timeRemaining)} left` : ""),
+    });
+  }
+}
+
+function renderSimpleRow(
+  parent: HTMLElement,
+  entry: { title: string; coverUrl?: string; meta: string },
+  onOpen?: () => void,
+): void {
+  const row = parent.createDiv({ cls: "wl-recent-row" });
+  const cover = row.createDiv({ cls: "wl-thumb" });
+  const url = (entry.coverUrl ?? "").trim();
+  if (url !== "" && url !== "none") {
+    const img = cover.createEl("img", { cls: "wl-thumb-img" });
+    img.setAttribute("alt", "");
+    img.setAttribute("loading", "lazy");
+    img.addEventListener("error", () => {
+      img.remove();
+      renderPosterPlaceholder(cover, entry.title);
+    });
+    img.src = url;
+  } else {
+    renderPosterPlaceholder(cover, entry.title);
+  }
+  const body = row.createDiv({ cls: "wl-recent-body" });
+  body.createDiv({ cls: "wl-recent-name", text: entry.title });
+  // Always rendered, so a row with nothing to say is still the same height.
+  body.createDiv({ cls: "wl-recent-meta", text: entry.meta });
+  if (onOpen) {
+    row.addClass("is-clickable");
+    row.setAttr("role", "button");
+    row.tabIndex = 0;
+    row.addEventListener("click", onOpen);
+    row.addEventListener("keydown", (event: KeyboardEvent) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        onOpen();
+      }
     });
   }
 }
@@ -721,6 +798,25 @@ const EMPTY_GAMES: GamesData = {
 
 export const DASHBOARD_SOURCES: readonly DashboardSource[] = ["watchlist", "reading", "games"];
 
+/** Panel titles that change with the library, so no panel lies about itself. */
+const CONTINUE_LABEL: Record<DashboardSource, string> = {
+  watchlist: "Continue watching",
+  reading: "Continue reading",
+  games: "Continue playing",
+};
+
+const FINISHED_LABEL: Record<DashboardSource, string> = {
+  watchlist: "Recently watched",
+  reading: "Recently finished",
+  games: "Recently played",
+};
+
+const ADDED_LABEL: Record<DashboardSource, string> = {
+  watchlist: "Recently added",
+  reading: "Recently shelved",
+  games: "Recently added",
+};
+
 const SOURCE_LABELS: Record<DashboardSource, string> = {
   watchlist: "Watchlist",
   reading: "Reading",
@@ -763,46 +859,141 @@ export function mountDashboardTab(host: HTMLElement, deps: TabDeps): TabControll
 
     const model = computeDashboard(titles, settings, depsNow(deps));
 
+    // A library with nothing in it cannot be shown; fall back rather than
+    // rendering an empty dashboard for a source that was remembered.
+    const available = DASHBOARD_SOURCES.filter((option) =>
+      option === "reading" ? readingCount > 0 : option === "games" ? gamesCount > 0 : titles.length > 0,
+    );
+    if (!available.includes(source)) source = available[0] ?? "watchlist";
+
+    // --- which library is this? --------------------------------------------
+    //
+    // The switch used to sit inside "More statistics" and govern three charts,
+    // which meant clicking Reading changed almost nothing on a page still full
+    // of films. It governs the whole tab now: every panel below asks the same
+    // question of whichever library is selected.
+    if (available.length > 1) {
+      const bar = el.createDiv({ cls: "wl-section wl-source-bar" });
+      const chips = bar.createDiv({ cls: "wl-source-chips" });
+      for (const option of available) {
+        const chip = chips.createDiv({ cls: "wl-chip is-clickable" });
+        chip.setText(SOURCE_LABELS[option]);
+        chip.toggleClass("is-active", option === source);
+        chip.setAttr("role", "button");
+        chip.setAttr("tabindex", "0");
+        const pick = (): void => {
+          source = option;
+          render();
+        };
+        chip.addEventListener("click", pick);
+        chip.addEventListener("keydown", (event: KeyboardEvent) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            pick();
+          }
+        });
+      }
+    }
+
     // --- unified card ------------------------------------------------------
     section(el, "Overview", (s) => {
       s.addClass("wl-panel");
       const grid = s.createDiv({ cls: "wl-overview" });
-      renderRing(grid, model.percent, `${model.completed} of ${model.counting} completed`);
-      const stats = grid.createDiv({ cls: "wl-stat-grid" });
-      renderStat(stats, formatMinutes(model.timeWatched), "Time watched");
-      // A zero is not a statistic — it is furniture. Only stats with something
-      // to say get a slot (the two that are always meaningful stay).
-      if (model.timeRemaining > 0)
-        renderStat(stats, formatMinutes(model.timeRemaining), "Time remaining");
-      renderStat(stats, String(model.total), "Titles tracked");
-      if (model.favorites > 0) renderStat(stats, String(model.favorites), "Favourites");
+      if (source === "reading") {
+        const books = bookStats(reading.books, depsNow(deps));
+        const manga = mangaStats(reading.manga, depsNow(deps));
+        const counting = books.counting + manga.counting;
+        const completed = books.completed + manga.completed;
+        renderRing(
+          grid,
+          counting === 0 ? 0 : Math.round((completed / counting) * 100),
+          `${completed} of ${counting} finished`,
+        );
+        const stats = grid.createDiv({ cls: "wl-stat-grid" });
+        renderStat(stats, String(reading.books.length), "Books");
+        if (reading.manga.length > 0) renderStat(stats, String(reading.manga.length), "Manga");
+        renderStat(stats, formatCount(books.pagesRead), "Pages read");
+        if (books.pagesTotal > books.pagesRead) {
+          renderStat(stats, formatCount(books.pagesTotal - books.pagesRead), "Pages to go");
+        }
+        if (manga.chaptersRead > 0) renderStat(stats, formatCount(manga.chaptersRead), "Chapters read");
+        const favourites = books.favorites + manga.favorites;
+        if (favourites > 0) renderStat(stats, String(favourites), "Favourites");
+      } else if (source === "games") {
+        const completion = gamesCompletedStat(games.games);
+        const played = timePlayedStat(games.games);
+        renderRing(
+          grid,
+          completion.percent,
+          `${completion.finished} of ${completion.counted} finished`,
+        );
+        const stats = grid.createDiv({ cls: "wl-stat-grid" });
+        renderStat(stats, String(games.games.length), "Games");
+        renderStat(stats, played.label, "Time played");
+        const wishlist = games.games.filter((game) => game.wishlist).length;
+        if (wishlist > 0) renderStat(stats, String(wishlist), "On the wishlist");
+      } else {
+        renderRing(grid, model.percent, `${model.completed} of ${model.counting} completed`);
+        const stats = grid.createDiv({ cls: "wl-stat-grid" });
+        renderStat(stats, formatMinutes(model.timeWatched), "Time watched");
+        // A zero is not a statistic — it is furniture. Only stats with something
+        // to say get a slot (the two that are always meaningful stay).
+        if (model.timeRemaining > 0)
+          renderStat(stats, formatMinutes(model.timeRemaining), "Time remaining");
+        renderStat(stats, String(model.total), "Titles tracked");
+        if (model.favorites > 0) renderStat(stats, String(model.favorites), "Favourites");
+      }
     });
 
     // --- per type ----------------------------------------------------------
     const typeSection = section(el, "By type", (s) => {
+      if (source === "reading") {
+        s.addClass("wl-panel");
+        sectionHeader(s, "By shelf");
+        const grid = s.createDiv({ cls: "wl-type-grid" });
+        for (const [label, entries] of [
+          ["Books", reading.books],
+          ["Manga", reading.manga],
+        ] as const) {
+          if (entries.length === 0) continue;
+          const done = entries.filter((e) => derivedStatus(e) === "Completed").length;
+          renderTypeCard(grid, {
+            type: label,
+            total: entries.length,
+            completed: done,
+            percent: entries.length === 0 ? 0 : Math.round((done / entries.length) * 100),
+            timeWatched: 0,
+            timeRemaining: 0,
+          });
+        }
+        return;
+      }
+      if (source === "games") {
+        s.addClass("wl-panel");
+        sectionHeader(s, "By status");
+        const grid = s.createDiv({ cls: "wl-type-grid" });
+        const byStatus = new Map<string, number>();
+        for (const game of games.games) {
+          byStatus.set(game.status, (byStatus.get(game.status) ?? 0) + 1);
+        }
+        for (const [status, count] of [...byStatus.entries()].sort((a, b) => b[1] - a[1])) {
+          renderTypeCard(grid, {
+            type: status,
+            total: count,
+            completed: status === "Finished" ? count : 0,
+            percent: status === "Finished" ? 100 : 0,
+            timeWatched: 0,
+            timeRemaining: 0,
+          });
+        }
+        return;
+      }
       sectionHeader(s, "By type");
       const grid = s.createDiv({ cls: "wl-type-grid" });
       for (const type of model.byType) {
-        const card = grid.createDiv({ cls: "wl-panel wl-type-card" });
-        renderRing(card, type.percent, "");
-        const body = card.createDiv({ cls: "wl-type-body" });
-        body.createDiv({ cls: "wl-type-name", text: type.type });
-        body.createDiv({
-          cls: "wl-type-meta",
-          text: `${type.completed} of ${type.total} completed`,
-        });
-        // "0m watched · 0m left" says nothing; time appears once there is some.
-        if (type.timeWatched > 0 || type.timeRemaining > 0) {
-          body.createDiv({
-            cls: "wl-type-meta",
-            text:
-              `${formatMinutes(type.timeWatched)} watched` +
-              (type.timeRemaining > 0 ? ` · ${formatMinutes(type.timeRemaining)} left` : ""),
-          });
-        }
+        renderTypeCard(grid, type);
       }
     });
-
     // --- per domain --------------------------------------------------------
     //
     // One card per library, beside the per-type cards, so the dashboard answers
@@ -919,9 +1110,47 @@ export function mountDashboardTab(host: HTMLElement, deps: TabDeps): TabControll
     });
 
     // --- shelves -----------------------------------------------------------
-    section(el, "Continue watching", (s) => {
+    section(el, CONTINUE_LABEL[source], (s) => {
       s.addClass("wl-panel", "is-half");
-      sectionHeader(s, "Continue watching");
+      sectionHeader(s, CONTINUE_LABEL[source]);
+      if (source === "reading") {
+        const inProgress = [...reading.books, ...reading.manga]
+          .filter((entry) => readingProgress(entry) > 0 && readingProgress(entry) < 100)
+          .sort((a, b) => (b.dateModified ?? "").localeCompare(a.dateModified ?? ""))
+          .slice(0, DASHBOARD_SHELF_LIMIT);
+        if (inProgress.length === 0) {
+          s.createDiv({ cls: "wl-chart-empty", text: "Nothing part-read — open a book and tick a page." });
+          return;
+        }
+        const list = s.createDiv({ cls: "wl-recent-list" });
+        for (const entry of inProgress) {
+          renderSimpleRow(list, {
+            title: entry.title,
+            coverUrl: entry.coverUrl,
+            meta: `${readingProgress(entry)}% · ${progressLabel(entry) || derivedStatus(entry)}`,
+          });
+        }
+        return;
+      }
+      if (source === "games") {
+        const playing = games.games
+          .filter((game) => game.status === "Playing")
+          .sort((a, b) => (b.lastPlayed ?? "").localeCompare(a.lastPlayed ?? ""))
+          .slice(0, DASHBOARD_SHELF_LIMIT);
+        if (playing.length === 0) {
+          s.createDiv({ cls: "wl-chart-empty", text: "Nothing in progress — mark a game as Playing." });
+          return;
+        }
+        const list = s.createDiv({ cls: "wl-recent-list" });
+        for (const game of playing) {
+          renderSimpleRow(list, {
+            title: game.title,
+            coverUrl: game.coverUrl,
+            meta: game.playtimeMinutes > 0 ? formatPlaytime(game.playtimeMinutes) : game.status,
+          });
+        }
+        return;
+      }
       renderShelf(
         s,
         model.continueWatching,
@@ -954,7 +1183,9 @@ export function mountDashboardTab(host: HTMLElement, deps: TabDeps): TabControll
 
     // Suggestions sit next to "Continue watching" on purpose: the two answer
     // the same question ten seconds apart — what now, and what next.
-    if (deps.onSuggest) {
+    const suggestSource =
+      source === "reading" ? deps.onSuggestBooks : source === "games" ? undefined : deps.onSuggest;
+    if (suggestSource) {
       section(el, "Suggested for you", (s) => {
         s.addClass("wl-panel", "is-half");
         const head = sectionHeader(s, "Suggested for you");
@@ -966,13 +1197,51 @@ export function mountDashboardTab(host: HTMLElement, deps: TabDeps): TabControll
           });
           wizard.addEventListener("click", () => deps.onOpenSuggestWizard?.(false));
         }
-        renderSuggestions(s, deps);
+        renderSuggestions(s, deps, suggestSource);
       });
     }
 
-    section(el, "Recently watched", (s) => {
+    section(el, FINISHED_LABEL[source], (s) => {
       s.addClass("wl-panel", "is-half");
-      sectionHeader(s, "Recently watched");
+      sectionHeader(s, FINISHED_LABEL[source]);
+      if (source === "reading") {
+        const finished = [...reading.books, ...reading.manga]
+          .filter((entry) => derivedStatus(entry) === "Completed")
+          .sort((a, b) => (b.dateFinished ?? b.dateModified ?? "").localeCompare(a.dateFinished ?? a.dateModified ?? ""))
+          .slice(0, 5);
+        if (finished.length === 0) {
+          s.createDiv({ cls: "wl-chart-empty", text: "Finish a book and it lands here." });
+          return;
+        }
+        const list = s.createDiv({ cls: "wl-recent-list" });
+        for (const entry of finished) {
+          renderSimpleRow(list, {
+            title: entry.title,
+            coverUrl: entry.coverUrl,
+            meta: entry.author || progressLabel(entry) || "Finished",
+          });
+        }
+        return;
+      }
+      if (source === "games") {
+        const finished = games.games
+          .filter((game) => game.status === "Finished")
+          .sort((a, b) => (b.lastPlayed ?? "").localeCompare(a.lastPlayed ?? ""))
+          .slice(0, 5);
+        if (finished.length === 0) {
+          s.createDiv({ cls: "wl-chart-empty", text: "Finish a game and it lands here." });
+          return;
+        }
+        const list = s.createDiv({ cls: "wl-recent-list" });
+        for (const game of finished) {
+          renderSimpleRow(list, {
+            title: game.title,
+            coverUrl: game.coverUrl,
+            meta: game.playtimeMinutes > 0 ? formatPlaytime(game.playtimeMinutes) : "Finished",
+          });
+        }
+        return;
+      }
       if (model.recentlyWatched.length === 0) {
         s.createDiv({ cls: "wl-chart-empty", text: "Tick off an episode and it lands here." });
         return;
@@ -983,9 +1252,49 @@ export function mountDashboardTab(host: HTMLElement, deps: TabDeps): TabControll
       }
     });
 
-    section(el, "Recently added", (s) => {
+    section(el, ADDED_LABEL[source], (s) => {
       s.addClass("wl-panel", "is-half");
-      sectionHeader(s, "Recently added");
+      sectionHeader(s, ADDED_LABEL[source]);
+      if (source === "reading") {
+        const added = [...reading.books, ...reading.manga]
+          .slice()
+          .sort((a, b) => (b.dateAdded ?? "").localeCompare(a.dateAdded ?? ""))
+          .slice(0, 5);
+        if (added.length === 0) {
+          s.createDiv({ cls: "wl-chart-empty", text: "Nothing on the shelf yet." });
+          return;
+        }
+        const shelf = s.createDiv({ cls: "wl-recent-list" });
+        for (const entry of added) {
+          const when = formatDate((entry.dateAdded ?? "").slice(0, 10), settings.dateFormat);
+          renderSimpleRow(shelf, {
+            title: entry.title,
+            coverUrl: entry.coverUrl,
+            meta: [entry.author, when ? `Added ${when}` : ""].filter(Boolean).join(" · "),
+          });
+        }
+        return;
+      }
+      if (source === "games") {
+        const added = games.games
+          .slice()
+          .sort((a, b) => (b.dateAdded ?? "").localeCompare(a.dateAdded ?? ""))
+          .slice(0, 5);
+        if (added.length === 0) {
+          s.createDiv({ cls: "wl-chart-empty", text: "No games tracked yet." });
+          return;
+        }
+        const shelf = s.createDiv({ cls: "wl-recent-list" });
+        for (const game of added) {
+          const when = formatDate((game.dateAdded ?? "").slice(0, 10), settings.dateFormat);
+          renderSimpleRow(shelf, {
+            title: game.title,
+            coverUrl: game.coverUrl,
+            meta: [game.platforms?.[0] ?? "", when ? `Added ${when}` : ""].filter(Boolean).join(" · "),
+          });
+        }
+        return;
+      }
       const list = s.createDiv({ cls: "wl-recent-list" });
       for (const title of model.recentlyAdded) {
         const added = formatDate(addedDay(title), settings.dateFormat);

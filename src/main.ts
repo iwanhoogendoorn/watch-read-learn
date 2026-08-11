@@ -1059,7 +1059,17 @@ export default class WatchLogPlugin extends Plugin {
       deps.onSuggest = async () => {
         const outcome = await this.integrations.suggestFromLibrary({ limit: 8 });
         return {
-          suggestions: outcome.suggestions,
+          // Each row carries its own actions, because the book panel below
+          // produces the same shape from an entirely different provider.
+          suggestions: outcome.suggestions.map((s) => ({
+            key: String(s.result.tmdbId),
+            title: s.result.title,
+            year: s.result.year,
+            posterUrl: s.result.posterUrl,
+            reasons: s.reasons,
+            add: async () => (await deps.onAddSuggestion?.(s.result)) !== undefined,
+            dismiss: () => this.integrations.dismissSuggestion(s.result.tmdbId),
+          })),
           note:
             outcome.note ||
             (outcome.seeds && outcome.seeds.length > 0
@@ -1082,6 +1092,48 @@ export default class WatchLogPlugin extends Plugin {
         return added;
       };
       deps.onDismissSuggestion = (tmdbId) => this.integrations.dismissSuggestion(tmdbId);
+    }
+
+    // The same panel for the shelf, from Open Library rather than TMDB. Offered
+    // independently of the film one: a vault with books and no Overseerr should
+    // still get book suggestions.
+    const openLibrary = this.clients.openLibrary;
+    const readingStore = this.reading;
+    if (openLibrary && readingStore) {
+      const recommendDeps = {
+        openLibrary,
+        owned: () => [...this.store.reading.books, ...this.store.reading.manga],
+        dismissed: () => this.dismissedBooks(),
+      };
+      deps.onSuggestBooks = async () => {
+        const outcome = await suggestFromShelf(recommendDeps, { limit: 6 });
+        return {
+          suggestions: outcome.suggestions.map((s) => ({
+            key: s.hit.id,
+            title: s.hit.title,
+            year: s.hit.firstPublishYear ?? null,
+            posterUrl: s.hit.coverUrl,
+            reasons: s.reasons,
+            add: async () => {
+              const book = createBook({
+                id: readingStore.nextId("book", s.hit.title),
+                title: s.hit.title,
+                author: s.hit.authors[0] ?? "",
+                coverUrl: s.hit.coverUrl,
+                totalPages: s.hit.pageCount ?? 0,
+              });
+              this.store.reading.books.push(book);
+              this.store.save("book-suggestion-added");
+              this.store.emitChanged({ reason: "book-suggestion-added" });
+              return true;
+            },
+            dismiss: () => this.dismissBook(s.hit.id),
+          })),
+          note:
+            outcome.note ||
+            (outcome.seeds.length > 0 ? `Based on ${outcome.seeds.slice(0, 2).join(" and ")}.` : ""),
+        };
+      };
     }
     deps.onOpenInPlex = (title) => {
       void this.integrations.openInPlex(title);
