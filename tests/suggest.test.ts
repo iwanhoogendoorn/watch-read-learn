@@ -170,3 +170,19 @@ describe("ranking what came back", () => {
     expect(ranked[0]?.reasons).toEqual(["Matches what you asked for"]);
   });
 });
+
+describe("more like this, for one title", () => {
+  it("names the title it came from", () => {
+    const ranked = rankSuggestions([from(90, "Ace Ventura: Pet Detective")]);
+    expect(ranked[0]?.reasons[0]).toBe("Because you watched Ace Ventura: Pet Detective");
+  });
+
+  it("still refuses what is already owned, with only one seed to go on", () => {
+    // A single seed means no consensus to lean on, so the owned/vote filters
+    // are the only thing between the user and a list of noise.
+    const ranked = rankSuggestions([from(91, "Reacher"), from(92, "Reacher")], {
+      owned: new Set([91]),
+    });
+    expect(ranked.map((s) => s.result.tmdbId)).toEqual([92]);
+  });
+});

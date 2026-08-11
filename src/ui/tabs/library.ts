@@ -18,6 +18,7 @@ import { Menu, Notice, setIcon, type App } from "obsidian";
 import { CARD_SIZE_OFFSET, CARD_SIZE_PX } from "../../constants";
 import type {
   OverseerrClient,
+  OverseerrSearchResult,
   Preset,
   SortSpec,
   TabController,
@@ -36,7 +37,7 @@ import { renderFirstRunEmpty, renderNoMatchEmpty } from "../components/empty";
 import { colorFor, plexBadge, progressText, renderPill } from "../components/pills";
 import { AddTitleModal } from "../modals/add";
 import { confirmAction } from "../modals/confirm";
-import { DetailModal } from "../modals/detail";
+import { DetailModal, type MoreLikeThis } from "../modals/detail";
 import { createPresetButton, clonePresetView, type PresetView } from "../modals/preset";
 import { SearchTipsModal } from "../modals/tips";
 
@@ -57,6 +58,10 @@ export interface LibraryDeps {
   onRefreshMetadata?: (title: TitleV4) => void;
   /** Open the manual TMDB picker for a title that has no id yet. */
   onFindMatch?: (title: TitleV4) => void;
+  /** "More like this" inside a title's detail view; absent hides the section. */
+  onMoreLikeThis?: (title: TitleV4) => Promise<MoreLikeThis[]>;
+  onAddSuggestion?: (result: OverseerrSearchResult) => Promise<TitleV4 | undefined>;
+  onDismissSuggestion?: (tmdbId: number) => void;
   /**
    * Open the Drafts panel into `host` (W8-extras owns the panel itself).
    * Absent means the scanner is not built/enabled and no button is shown.
@@ -296,6 +301,9 @@ export function mountLibraryTab(
       onOpenInPlex: deps.onOpenInPlex,
       onRefreshMetadata: deps.onRefreshMetadata,
       onFindMatch: deps.onFindMatch,
+      onMoreLikeThis: deps.onMoreLikeThis,
+      onAddSuggestion: deps.onAddSuggestion,
+      onDismissSuggestion: deps.onDismissSuggestion,
     }).open();
   }
 

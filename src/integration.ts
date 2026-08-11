@@ -751,6 +751,39 @@ export class Integrations {
     };
   }
 
+  /**
+   * "More like this one", for the title the user is looking at.
+   *
+   * A single seed, so consensus cannot help — which makes the vote floor and
+   * the owned-filter the only things standing between the user and a list of
+   * films with four ratings each. Recommendations first, similar only to pad.
+   */
+  async moreLikeThis(title: TitleV4, limit = 8): Promise<Suggestion[]> {
+    if (!this.overseerr.configured() || !title.tmdbId) return [];
+    const mediaType = mediaTypeForTitle(title);
+    const candidates: Candidate[] = [];
+    try {
+      const recommended = await this.overseerr.recommendations(title.tmdbId, mediaType);
+      for (const result of recommended) {
+        candidates.push({ result, source: "recommendation", seedName: title.title, seedWeight: 1 });
+      }
+      if (recommended.length < limit) {
+        const similar = await this.overseerr.similar(title.tmdbId, mediaType);
+        for (const result of similar.slice(0, 20)) {
+          candidates.push({ result, source: "similar", seedName: title.title, seedWeight: 1 });
+        }
+      }
+    } catch (err) {
+      console.warn("[wrl] more-like-this failed for", title.title, err);
+      throw err;
+    }
+    return rankSuggestions(candidates, {
+      owned: this.ownedIds(),
+      dismissed: new Set(this.dismissedSuggestions()),
+      limit,
+    });
+  }
+
   /** Genre vocabulary for the wizard, live rather than hardcoded. */
   async genreOptions(mediaType: MediaType = "movie"): Promise<GenreOption[]> {
     if (!this.overseerr.configured()) return [];

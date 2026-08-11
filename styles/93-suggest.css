@@ -196,3 +196,21 @@
   align-items: center;
   gap: var(--wl-space-2);
 }
+
+/* --- "More like this", inside a title's detail view ----------------------- */
+
+.wl-detail-more .wl-suggest-mini-list {
+  gap: 2px;
+}
+
+/* The detail modal is narrower than the wizard; the row still needs its
+   actions on one line rather than wrapping under the title. */
+.wl-detail-more .wl-recent-row {
+  align-items: center;
+  padding: var(--wl-space-2);
+  border-radius: var(--wl-radius-s);
+}
+
+.wl-detail-more .wl-recent-row:hover {
+  background: var(--background-modifier-hover);
+}

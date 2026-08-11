@@ -72,6 +72,7 @@ import { MatchTitleModal } from "./ui/modals/match";
 import { openRecovery } from "./ui/modals/recovery";
 import { runRequestFlow } from "./ui/modals/request";
 import { openSuggestWizard } from "./ui/modals/suggest";
+import type { MoreLikeThis } from "./ui/modals/detail";
 import { SurpriseModal } from "./ui/modals/surprise";
 import { parseWatchlogRoute } from "./uri";
 import { hasTrailer, openTrailer } from "./ui/modals/trailer";
@@ -110,6 +111,7 @@ import {
   type ReadingKind,
   type SteamClient,
   type TabId,
+  type OverseerrSearchResult,
   type TitleV4,
   type TmdbClient,
   type WidgetParseResult,
@@ -1170,6 +1172,7 @@ export default class WatchLogPlugin extends Plugin {
         void this.refreshMetadata(title);
       },
       onFindMatch: (title) => this.openMatchModal(title),
+      ...this.suggestionHooks(),
       onOpenDrafts: (host) => this.toggleDraftsPanel(host),
       draftCount: () => this.drafts?.count() ?? 0,
       onMountExtras: (ext) => mountGroupsExtension(ext, { app: this.app, store: this.store }),
@@ -1216,6 +1219,36 @@ export default class WatchLogPlugin extends Plugin {
     }).open();
   }
 
+  /**
+   * The suggestion hooks a detail view needs, or nothing when no provider is
+   * configured — in which case the section is not drawn at all rather than
+   * drawn empty.
+   */
+  suggestionHooks(): {
+    onMoreLikeThis?: (title: TitleV4) => Promise<MoreLikeThis[]>;
+    onAddSuggestion?: (result: OverseerrSearchResult) => Promise<TitleV4 | undefined>;
+    onDismissSuggestion?: (tmdbId: number) => void;
+  } {
+    if (!this.integrations?.overseerr.configured()) return {};
+    return {
+      onMoreLikeThis: async (title) => this.integrations.moreLikeThis(title),
+      onAddSuggestion: async (result) => {
+        const existing = findExisting(this.store, result);
+        if (existing) return existing;
+        const details = await this.integrations.overseerr.details(result.tmdbId, result.mediaType);
+        const built = buildTitleForHit(
+          details,
+          this.store.settings,
+          this.store.allTitles().map((t) => t.id),
+        );
+        const added = this.store.addTitle(built);
+        void this.integrations.refreshTitlePlex(added);
+        return added;
+      },
+      onDismissSuggestion: (tmdbId) => this.integrations.dismissSuggestion(tmdbId),
+    };
+  }
+
   private openDetailModal(title: TitleV4): void {
     const options: ConstructorParameters<typeof DetailModal>[1] = {
       store: this.store,
@@ -1234,6 +1267,7 @@ export default class WatchLogPlugin extends Plugin {
         void this.refreshMetadata(t);
       },
       onFindMatch: (t) => this.openMatchModal(t),
+      ...this.suggestionHooks(),
     };
     if (this.store.settings.trailerMode !== "off") {
       options.onPlayTrailer = (t) => {

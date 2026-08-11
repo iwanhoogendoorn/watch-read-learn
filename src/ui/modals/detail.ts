@@ -32,6 +32,7 @@ import {
 import { SAVE_DEBOUNCE_MS } from "../../constants";
 import {
   DATA_CHANGED_EVENT,
+  type OverseerrSearchResult,
   type Season,
   type TitleV4,
   type WatchLogStoreApi,
@@ -151,6 +152,23 @@ export interface DetailModalOptions {
   onRefreshMetadata?: (title: TitleV4) => void;
   /** Open the manual TMDB picker for an unmatched title. */
   onFindMatch?: (title: TitleV4) => void;
+  /**
+   * "More like this" for the title being looked at.
+   *
+   * Absent means the section is simply not drawn — which is what happens with
+   * no metadata provider configured, or for a title with no upstream id to ask
+   * about. Returns the ranked list; the modal knows nothing about how.
+   */
+  onMoreLikeThis?: (title: TitleV4) => Promise<MoreLikeThis[]>;
+  /** Add one of those to the library. */
+  onAddSuggestion?: (result: OverseerrSearchResult) => Promise<TitleV4 | undefined>;
+  onDismissSuggestion?: (tmdbId: number) => void;
+}
+
+/** One "more like this" row: the result, and why it is here. */
+export interface MoreLikeThis {
+  result: OverseerrSearchResult;
+  reasons: string[];
 }
 
 export class DetailModal extends Modal {
@@ -308,6 +326,7 @@ export class DetailModal extends Modal {
     this.renderTrailerSlot(host, title);
     this.renderRequest(host, title);
     this.renderSeasons(host, title);
+    this.renderMoreLikeThis(host, title);
     this.renderFields(host, title);
     this.renderNotes(host, title);
     this.renderFooter(host, title);
@@ -547,6 +566,105 @@ export class DetailModal extends Modal {
    * The iframe is created lazily on click rather than on render: a detail modal
    * that autoplayed a trailer every time you opened it would be intolerable.
    */
+  /**
+   * "More like this", where you are actually standing when the question occurs
+   * to you.
+   *
+   * Loads when the section is drawn rather than behind a button: the answer is
+   * the point of the section, and the request is the same one the dashboard
+   * panel caches. Failure prints a sentence — a section that silently stays
+   * empty is indistinguishable from one that found nothing.
+   */
+  private renderMoreLikeThis(host: HTMLElement, title: TitleV4): void {
+    const fetch = this.options.onMoreLikeThis;
+    if (!fetch || !title.tmdbId) return;
+
+    const section = host.createDiv({ cls: "wl-detail-section wl-detail-more" });
+    section.createDiv({ cls: "wl-detail-section-title", text: "More like this" });
+    const list = section.createDiv({ cls: "wl-suggest-mini-list" });
+    list.createDiv({ cls: "wl-suggest-empty", text: "Looking…" });
+
+    void fetch(title)
+      .then((results) => {
+        list.empty();
+        if (results.length === 0) {
+          list.createDiv({
+            cls: "wl-suggest-empty",
+            text: "Nothing to suggest from this one — everything it points at is already yours.",
+          });
+          return;
+        }
+        for (const entry of results.slice(0, 6)) this.renderMoreRow(list, entry);
+      })
+      .catch((err) => {
+        list.empty();
+        list.createDiv({
+          cls: "wl-suggest-empty",
+          text: `Could not ask for similar titles — ${err instanceof Error ? err.message : String(err)}`,
+        });
+      });
+  }
+
+  private renderMoreRow(parent: HTMLElement, entry: MoreLikeThis): void {
+    const { result } = entry;
+    const row = parent.createDiv({ cls: "wl-recent-row wl-suggest-mini" });
+
+    const poster = row.createDiv({ cls: "wl-thumb" });
+    if (result.posterUrl) {
+      const img = poster.createEl("img", { cls: "wl-thumb-img" });
+      img.setAttribute("alt", "");
+      img.setAttribute("loading", "lazy");
+      img.src = result.posterUrl;
+    } else {
+      renderPosterPlaceholder(poster, result.title);
+    }
+
+    const body = row.createDiv({ cls: "wl-recent-body" });
+    body.createDiv({
+      cls: "wl-recent-name",
+      text: result.year ? `${result.title} (${result.year})` : result.title,
+    });
+    const rating = result.voteAverage > 0 ? `★ ${result.voteAverage.toFixed(1)}` : "";
+    const reason = entry.reasons[0] ?? "";
+    body.createDiv({
+      cls: "wl-recent-meta",
+      text: [rating, reason].filter(Boolean).join(" · "),
+    });
+
+    const actions = row.createDiv({ cls: "wl-suggest-mini-actions" });
+    if (this.options.onAddSuggestion) {
+      const add = actions.createEl("button", {
+        cls: "wl-mini-btn",
+        text: "Add",
+        attr: { type: "button", title: `Add ${result.title} to your library` },
+      });
+      add.addEventListener("click", (event: MouseEvent) => {
+        event.stopPropagation();
+        add.disabled = true;
+        void this.options.onAddSuggestion?.(result).then((added) => {
+          if (added) {
+            new Notice(`Added «${result.title}».`);
+            row.remove();
+          } else {
+            add.disabled = false;
+          }
+        });
+      });
+    }
+    if (this.options.onDismissSuggestion) {
+      const no = actions.createEl("button", {
+        cls: "wl-icon-btn",
+        attr: { type: "button", "aria-label": "Not interested", title: "Not interested" },
+      });
+      setIcon(no, "x");
+      no.addEventListener("click", (event: MouseEvent) => {
+        event.stopPropagation();
+        this.options.onDismissSuggestion?.(result.tmdbId);
+        row.remove();
+      });
+    }
+  }
+
   private renderTrailerSlot(host: HTMLElement, title: TitleV4): void {
     const url = trailerUrlOf(title);
     if (!url) return;
