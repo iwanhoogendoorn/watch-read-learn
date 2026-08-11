@@ -25,6 +25,7 @@ import {
   writeExtra,
   type CustomColumn,
   type DateFormat,
+  type BookSuggestionHit,
   type GoogleBooksClient,
   type OpenLibraryClient,
   type Preset,
@@ -59,6 +60,7 @@ import {
   type ReadingEntry,
 } from "./progress";
 import { fillPageCountsFromFiles } from "./pdfpages";
+import type { BookSuggestion } from "./suggest";
 import { ReadingSearchEngine } from "./query";
 import { createReadingStore, type ReadingStore } from "./store";
 import {
@@ -91,6 +93,10 @@ export interface ReadingDeps {
   googleBooks?: GoogleBooksClient;
   /** Open (creating if needed) the generated note. Absent when notes are off. */
   onOpenNote?: (entry: ReadingEntry, kind: ReadingKind) => void;
+  /** "More like this" inside a book's detail view; absent hides the section. */
+  onMoreLikeThis?: (entry: ReadingEntry) => Promise<BookSuggestion[]>;
+  onAddSuggestion?: (hit: BookSuggestionHit) => Promise<boolean>;
+  onDismissSuggestion?: (key: string) => void;
 }
 
 /** Where the two view keys live inside the round-tripped reading settings. */
@@ -535,6 +541,9 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
     if (deps.onOpenNote) options.onOpenNote = deps.onOpenNote;
     if (deps.openLibrary) options.openLibrary = deps.openLibrary;
     if (deps.googleBooks) options.googleBooks = deps.googleBooks;
+    if (deps.onMoreLikeThis) options.onMoreLikeThis = deps.onMoreLikeThis;
+    if (deps.onAddSuggestion) options.onAddSuggestion = deps.onAddSuggestion;
+    if (deps.onDismissSuggestion) options.onDismissSuggestion = deps.onDismissSuggestion;
     new ReadingDetailModal(app, options).open();
   }
 

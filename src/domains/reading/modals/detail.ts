@@ -28,6 +28,8 @@ import type {
   ReadingStatus,
 } from "../../../types";
 import { READING_STATUSES } from "../../../types";
+import type { BookSuggestionHit } from "../../../types";
+import type { BookSuggestion } from "../suggest";
 import { renderDateInput } from "../../../ui/components/dates";
 import { renderPosterPlaceholder } from "../../../ui/components/posters";
 import { createStars } from "../../../ui/components/stars";
@@ -84,6 +86,14 @@ export interface ReadingDetailOptions {
   openLibrary?: OpenLibraryClient;
   /** For the public-rating fetch; absent (or unconfigured) explains itself. */
   googleBooks?: GoogleBooksClient;
+  /**
+   * "More like this" for the book being looked at. Absent means the section is
+   * not drawn — which is the honest answer when there is nothing to ask.
+   */
+  onMoreLikeThis?: (entry: ReadingEntry) => Promise<BookSuggestion[]>;
+  /** Add a suggested book to the shelf. */
+  onAddSuggestion?: (hit: BookSuggestionHit) => Promise<boolean>;
+  onDismissSuggestion?: (key: string) => void;
 }
 
 export class ReadingDetailModal extends Modal {
@@ -131,6 +141,7 @@ export class ReadingDetailModal extends Modal {
     this.renderProgress(contentEl, entry);
     this.renderFields(contentEl, entry);
     this.renderCustomFields(contentEl, entry);
+    this.renderMoreLikeThis(contentEl, entry);
     this.renderButtons(contentEl, entry);
   }
 
@@ -566,6 +577,105 @@ export class ReadingDetailModal extends Modal {
       field.createDiv({
         cls: "wl-reading-hint",
         text: `Reopens at page ${entry.filePage}.`,
+      });
+    }
+  }
+
+  /**
+   * "More like this", for a book.
+   *
+   * Same place and same shape as the film modal's, deliberately: the question
+   * is identical and so should be the answer. The signals underneath are not —
+   * subjects and authors rather than "people who liked this" — which is why
+   * the reason line says what it matched on.
+   */
+  private renderMoreLikeThis(host: HTMLElement, entry: ReadingEntry): void {
+    const fetch = this.options.onMoreLikeThis;
+    if (!fetch) return;
+
+    const section = host.createDiv({ cls: "wl-reading-section wl-detail-more" });
+    section.createDiv({ cls: "wl-detail-section-title", text: "More like this" });
+    const list = section.createDiv({ cls: "wl-suggest-mini-list" });
+    list.createDiv({ cls: "wl-suggest-empty", text: "Looking…" });
+
+    void fetch(entry)
+      .then((results) => {
+        list.empty();
+        if (results.length === 0) {
+          list.createDiv({
+            cls: "wl-suggest-empty",
+            text: "Nothing to suggest from this one.",
+          });
+          return;
+        }
+        for (const suggestion of results.slice(0, 6)) this.renderMoreRow(list, suggestion);
+      })
+      .catch((err) => {
+        list.empty();
+        list.createDiv({
+          cls: "wl-suggest-empty",
+          text: `Could not ask Open Library — ${err instanceof Error ? err.message : String(err)}`,
+        });
+      });
+  }
+
+  private renderMoreRow(parent: HTMLElement, suggestion: BookSuggestion): void {
+    const { hit } = suggestion;
+    const row = parent.createDiv({ cls: "wl-recent-row wl-suggest-mini" });
+
+    const cover = row.createDiv({ cls: "wl-thumb" });
+    if (hit.coverUrl) {
+      const img = cover.createEl("img", { cls: "wl-thumb-img" });
+      img.setAttribute("alt", "");
+      img.setAttribute("loading", "lazy");
+      img.src = hit.coverUrl;
+    } else {
+      renderPosterPlaceholder(cover, hit.title);
+    }
+
+    const body = row.createDiv({ cls: "wl-recent-body" });
+    const author = hit.authors[0] ?? "";
+    body.createDiv({
+      cls: "wl-recent-name",
+      text: author ? `${hit.title} — ${author}` : hit.title,
+    });
+    const rating =
+      hit.ratingsCount >= 3 ? `★ ${hit.ratingsAverage.toFixed(1)} (${hit.ratingsCount})` : "";
+    body.createDiv({
+      cls: "wl-recent-meta",
+      text: [rating, suggestion.reasons[0] ?? ""].filter(Boolean).join(" · "),
+    });
+
+    const actions = row.createDiv({ cls: "wl-suggest-mini-actions" });
+    if (this.options.onAddSuggestion) {
+      const add = actions.createEl("button", {
+        cls: "wl-mini-btn",
+        text: "Add",
+        attr: { type: "button", title: `Add ${hit.title} to your shelf` },
+      });
+      add.addEventListener("click", (event: MouseEvent) => {
+        event.stopPropagation();
+        add.disabled = true;
+        void this.options.onAddSuggestion?.(hit).then((ok) => {
+          if (ok) {
+            new Notice(`Added «${hit.title}».`);
+            row.remove();
+          } else {
+            add.disabled = false;
+          }
+        });
+      });
+    }
+    if (this.options.onDismissSuggestion) {
+      const no = actions.createEl("button", {
+        cls: "wl-icon-btn",
+        attr: { type: "button", "aria-label": "Not interested", title: "Not interested" },
+      });
+      setIcon(no, "x");
+      no.addEventListener("click", (event: MouseEvent) => {
+        event.stopPropagation();
+        this.options.onDismissSuggestion?.(hit.id);
+        row.remove();
       });
     }
   }

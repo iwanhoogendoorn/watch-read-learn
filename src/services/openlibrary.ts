@@ -32,7 +32,8 @@
  * Pure except for the injected `http`: no obsidian import, no DOM. Tests hand it
  * a fixture router; no test in this repo reaches the network.
  */
-import type { ApiSource, BookSearchResult, OpenLibraryClient } from "../types";
+import type {
+  BookSuggestionHit, ApiSource, BookSearchResult, OpenLibraryClient } from "../types";
 import { defaultHttp, isApiError, queryString, type HttpFn } from "./http";
 import { isRaw, num, optNum, str, type Raw } from "./normalize";
 import { createRateLimiter, realClock, type LimiterClock, type RateLimiter } from "./ratelimit";
@@ -65,6 +66,14 @@ const SEARCH_FIELDS = [
   "cover_i",
   "number_of_pages_median",
 ].join(",");
+
+/**
+ * Extra fields the recommender needs.
+ *
+ * `ratings_average` alone is a trap — a book with one five-star rating outranks
+ * everything — so the count comes with it and the ranking uses both.
+ */
+const RECOMMEND_FIELDS = [SEARCH_FIELDS, "subject", "ratings_average", "ratings_count"].join(",");
 
 export interface OpenLibraryConfig {
   /**
@@ -195,6 +204,49 @@ export function createOpenLibraryClient(
     return { "User-Agent": configured === "" ? DEFAULT_OPEN_LIBRARY_UA : configured };
   }
 
+  /** Subjects for the first match of a field-scoped search. */
+  async function subjectSearch(params: { title: string; author?: string }): Promise<string[]> {
+    const query: Record<string, string | number> = { title: params.title, limit: 1, fields: "subject" };
+    if (params.author) query["author"] = params.author;
+    const body = await getJsonAt<Raw>(`${OPEN_LIBRARY_BASE}/search.json${queryString(query)}`);
+    if (!isRaw(body)) return [];
+    const first = rawList(body["docs"])[0];
+    if (!isRaw(first)) return [];
+    const subjects = Array.isArray(first["subject"]) ? first["subject"] : [];
+    return subjects.filter((s): s is string => typeof s === "string" && s.trim() !== "");
+  }
+
+  /** A search that also returns subjects and ratings, for the recommender. */
+  async function recommendSearch(q: string, limit: number): Promise<BookSuggestionHit[]> {
+    const url = `${OPEN_LIBRARY_BASE}/search.json${queryString({
+      q,
+      limit: Math.max(1, Math.min(50, Math.trunc(limit))),
+      fields: RECOMMEND_FIELDS,
+      sort: "rating",
+    })}`;
+    const body = await getJsonAt<Raw>(url);
+    if (!isRaw(body)) return [];
+    return rawList(body["docs"])
+      .map((doc) => {
+        const base = normalizeSearchDoc(doc);
+        const subjects = Array.isArray(doc["subject"])
+          ? doc["subject"].filter((s): s is string => typeof s === "string")
+          : [];
+        const hit: BookSuggestionHit = {
+          ...base,
+          subjects,
+          ratingsAverage: numberOf(doc["ratings_average"]),
+          ratingsCount: numberOf(doc["ratings_count"]),
+        };
+        return hit;
+      })
+      .filter((hit) => hit.title !== "");
+  }
+
+  function numberOf(value: unknown): number {
+    return typeof value === "number" && Number.isFinite(value) ? value : 0;
+  }
+
   async function getJsonAt<T>(url: string): Promise<T | undefined> {
     const response = await limiter.run(() =>
       http<T>({ url, method: "GET", headers: headers(), source: OPENLIBRARY_SOURCE }),
@@ -255,6 +307,69 @@ export function createOpenLibraryClient(
       return rawList(body["docs"])
         .map(normalizeSearchDoc)
         .filter((hit) => hit.title !== "");
+    },
+
+    /**
+     * What Open Library thinks a book is *about*.
+     *
+     * Its subjects are specific in a way a user's own categories are not —
+     * "Computer security", "Hackers", "Computer crimes" rather than "Hacking" —
+     * and that specificity is what makes a subject search return neighbours
+     * instead of the whole computing shelf.
+     */
+    async subjectsFor(title: string, author: string): Promise<string[]> {
+      const name = title.trim();
+      if (name === "") return [];
+      // `title=`/`author=` rather than one free-text `q`. Pasting both into `q`
+      // returns *nothing* for a real book — the punctuation in "Hacking
+      // Exposed Mobile: Security Secrets & Solutions" plus an author name is
+      // enough to miss entirely. The field params match it first time.
+      const byBoth = await subjectSearch({ title: name, author: author.trim() });
+      if (byBoth.length > 0) return byBoth;
+      // An author spelled differently upstream should not cost the lookup.
+      return author.trim() === "" ? [] : subjectSearch({ title: name });
+    },
+
+    /**
+     * Books sharing these subjects, best-rated first.
+     *
+     * Subjects are ANDed: one subject is a shelf, three is a neighbourhood.
+     * Sorted by rating because the alternative — Open Library's default
+     * relevance — puts textbooks and government reports beside novels.
+     */
+    async bySubjects(subjects: readonly string[], limit = 20): Promise<BookSuggestionHit[]> {
+      const clean = subjects
+        .map((s) => s.trim())
+        .filter((s) => s !== "")
+        .slice(0, 3);
+      if (clean.length === 0) return [];
+
+      // Progressive relaxation, narrowest first. Three ANDed subjects can match
+      // as few as three books — but those three are the closest neighbours the
+      // catalogue has, so they are worth asking for before widening. Each
+      // round's hits are kept, and the ranker scores them by how many subjects
+      // they actually share, which is why the narrow round wins on merit
+      // rather than by being first.
+      const seen = new Map<string, BookSuggestionHit>();
+      for (let take = clean.length; take >= 1; take -= 1) {
+        const q = clean
+          .slice(0, take)
+          .map((s) => `subject:"${s.replace(/"/g, "")}"`)
+          .join(" AND ");
+        for (const hit of await recommendSearch(q, limit)) {
+          const key = hit.id || hit.title.toLowerCase();
+          if (!seen.has(key)) seen.set(key, hit);
+        }
+        if (seen.size >= limit) break;
+      }
+      return [...seen.values()];
+    },
+
+    /** Everything else by the same hand — the other half of "more like this". */
+    async byAuthor(author: string, limit = 20): Promise<BookSuggestionHit[]> {
+      const name = author.trim();
+      if (name === "") return [];
+      return recommendSearch(`author:"${name.replace(/"/g, "")}"`, limit);
     },
 
     async byIsbn(isbn: string): Promise<BookSearchResult | undefined> {

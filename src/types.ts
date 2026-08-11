@@ -1798,6 +1798,14 @@ export interface BookSearchResult {
  * Cover URLs must carry `?default=false`: without it a missing cover returns
  * **HTTP 200 with a 43-byte blank placeholder**, which caches as a real image.
  */
+/** A search hit carrying what the book recommender ranks on. */
+export interface BookSuggestionHit extends BookSearchResult {
+  /** Open Library's own subjects, which are far more specific than a shelf. */
+  subjects: string[];
+  ratingsAverage: number;
+  ratingsCount: number;
+}
+
 export interface OpenLibraryClient {
   configured(): boolean;
   /**
@@ -1812,6 +1820,11 @@ export interface OpenLibraryClient {
   /** `/api/books` — richer and batchable, unlike the redirecting `/isbn/{isbn}.json`. */
   byIsbn(isbn: string): Promise<BookSearchResult | undefined>;
   coverUrl(key: "isbn" | "id" | "olid", value: string, size?: "S" | "M" | "L"): string;
+  /** What Open Library thinks a book is about — the seed for a subject search. */
+  subjectsFor(title: string, author: string): Promise<string[]>;
+  /** Books sharing these subjects, best-rated first. Subjects are ANDed. */
+  bySubjects(subjects: readonly string[], limit?: number): Promise<BookSuggestionHit[]>;
+  byAuthor(author: string, limit?: number): Promise<BookSuggestionHit[]>;
 }
 
 /**

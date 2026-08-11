@@ -72,6 +72,9 @@ import { MatchTitleModal } from "./ui/modals/match";
 import { openRecovery } from "./ui/modals/recovery";
 import { runRequestFlow } from "./ui/modals/request";
 import { openSuggestWizard } from "./ui/modals/suggest";
+import { moreLikeBook, suggestFromShelf } from "./domains/reading/recommend";
+import { bookKey } from "./domains/reading/suggest";
+import { createBook } from "./data/schema";
 import type { MoreLikeThis } from "./ui/modals/detail";
 import { SurpriseModal } from "./ui/modals/surprise";
 import { parseWatchlogRoute } from "./uri";
@@ -939,7 +942,50 @@ export default class WatchLogPlugin extends Plugin {
         void this.openReadingNote(entry, kind);
       };
     }
+    // Book suggestions need Open Library and somewhere to put the answer.
+    const openLibrary = this.clients.openLibrary;
+    const reading = this.reading;
+    if (openLibrary && reading) {
+      const recommendDeps = {
+        openLibrary,
+        owned: () => [...this.store.reading.books, ...this.store.reading.manga],
+        dismissed: () => this.dismissedBooks(),
+      };
+      deps.onMoreLikeThis = (entry) => moreLikeBook(recommendDeps, entry);
+      deps.onAddSuggestion = async (hit) => {
+        const existing = [...this.store.reading.books].find(
+          (b) => bookKey(b.title) === bookKey(hit.title),
+        );
+        if (existing) return true;
+        const book = createBook({
+          id: reading.nextId("book", hit.title),
+          title: hit.title,
+          author: hit.authors[0] ?? "",
+          coverUrl: hit.coverUrl,
+          totalPages: hit.pageCount ?? 0,
+        });
+        this.store.reading.books.push(book);
+        this.store.save("book-suggestion-added");
+        this.store.emitChanged({ reason: "book-suggestion-added" });
+        return true;
+      };
+      deps.onDismissSuggestion = (key) => this.dismissBook(key);
+    }
     return deps;
+  }
+
+  /** Open Library keys the user has refused, persisted like the film ones. */
+  private dismissedBooks(): string[] {
+    const raw = readExtra<string[]>(this.store.settings, "dismissedBooks");
+    return Array.isArray(raw) ? raw.filter((k) => typeof k === "string") : [];
+  }
+
+  private dismissBook(key: string): void {
+    if (!key) return;
+    const next = new Set(this.dismissedBooks());
+    next.add(key);
+    writeExtra(this.store.settings, "dismissedBooks", [...next]);
+    this.store.save("book-suggestion-dismissed");
   }
 
   // -------------------------------------------------------------------------
@@ -1521,6 +1567,14 @@ export default class WatchLogPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "suggest-books",
+      name: "Suggest a book based on what I have read",
+      callback: () => {
+        void this.suggestBooks();
+      },
+    });
+
+    this.addCommand({
       id: "fill-page-counts",
       name: "Fill in page counts from linked book files",
       callback: () => {
@@ -1629,6 +1683,47 @@ export default class WatchLogPlugin extends Plugin {
       },
       fromLibrary,
     );
+  }
+
+  /**
+   * Shelf-wide book suggestions, reported as a notice.
+   *
+   * Deliberately not a modal: the per-book "More like this" is where the
+   * browsing happens, and this is the "what next?" question, which has a short
+   * answer. Open Library is asked one seed at a time — its allowance is small
+   * and shared with cover fetching.
+   */
+  private async suggestBooks(): Promise<void> {
+    const openLibrary = this.clients.openLibrary;
+    if (!openLibrary) {
+      new Notice("Open Library is not available.");
+      return;
+    }
+    const notice = new Notice("Looking for something to read…", 0);
+    try {
+      const outcome = await suggestFromShelf(
+        {
+          openLibrary,
+          owned: () => [...this.store.reading.books, ...this.store.reading.manga],
+          dismissed: () => this.dismissedBooks(),
+        },
+        { limit: 5 },
+      );
+      if (outcome.suggestions.length === 0) {
+        new Notice(outcome.note || "Nothing to suggest yet.", 8000);
+        return;
+      }
+      const lines = outcome.suggestions.map((s) => {
+        const author = s.hit.authors[0] ? ` — ${s.hit.authors[0]}` : "";
+        return `• ${s.hit.title}${author}`;
+      });
+      new Notice(
+        `Based on ${outcome.seeds.slice(0, 2).join(" and ")}:\n${lines.join("\n")}`,
+        15000,
+      );
+    } finally {
+      notice.hide();
+    }
   }
 
   private async fillPageCounts(): Promise<void> {
