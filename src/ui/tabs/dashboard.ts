@@ -35,6 +35,7 @@ import {
 } from "../../types";
 import { bookStats, mangaStats } from "../../domains/reading/stats";
 import { derivedStatus, progressLabel, readingProgress } from "../../domains/reading/progress";
+import { daysUntil, toDateString } from "../../services/airing";
 import { formatPlaytime, gamesCompletedStat, timePlayedStat } from "../../domains/games/stats";
 import {
   buildUpcomingEntries,
@@ -524,7 +525,7 @@ function renderCreditList(
   heading: string,
   buckets: readonly CountBucket[],
   deps: TabDeps,
-  queryField: "cast" | "director" | "studio",
+  queryField: "cast" | "director" | "studio" | null,
 ): void {
   const card = parent.createDiv({ cls: "wl-credit-card" });
   card.createDiv({ cls: "wl-credit-heading", text: heading });
@@ -538,7 +539,7 @@ function renderCreditList(
   const list = card.createDiv({ cls: "wl-credit-list" });
   for (const bucket of buckets) {
     const row = list.createDiv({ cls: "wl-credit-row" });
-    if (deps.onJumpToQuery) {
+    if (deps.onJumpToQuery && queryField) {
       const chip = row.createEl("button", {
         cls: "wl-chip is-clickable",
         text: bucket.label,
@@ -684,6 +685,22 @@ function renderSuggestionMini(parent: HTMLElement, suggestion: SuggestionLite): 
  * reads as two products stapled together. Same classes, same rhythm, same
  * thumbnail size as everything else on this tab.
  */
+/** Count occurrences and keep the top few — the credit list's own shape. */
+function tally(values: readonly string[], limit: number): CountBucket[] {
+  const counts = new Map<string, { label: string; count: number }>();
+  for (const raw of values) {
+    const label = raw.trim();
+    if (label === "") continue;
+    const key = label.toLowerCase();
+    const entry = counts.get(key);
+    if (entry) entry.count += 1;
+    else counts.set(key, { label, count: 1 });
+  }
+  return [...counts.values()]
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+    .slice(0, limit);
+}
+
 /** One "by type" card: a ring, a name, and what it counts. */
 function renderTypeCard(grid: HTMLElement, type: TypeStats): void {
   const card = grid.createDiv({ cls: "wl-panel wl-type-card" });
@@ -1101,8 +1118,44 @@ export function mountDashboardTab(host: HTMLElement, deps: TabDeps): TabControll
 
     // --- credits -----------------------------------------------------------
     section(el, "Top credits", (s) => {
+      const limit = Math.max(1, settings.dashboardTopCredits || 5);
       s.addClass("wl-panel");
-      sectionHeader(s, "Top credits", `top ${Math.max(1, settings.dashboardTopCredits || 5)}`);
+      if (source === "reading") {
+        // Books have no cast and no studio. The equivalent question is whose
+        // work is on the shelf.
+        sectionHeader(s, "Top authors", `top ${limit}`);
+        const grid = s.createDiv({ cls: "wl-credit-grid" });
+        renderCreditList(
+          grid,
+          "Authors",
+          tally([...reading.books, ...reading.manga].map((entry) => entry.author), limit),
+          deps,
+          // The Library's `author:` query would land on the wrong tab, so these
+          // are counts rather than chips.
+          null,
+        );
+        return;
+      }
+      if (source === "games") {
+        sectionHeader(s, "Top platforms", `top ${limit}`);
+        const grid = s.createDiv({ cls: "wl-credit-grid" });
+        renderCreditList(
+          grid,
+          "Platforms",
+          tally(games.games.flatMap((game) => game.platforms ?? []), limit),
+          deps,
+          null,
+        );
+        renderCreditList(
+          grid,
+          "Genres",
+          tally(games.games.map((game) => game.type), limit),
+          deps,
+          null,
+        );
+        return;
+      }
+      sectionHeader(s, "Top credits", `top ${limit}`);
       const grid = s.createDiv({ cls: "wl-credit-grid" });
       renderCreditList(grid, "Cast", model.topCast, deps, "cast");
       renderCreditList(grid, "Directors", model.topDirectors, deps, "director");
@@ -1162,6 +1215,56 @@ export function mountDashboardTab(host: HTMLElement, deps: TabDeps): TabControll
     section(el, "Up next", (s) => {
       s.addClass("wl-panel", "is-half");
       sectionHeader(s, "Up next");
+      if (source === "reading" || source === "games") {
+        // Books and games have no episodes; what is "next" for them is a
+        // publication or a launch date that has not happened yet.
+        const today = toDateString(depsNow(deps));
+        const pending =
+          source === "reading"
+            ? [...reading.books, ...reading.manga]
+                .filter((entry) => (entry.releaseDate ?? "") >= today)
+                .map((entry) => ({
+                  title: entry.title,
+                  coverUrl: entry.coverUrl,
+                  date: entry.releaseDate as string,
+                  detail: entry.author || "Publication",
+                }))
+            : games.games
+                .filter((game) => (game.releaseDate ?? "") >= today)
+                .map((game) => ({
+                  title: game.title,
+                  coverUrl: game.coverUrl,
+                  date: game.releaseDate as string,
+                  detail: game.platforms?.[0] ?? "Release",
+                }));
+        pending.sort((a, b) => a.date.localeCompare(b.date));
+        if (pending.length === 0) {
+          s.createDiv({
+            cls: "wl-chart-empty",
+            text:
+              source === "reading"
+                ? "Nothing on the shelf is waiting to be published."
+                : "Nothing tracked has a release date still to come.",
+          });
+          return;
+        }
+        const list = s.createDiv({ cls: "wl-recent-list" });
+        for (const entry of pending.slice(0, DASHBOARD_UP_NEXT_LIMIT)) {
+          const days = daysUntil(entry.date, depsNow(deps));
+          renderSimpleRow(list, {
+            title: entry.title,
+            coverUrl: entry.coverUrl,
+            meta: [
+              entry.detail,
+              formatDate(entry.date, settings.dateFormat),
+              days === undefined ? "" : formatCountdown(days),
+            ]
+              .filter(Boolean)
+              .join(" · "),
+          });
+        }
+        return;
+      }
       if (model.upNext.length === 0) {
         s.createDiv({
           cls: "wl-chart-empty",
