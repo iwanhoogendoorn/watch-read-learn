@@ -43,6 +43,14 @@ async function candidatesFor(
   } catch {
     subjects = [];
   }
+  // Open Library has no subjects at all for plenty of recent or niche books —
+  // five of six on a real shelf. The user's own categories are a worse signal
+  // (a shelf label rather than a catalogue subject) but an infinitely better
+  // one than nothing, and they are the topics that user actually thinks in.
+  if (subjects.length === 0) {
+    const own = (seed as { categories?: string[] }).categories ?? [];
+    subjects = usefulSubjects(own, 2);
+  }
 
   if (subjects.length > 0) {
     try {

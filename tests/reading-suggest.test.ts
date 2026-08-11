@@ -144,7 +144,55 @@ describe("ranking book candidates", () => {
   });
 
   it("caps the list when asked", () => {
-    const many = Array.from({ length: 20 }, (_, i) => subjectHit(`B${i}`, ["a"]));
+    // Distinct authors: this is about `limit`, not about the per-author cap,
+    // which has its own tests below.
+    const many = Array.from({ length: 20 }, (_, i) =>
+      subjectHit(`B${i}`, ["a"], { authors: [`Author ${i}`] }),
+    );
     expect(rankBookSuggestions(many, { limit: 4 })).toHaveLength(4);
+  });
+});
+
+describe("keeping one author from taking over", () => {
+  const byAuthor = (title: string, author: string, score = 1): BookCandidate => ({
+    hit: hit({ id: `/works/${title}`, title, authors: [author] }),
+    source: "author",
+    seedName: "Hacking University",
+    seedWeight: score,
+  });
+
+  it("keeps only the best two from any one author", () => {
+    // The live failure: a book whose only usable signal was its author
+    // returned six editions of the same series. That is a bibliography.
+    const ranked = rankBookSuggestions([
+      byAuthor("Freshman Edition", "Isaac D. Cody"),
+      byAuthor("Senior Edition", "Isaac D. Cody"),
+      byAuthor("Junior Edition", "Isaac D. Cody"),
+      byAuthor("Learn Python", "Isaac D. Cody"),
+      byAuthor("Something Else", "Another Person"),
+    ]);
+    const cody = ranked.filter((s) => s.hit.authors[0] === "Isaac D. Cody");
+    expect(cody).toHaveLength(2);
+    expect(ranked.some((s) => s.hit.authors[0] === "Another Person")).toBe(true);
+  });
+
+  it("frees the space for somebody else rather than shortening the list", () => {
+    const ranked = rankBookSuggestions(
+      [
+        byAuthor("A1", "One"),
+        byAuthor("A2", "One"),
+        byAuthor("A3", "One"),
+        byAuthor("B1", "Two"),
+      ],
+      { limit: 3 },
+    );
+    expect(ranked).toHaveLength(3);
+    expect(ranked.map((s) => s.hit.authors[0]).filter((a) => a === "One")).toHaveLength(2);
+  });
+
+  it("leaves authorless hits alone", () => {
+    const anon = { ...byAuthor("No Author", ""), hit: hit({ title: "No Author", authors: [] }) };
+    const ranked = rankBookSuggestions([anon, { ...anon, hit: hit({ title: "Also None", authors: [] }) }]);
+    expect(ranked).toHaveLength(2);
   });
 });

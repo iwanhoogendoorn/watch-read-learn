@@ -51,6 +51,15 @@ export interface BookRankOptions {
   dismissed?: ReadonlySet<string>;
   /** Below this a rating is noise rather than signal. */
   minRatings?: number;
+  /**
+   * How many books by one author may appear.
+   *
+   * Without a cap, a seed whose only usable signal is its author returns that
+   * author's entire bibliography — six Hacking University editions is a
+   * bibliography, not a recommendation. Two is enough to say "there is more by
+   * this person" without the list becoming about them.
+   */
+  maxPerAuthor?: number;
   limit?: number;
 }
 
@@ -166,7 +175,36 @@ export function rankBookSuggestions(
     if (b.score !== a.score) return b.score - a.score;
     return b.hit.ratingsCount - a.hit.ratingsCount;
   });
-  return options.limit === undefined ? out : out.slice(0, options.limit);
+
+  const capped = capPerAuthor(out, options.maxPerAuthor ?? 2);
+  return options.limit === undefined ? capped : capped.slice(0, options.limit);
+}
+
+/**
+ * Keep the best few from any one author, in score order.
+ *
+ * Applied after sorting so the ones that survive are that author's strongest,
+ * and applied before the limit so the space freed goes to somebody else.
+ */
+export function capPerAuthor(
+  suggestions: readonly BookSuggestion[],
+  max: number,
+): BookSuggestion[] {
+  if (max <= 0) return [...suggestions];
+  const seen = new Map<string, number>();
+  const out: BookSuggestion[] = [];
+  for (const suggestion of suggestions) {
+    const author = (suggestion.hit.authors[0] ?? "").trim().toLowerCase();
+    if (author === "") {
+      out.push(suggestion);
+      continue;
+    }
+    const count = seen.get(author) ?? 0;
+    if (count >= max) continue;
+    seen.set(author, count + 1);
+    out.push(suggestion);
+  }
+  return out;
 }
 
 function bookReasons(

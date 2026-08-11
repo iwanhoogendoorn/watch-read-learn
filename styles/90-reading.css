@@ -640,3 +640,13 @@
 .wl-reading-category-add .is-hidden {
   display: none;
 }
+
+/* The label above a section inside the reading detail modal. Was missing, so
+   "More like this" rendered as bare body text next to styled field labels. */
+.wl-reading-section-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}

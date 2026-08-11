@@ -593,8 +593,8 @@ export class ReadingDetailModal extends Modal {
     const fetch = this.options.onMoreLikeThis;
     if (!fetch) return;
 
-    const section = host.createDiv({ cls: "wl-reading-section wl-detail-more" });
-    section.createDiv({ cls: "wl-detail-section-title", text: "More like this" });
+    const section = host.createDiv({ cls: "wl-reading-detail-section wl-detail-more" });
+    section.createDiv({ cls: "wl-reading-section-label", text: "More like this" });
     const list = section.createDiv({ cls: "wl-suggest-mini-list" });
     list.createDiv({ cls: "wl-suggest-empty", text: "Looking…" });
 
@@ -628,6 +628,13 @@ export class ReadingDetailModal extends Modal {
       const img = cover.createEl("img", { cls: "wl-thumb-img" });
       img.setAttribute("alt", "");
       img.setAttribute("loading", "lazy");
+      // Open Library has a cover id for plenty of books it has no image for,
+      // so a 404 here is routine. Falling back to the initial beats leaving
+      // the browser's broken-image glyph in a list of book covers.
+      img.addEventListener("error", () => {
+        img.remove();
+        renderPosterPlaceholder(cover, hit.title);
+      });
       img.src = hit.coverUrl;
     } else {
       renderPosterPlaceholder(cover, hit.title);
