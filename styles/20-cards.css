@@ -179,6 +179,28 @@
   min-height: 2.5em;
 }
 
+/*
+ * Every caption row holds its place whether or not it has content.
+ *
+ * The rows are the same on every card — two title lines, one pill row, one
+ * meta line, one rating line, the progress strip — so the caption is the same
+ * height everywhere, so every poster is cropped on the same line, so a grid of
+ * films and shows reads as one grid. A row that collapses when empty is what
+ * made no two cards line up: an unrated film's caption was a whole line
+ * shorter than a rated show's, right next to it.
+ */
+.wl-card-pills,
+.wl-card-meta {
+  min-height: 1.4em;
+}
+
+/* The stars row and the gap it leaves behind, matched. Scoped to the card:
+   the same stars in a modal or a table row should size to their content. */
+.wl-card-body .wl-stars,
+.wl-card-rating-empty {
+  min-height: 1.15em;
+}
+
 .wl-card-meta {
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);

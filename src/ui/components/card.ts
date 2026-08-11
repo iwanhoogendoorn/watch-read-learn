@@ -169,10 +169,12 @@ function buildFullCard(parent: HTMLElement, title: TitleV4, ctx: CardCtx): HTMLE
       cls: "is-status",
     });
   }
-  if (pills.childElementCount === 0) pills.remove();
+  // Every caption row is kept even when it has nothing to say. A card that
+  // drops a row is a card whose poster crops on a different line from its
+  // neighbours, and a grid of those reads as ragged however good each card is.
 
   const meta = metaLine(title);
-  if (meta) body.createDiv({ cls: "wl-card-meta", text: meta });
+  body.createDiv({ cls: "wl-card-meta", text: meta });
 
   if (ctx.showAiringChip) {
     const chips = body.createDiv({ cls: "wl-card-airing" });
@@ -183,13 +185,20 @@ function buildFullCard(parent: HTMLElement, title: TitleV4, ctx: CardCtx): HTMLE
     if (!seasonChip && !airingChip) chips.remove();
   }
 
-  if (ctx.showRating && title.rating > 0) {
-    createStars(body, {
-      value: title.rating,
-      tiers: ctx.store.settings.ratingSystem,
-      allowHalf: ctx.store.settings.halfStarRatings,
-      ariaLabel: `${title.title} rating`,
-    });
+  if (ctx.showRating) {
+    if (title.rating > 0) {
+      createStars(body, {
+        value: title.rating,
+        tiers: ctx.store.settings.ratingSystem,
+        allowHalf: ctx.store.settings.halfStarRatings,
+        ariaLabel: `${title.title} rating`,
+      });
+    } else {
+      // Holds the line an unrated title would otherwise not occupy. Empty
+      // rather than a row of grey stars: "not rated" should read as absence,
+      // not as a score of zero.
+      body.createDiv({ cls: "wl-card-rating-empty" });
+    }
   }
 
   if (ctx.showProgress) renderProgressBar(body, title);
