@@ -32,6 +32,13 @@ import {
   type SeasonSyncPlan,
 } from "./services/airing";
 import { createRequestService, type RequestService } from "./services/requests";
+import {
+  pickSeeds,
+  rankSuggestions,
+  seedWeightFor,
+  type Candidate,
+  type Suggestion,
+} from "./services/suggest";
 import { createAnimeDomain, type AnimeDomain } from "./domains/anime";
 import { isAnimeTypeName } from "./services/typeroute";
 import {
@@ -46,7 +53,11 @@ import {
 } from "./services/match";
 import { seasonsFromDetails } from "./ui/modals/add";
 import { recomputeOffsets, totalFromSeasons, withAddedSeason } from "./data/episodes";
+import { readExtra, writeExtra } from "./types";
 import type {
+  DateString,
+  GenreOption,
+  MediaType,
   OverseerrClient,
   OverseerrDetails,
   OverseerrMediaInfo,
@@ -56,6 +67,35 @@ import type {
   TmdbClient,
   WatchLogStoreApi,
 } from "./types";
+
+/** What a suggestion run produced, plus anything worth saying about it. */
+export interface SuggestionResult {
+  suggestions: Suggestion[];
+  /** Empty when there is nothing to explain; a sentence when there is. */
+  note: string;
+  /** Which library titles were asked, for the "based on" line. */
+  seeds?: string[];
+}
+
+/** The wizard's answers, in one object. Every field optional but the type. */
+export interface GuidedQuery {
+  mediaType?: MediaType;
+  genres?: number[];
+  /** "Something like this" — a title the user picked. */
+  seed?: { tmdbId: number; title: string };
+  /** With both a seed and genres, drop the seed's answers outside those genres. */
+  strictGenre?: boolean;
+  minRating?: number;
+  minVotes?: number;
+  fromYear?: number;
+  toYear?: number;
+  sortBy?: string;
+  includeOwned?: boolean;
+  limit?: number;
+}
+
+/** How long a library-driven suggestion run stays good for. */
+const SUGGESTION_TTL_MS = 30 * 60_000;
 
 /** How long after a view opens before the plugin bothers the servers again. */
 const VIEW_OPEN_THROTTLE_MS = 60_000;
@@ -97,6 +137,12 @@ export class Integrations {
   private lastViewOpenSync = 0;
   /** Guards against two "refresh everything" passes overlapping. */
   private busy = new Set<string>();
+  /**
+   * Last library-driven suggestion run. The dashboard asks on every mount, and
+   * tab-flipping should not cost a round trip per flip — nor should the answer
+   * be stale for a session, so it ages out.
+   */
+  private suggestionCache: { at: number; result: SuggestionResult } | null = null;
 
   constructor(deps: IntegrationDeps) {
     this.deps = deps;
@@ -549,6 +595,192 @@ export class Integrations {
       return `Rebuilt: ${repaired.join("; ")}${tail}.`;
     } finally {
       this.busy.delete("airing");
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Suggestions
+  // -------------------------------------------------------------------------
+
+  /** TMDB ids already tracked — never suggested back at the user. */
+  private ownedIds(): Set<number> {
+    const owned = new Set<number>();
+    for (const title of this.store.allTitles()) {
+      if (title.tmdbId) owned.add(title.tmdbId);
+    }
+    return owned;
+  }
+
+  /**
+   * "What should I watch, given what I already like?"
+   *
+   * Seeds are the library's own strongest signals; each is asked for its
+   * recommendations, and what several of them agree on rises. Seeds are asked
+   * in parallel but the whole thing is bounded by `pickSeeds`, so a library of
+   * two thousand titles costs the same as one of ten.
+   */
+  async suggestFromLibrary(
+    options: { limit?: number; seedLimit?: number } = {},
+  ): Promise<SuggestionResult> {
+    if (!this.overseerr.configured()) {
+      return { suggestions: [], note: "Add an Overseerr server in the plugin's settings first." };
+    }
+    const cached = this.suggestionCache;
+    if (cached && Date.now() - cached.at < SUGGESTION_TTL_MS) return cached.result;
+
+    const seeds = pickSeeds(this.store.allTitles(), options.seedLimit ?? 8);
+    if (seeds.length === 0) {
+      return {
+        suggestions: [],
+        note: "Rate or finish a few titles and suggestions will build themselves from those.",
+      };
+    }
+
+    const candidates: Candidate[] = [];
+    await Promise.all(
+      seeds.map(async (seed) => {
+        const mediaType = mediaTypeForTitle(seed);
+        const weight = seedWeightFor(seed);
+        try {
+          const recommended = await this.overseerr.recommendations(seed.tmdbId as number, mediaType);
+          for (const result of recommended) {
+            candidates.push({ result, source: "recommendation", seedName: seed.title, seedWeight: weight });
+          }
+          // Only pad from the noisier list when the good one came up short.
+          if (recommended.length < 5) {
+            const similar = await this.overseerr.similar(seed.tmdbId as number, mediaType);
+            for (const result of similar.slice(0, 10)) {
+              candidates.push({ result, source: "similar", seedName: seed.title, seedWeight: weight });
+            }
+          }
+        } catch (err) {
+          console.warn("[wrl] suggestions failed for", seed.title, err);
+        }
+      }),
+    );
+
+    const suggestions = rankSuggestions(candidates, {
+      owned: this.ownedIds(),
+      dismissed: new Set(this.dismissedSuggestions()),
+      limit: options.limit ?? 24,
+    });
+    const result: SuggestionResult = {
+      suggestions,
+      note:
+        suggestions.length === 0
+          ? "Nothing new came back — everything suggested is already in your library."
+          : "",
+      seeds: seeds.map((seed) => seed.title),
+    };
+    this.suggestionCache = { at: Date.now(), result };
+    return result;
+  }
+
+  /**
+   * "I want a comedy like Ace Ventura."
+   *
+   * A seed title, a set of genres, or both. With a seed the answer is mostly
+   * its recommendations; genres and era then filter that down. Without one it
+   * is a discover browse, which is why the vote floor matters — sorted by
+   * rating with no floor, TMDB happily returns films with four votes.
+   */
+  async suggestGuided(query: GuidedQuery): Promise<SuggestionResult> {
+    if (!this.overseerr.configured()) {
+      return { suggestions: [], note: "Add an Overseerr server in the plugin's settings first." };
+    }
+    const mediaType = query.mediaType ?? "movie";
+    const candidates: Candidate[] = [];
+
+    if (query.seed) {
+      try {
+        const recommended = await this.overseerr.recommendations(query.seed.tmdbId, mediaType);
+        for (const result of recommended) {
+          candidates.push({
+            result,
+            source: "recommendation",
+            seedName: query.seed.title,
+            seedWeight: 1,
+          });
+        }
+        const similar = await this.overseerr.similar(query.seed.tmdbId, mediaType);
+        for (const result of similar.slice(0, 20)) {
+          candidates.push({ result, source: "similar", seedName: query.seed.title, seedWeight: 1 });
+        }
+      } catch (err) {
+        console.warn("[wrl] guided suggestions failed for the seed", err);
+      }
+    }
+
+    // A genre browse always runs: with a seed it widens a thin list, without
+    // one it *is* the list.
+    if (!query.seed || candidates.length < 12) {
+      try {
+        const discovered = await this.overseerr.discover({
+          mediaType,
+          genres: query.genres,
+          sortBy: query.sortBy ?? "vote_average.desc",
+          voteCountGte: query.minVotes ?? 300,
+          ...(query.fromYear ? { releasedAfter: `${query.fromYear}-01-01` as DateString } : {}),
+          ...(query.toYear ? { releasedBefore: `${query.toYear}-12-31` as DateString } : {}),
+        });
+        for (const result of discovered) candidates.push({ result, source: "discover" });
+      } catch (err) {
+        console.warn("[wrl] guided discover failed", err);
+      }
+    }
+
+    const wanted = new Set(query.genres ?? []);
+    const filtered =
+      wanted.size === 0 || !query.strictGenre
+        ? candidates
+        : // With a seed, the genre answers are a filter on its recommendations:
+          // "like Ace Ventura" *and* "a comedy" should not return its thrillers.
+          candidates.filter((c) => c.result.genreIds.some((id) => wanted.has(id)));
+
+    const suggestions = rankSuggestions(filtered, {
+      owned: query.includeOwned ? new Set<number>() : this.ownedIds(),
+      dismissed: new Set(this.dismissedSuggestions()),
+      minRating: query.minRating ?? 0,
+      ...(query.fromYear !== undefined ? { fromYear: query.fromYear } : {}),
+      ...(query.toYear !== undefined ? { toYear: query.toYear } : {}),
+      limit: query.limit ?? 24,
+    });
+    return {
+      suggestions,
+      note: suggestions.length === 0 ? "Nothing matched — try widening the era or the rating." : "",
+    };
+  }
+
+  /** Genre vocabulary for the wizard, live rather than hardcoded. */
+  async genreOptions(mediaType: MediaType = "movie"): Promise<GenreOption[]> {
+    if (!this.overseerr.configured()) return [];
+    try {
+      return await this.overseerr.genres(mediaType);
+    } catch {
+      return [];
+    }
+  }
+
+  /** "Not interested" is persistent, or it is not an answer. */
+  dismissedSuggestions(): number[] {
+    const raw = readExtra<number[]>(this.store.settings, "dismissedSuggestions");
+    return Array.isArray(raw) ? raw.filter((id) => typeof id === "number") : [];
+  }
+
+  dismissSuggestion(tmdbId: number): void {
+    const next = new Set(this.dismissedSuggestions());
+    next.add(tmdbId);
+    writeExtra(this.store.settings, "dismissedSuggestions", [...next]);
+    this.deps.saveSettings("suggestion-dismissed");
+    // The cached list still contains what was just refused. Drop it there too
+    // rather than waiting for the TTL, or the row comes back on the next mount.
+    if (this.suggestionCache) {
+      this.suggestionCache.result = {
+        ...this.suggestionCache.result,
+        suggestions: this.suggestionCache.result.suggestions.filter(
+          (s) => s.result.tmdbId !== tmdbId,
+        ),
+      };
     }
   }
 

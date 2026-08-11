@@ -20,6 +20,7 @@ import type {
   CardContext,
   CardVariant,
   DateFormat,
+  OverseerrSearchResult,
   PosterLoader,
   TabController,
   TabId,
@@ -84,6 +85,12 @@ export type CardFactory = (parent: HTMLElement, title: TitleV4, ctx: CardContext
  * a tab that is handed none of them still renders — with a plain fallback card
  * and inert affordances — which is what keeps this lane independently testable.
  */
+/** The slice of a ranked suggestion the dashboard renders. */
+export interface SuggestionLite {
+  result: OverseerrSearchResult;
+  reasons: string[];
+}
+
 export interface TabDeps {
   store: WatchLogStoreApi;
   /**
@@ -102,6 +109,17 @@ export interface TabDeps {
   onRequest?: (title: TitleV4) => void;
   onPlayTrailer?: (title: TitleV4) => void;
   onGoToTab?: (tab: TabId) => void;
+  /**
+   * Suggestions built from the library, for the dashboard's panel. Returns the
+   * ranked list plus a sentence about where it came from. Absent means the
+   * panel is simply not offered — as it is not when no provider is configured.
+   */
+  onSuggest?: () => Promise<{ suggestions: SuggestionLite[]; note: string }>;
+  /** Open the wizard. `fromLibrary` skips the questions. */
+  onOpenSuggestWizard?: (fromLibrary: boolean) => void;
+  /** Add a suggested title to the library. */
+  onAddSuggestion?: (result: OverseerrSearchResult) => Promise<TitleV4 | undefined>;
+  onDismissSuggestion?: (tmdbId: number) => void;
   /**
    * "Season N announced" → create it on the tracker (SPEC §4.4). Supplied by
    * the composition root, which knows the upstream episode count (or can fetch

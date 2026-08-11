@@ -1058,11 +1058,43 @@ export interface OverseerrConnectionInfo {
   message: string;
 }
 
+/** One entry of TMDB's live genre vocabulary. Never hardcoded — it drifts. */
+export interface GenreOption {
+  id: number;
+  name: string;
+}
+
+/** Browse by mood rather than by title. Everything optional but `mediaType`. */
+export interface DiscoverOptions {
+  mediaType?: MediaType;
+  /** TMDB genre ids; several means "all of these", as TMDB reads them. */
+  genres?: number[];
+  sortBy?: string;
+  /**
+   * The honesty filter. Sorting by rating with no vote floor surfaces films
+   * with a single 10/10 vote, which is how a "best comedies" list fills up
+   * with things nobody has seen.
+   */
+  voteCountGte?: number;
+  voteAverageGte?: number;
+  /** `YYYY-MM-DD`, inclusive. */
+  releasedAfter?: DateString;
+  releasedBefore?: DateString;
+  withRuntimeLte?: number;
+  page?: number;
+}
+
 export interface OverseerrClient {
   configured(): boolean;
   testConnection(): Promise<OverseerrConnectionInfo>;
   search(query: string, page?: number): Promise<OverseerrSearchResult[]>;
   details(tmdbId: number, mediaType: MediaType): Promise<OverseerrDetails>;
+  /** "People who liked this also liked" — the good list. */
+  recommendations(tmdbId: number, mediaType: MediaType): Promise<OverseerrSearchResult[]>;
+  /** Shares-a-genre-tuple; noisier, used to pad a thin recommendation list. */
+  similar(tmdbId: number, mediaType: MediaType): Promise<OverseerrSearchResult[]>;
+  discover(options: DiscoverOptions): Promise<OverseerrSearchResult[]>;
+  genres(mediaType: MediaType): Promise<GenreOption[]>;
   /** `seasons` is ignored for movies; pass `"all"` to let the server expand it. */
   request(
     tmdbId: number,

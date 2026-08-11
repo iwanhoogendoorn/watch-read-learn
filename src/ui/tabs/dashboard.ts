@@ -15,7 +15,9 @@
  *
  * `computeDashboard` is pure and unit-tested; the mount function only paints it.
  */
+import { Notice, setIcon } from "obsidian";
 import { NON_COUNTING_STATUSES } from "../../constants";
+import { renderPosterPlaceholder } from "../components/posters";
 import {
   calcTimeRemaining,
   calcTimeWatched,
@@ -51,6 +53,7 @@ import {
   requestPill,
   section,
   sectionHeader,
+  type SuggestionLite,
   type TabDeps,
   type UpcomingEntry,
 } from "./upcoming";
@@ -561,6 +564,105 @@ function renderShelf(
 }
 
 /** Compact row used by the two recency lists — cheaper than a full card. */
+/**
+ * The suggestions panel.
+ *
+ * Loads on mount rather than on a button, because a panel that says "click to
+ * find out" is a panel nobody clicks — and the request is cached upstream, so
+ * opening the tab twice costs one round trip. Failure is a sentence, never an
+ * empty box: "nothing came back" and "your server is not answering" are
+ * different problems and the user can only act on one of them.
+ */
+function renderSuggestions(parent: HTMLElement, deps: TabDeps): void {
+  const host = parent.createDiv({ cls: "wl-suggest-panel" });
+  host.createDiv({ cls: "wl-suggest-empty", text: "Looking for something you might like…" });
+
+  void deps
+    .onSuggest?.()
+    .then((outcome) => {
+      host.empty();
+      if (outcome.note) host.createDiv({ cls: "wl-suggest-note", text: outcome.note });
+      if (outcome.suggestions.length === 0) {
+        if (!outcome.note) {
+          host.createDiv({
+            cls: "wl-suggest-empty",
+            text: "Nothing to suggest yet — rate a few things you liked.",
+          });
+        }
+        return;
+      }
+      const list = host.createDiv({ cls: "wl-suggest-mini-list" });
+      for (const suggestion of outcome.suggestions.slice(0, 6)) {
+        renderSuggestionMini(list, suggestion, deps);
+      }
+    })
+    .catch((err) => {
+      host.empty();
+      host.createDiv({
+        cls: "wl-suggest-empty",
+        text: `Could not reach the server for suggestions — ${err instanceof Error ? err.message : String(err)}`,
+      });
+    });
+}
+
+/** One suggestion, in the dashboard's row rhythm rather than the wizard's. */
+function renderSuggestionMini(parent: HTMLElement, suggestion: SuggestionLite, deps: TabDeps): void {
+  const { result } = suggestion;
+  const row = parent.createDiv({ cls: "wl-recent-row wl-suggest-mini" });
+
+  const poster = row.createDiv({ cls: "wl-thumb" });
+  if (result.posterUrl) {
+    const img = poster.createEl("img", { cls: "wl-thumb-img" });
+    img.setAttribute("alt", "");
+    img.setAttribute("loading", "lazy");
+    img.src = result.posterUrl;
+  } else {
+    renderPosterPlaceholder(poster, result.title);
+  }
+
+  const body = row.createDiv({ cls: "wl-recent-body" });
+  body.createDiv({
+    cls: "wl-recent-name",
+    text: result.year ? `${result.title} (${result.year})` : result.title,
+  });
+  // Always rendered, so every row in this list is the same height as every row
+  // in the list beside it.
+  body.createDiv({ cls: "wl-recent-meta", text: suggestion.reasons[0] ?? "" });
+
+  const actions = row.createDiv({ cls: "wl-suggest-mini-actions" });
+  if (deps.onAddSuggestion) {
+    const add = actions.createEl("button", {
+      cls: "wl-mini-btn",
+      text: "Add",
+      attr: { type: "button", title: `Add ${result.title} to your library` },
+    });
+    add.addEventListener("click", (event: MouseEvent) => {
+      event.stopPropagation();
+      add.disabled = true;
+      void deps.onAddSuggestion?.(result).then((title) => {
+        if (title) {
+          new Notice(`Added «${result.title}».`);
+          row.remove();
+        } else {
+          add.disabled = false;
+        }
+      });
+    });
+  }
+  if (deps.onDismissSuggestion) {
+    const no = actions.createEl("button", {
+      cls: "wl-icon-btn",
+      attr: { type: "button", "aria-label": "Not interested", title: "Not interested" },
+    });
+    setIcon(no, "x");
+    no.addEventListener("click", (event: MouseEvent) => {
+      event.stopPropagation();
+      deps.onDismissSuggestion?.(result.tmdbId);
+      row.remove();
+    });
+  }
+}
+
 function renderRecentRow(parent: HTMLElement, title: TitleV4, deps: TabDeps, meta: string): void {
   const row = parent.createDiv({ cls: "wl-recent-row" });
   // One thumbnail size across every dashboard panel: a 32px poster in
@@ -849,6 +951,24 @@ export function mountDashboardTab(host: HTMLElement, deps: TabDeps): TabControll
         more.addEventListener("click", () => deps.onGoToTab?.("upcoming"));
       }
     });
+
+    // Suggestions sit next to "Continue watching" on purpose: the two answer
+    // the same question ten seconds apart — what now, and what next.
+    if (deps.onSuggest) {
+      section(el, "Suggested for you", (s) => {
+        s.addClass("wl-panel", "is-half");
+        const head = sectionHeader(s, "Suggested for you");
+        if (deps.onOpenSuggestWizard) {
+          const wizard = head.createEl("button", {
+            cls: "wl-mini-btn",
+            text: "Refine…",
+            attr: { type: "button", title: "Pick a mood, or something to be like" },
+          });
+          wizard.addEventListener("click", () => deps.onOpenSuggestWizard?.(false));
+        }
+        renderSuggestions(s, deps);
+      });
+    }
 
     section(el, "Recently watched", (s) => {
       s.addClass("wl-panel", "is-half");

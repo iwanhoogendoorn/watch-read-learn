@@ -65,12 +65,13 @@ import { mountGroupsExtension } from "./domains/groups/panel";
 import { CsvExportModal, CsvImportModal } from "./domains/csv/modals";
 import { buildTitleCard } from "./ui/components/card";
 import { createPosterLoader } from "./ui/components/posters";
-import { AddTitleModal } from "./ui/modals/add";
+import { AddTitleModal, buildTitleForHit, findExisting } from "./ui/modals/add";
 import { confirmAction } from "./ui/modals/confirm";
 import { DetailModal } from "./ui/modals/detail";
 import { MatchTitleModal } from "./ui/modals/match";
 import { openRecovery } from "./ui/modals/recovery";
 import { runRequestFlow } from "./ui/modals/request";
+import { openSuggestWizard } from "./ui/modals/suggest";
 import { SurpriseModal } from "./ui/modals/surprise";
 import { parseWatchlogRoute } from "./uri";
 import { hasTrailer, openTrailer } from "./ui/modals/trailer";
@@ -1005,6 +1006,35 @@ export default class WatchLogPlugin extends Plugin {
     deps.onAddSeason = (title, seasonNumber) => {
       void this.addSeasonToTracker(title, seasonNumber);
     };
+    // Suggestions are only offered where they can actually be answered.
+    if (this.integrations?.overseerr.configured()) {
+      deps.onSuggest = async () => {
+        const outcome = await this.integrations.suggestFromLibrary({ limit: 8 });
+        return {
+          suggestions: outcome.suggestions,
+          note:
+            outcome.note ||
+            (outcome.seeds && outcome.seeds.length > 0
+              ? `Based on ${outcome.seeds.slice(0, 2).join(" and ")}${outcome.seeds.length > 2 ? " and more" : ""}.`
+              : ""),
+        };
+      };
+      deps.onOpenSuggestWizard = (fromLibrary) => this.openSuggestWizard(fromLibrary);
+      deps.onAddSuggestion = async (result) => {
+        const existing = findExisting(this.store, result);
+        if (existing) return existing;
+        const details = await this.integrations.overseerr.details(result.tmdbId, result.mediaType);
+        const title = buildTitleForHit(
+          details,
+          this.store.settings,
+          this.store.allTitles().map((t) => t.id),
+        );
+        const added = this.store.addTitle(title);
+        void this.integrations.refreshTitlePlex(added);
+        return added;
+      };
+      deps.onDismissSuggestion = (tmdbId) => this.integrations.dismissSuggestion(tmdbId);
+    }
     deps.onOpenInPlex = (title) => {
       void this.integrations.openInPlex(title);
     };
@@ -1441,6 +1471,22 @@ export default class WatchLogPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "suggest-wizard",
+      name: "Suggest something to watch (wizard)",
+      callback: () => {
+        this.openSuggestWizard(false);
+      },
+    });
+
+    this.addCommand({
+      id: "suggest-from-library",
+      name: "Suggest something based on what I have watched",
+      callback: () => {
+        this.openSuggestWizard(true);
+      },
+    });
+
+    this.addCommand({
       id: "fill-page-counts",
       name: "Fill in page counts from linked book files",
       callback: () => {
@@ -1507,6 +1553,50 @@ export default class WatchLogPlugin extends Plugin {
    * for saying out loud which files could not answer, rather than leaving a
    * silent dash.
    */
+  /**
+   * Open the suggestion wizard, or its library-driven shortcut.
+   *
+   * Everything network-shaped is handed in as a closure, so the modal never
+   * learns what Overseerr is — the same seam every other modal here uses.
+   */
+  openSuggestWizard(fromLibrary: boolean): void {
+    openSuggestWizard(
+      this.app,
+      {
+        genreOptions: (mediaType) => this.integrations.genreOptions(mediaType),
+        search: (query) => this.integrations.overseerr.search(query),
+        suggest: (query) => this.integrations.suggestGuided(query),
+        fromLibrary: () => this.integrations.suggestFromLibrary(),
+        onAdd: async (result) => {
+          const existing = findExisting(this.store, result);
+          if (existing) return existing;
+          const details = await this.integrations.overseerr.details(
+            result.tmdbId,
+            result.mediaType,
+          );
+          const title = buildTitleForHit(
+            details,
+            this.store.settings,
+            this.store.allTitles().map((t) => t.id),
+          );
+          const added = this.store.addTitle(title);
+          void this.integrations.refreshTitlePlex(added);
+          return added;
+        },
+        onRequest: (result) => {
+          const existing = findExisting(this.store, result);
+          if (!existing) {
+            new Notice("Add it to your library first, then request it.");
+            return;
+          }
+          void runRequestFlow(this.app, existing, this.integrations.requests);
+        },
+        onDismiss: (tmdbId) => this.integrations.dismissSuggestion(tmdbId),
+      },
+      fromLibrary,
+    );
+  }
+
   private async fillPageCounts(): Promise<void> {
     const readingStore = this.reading;
     if (!readingStore) return;

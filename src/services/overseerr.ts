@@ -24,6 +24,8 @@ import { RATE_LIMIT_MS } from "../constants";
 import {
   MediaRequestStatus,
   MediaStatus,
+  type DiscoverOptions,
+  type GenreOption,
   type MediaType,
   type OverseerrClient,
   type OverseerrConnectionInfo,
@@ -210,6 +212,22 @@ function normalizeDetails(raw: Raw, tmdbId: number, mediaType: MediaType): Overs
 // Client
 // ---------------------------------------------------------------------------
 
+/** Shared shape for the paged lists TMDB returns under several names. */
+function makeDiscoverList(
+  get: (path: string, params?: Record<string, string | number>) => Promise<{ json: unknown }>,
+) {
+  return async function discoverList(
+    path: string,
+    mediaType: MediaType,
+  ): Promise<OverseerrSearchResult[]> {
+    const { json } = await get(path);
+    if (!isRaw(json)) return [];
+    return rawArray(json["results"])
+      .map((r) => normalizeSearchResult(r, mediaType))
+      .filter((r): r is OverseerrSearchResult => r !== undefined);
+  };
+}
+
 export function createOverseerrClient(
   getConfig: () => OverseerrConfig,
   deps: OverseerrDeps = {},
@@ -271,6 +289,8 @@ export function createOverseerrClient(
    * `OverseerrMediaInfo` has no room for it), so this reads the raw payload.
    * Best-effort by design — a 409 is still a 409 if this comes back empty.
    */
+  const discoverList = makeDiscoverList(get);
+
   async function findExistingRequest(
     tmdbId: number,
     mediaType: MediaType,
@@ -353,6 +373,59 @@ export function createOverseerrClient(
         .filter((r) => str(r, "mediaType", "media_type") !== "person")
         .map((r) => normalizeSearchResult(r, "movie"))
         .filter((r): r is OverseerrSearchResult => r !== undefined);
+    },
+
+    /**
+     * TMDB's own "people who liked this" list for one title.
+     *
+     * `recommendations`, not `similar`, and the difference is not subtle:
+     * asked about Ace Ventura, recommendations answer Naked Gun and Turner &
+     * Hooch, while similar answers whatever shares a genre tuple — including
+     * films nobody has heard of. Similar is kept as filler for the long tail,
+     * where recommendations run out.
+     */
+    async recommendations(tmdbId: number, mediaType: MediaType): Promise<OverseerrSearchResult[]> {
+      return discoverList(`/${mediaType}/${tmdbId}/recommendations`, mediaType);
+    },
+
+    async similar(tmdbId: number, mediaType: MediaType): Promise<OverseerrSearchResult[]> {
+      return discoverList(`/${mediaType}/${tmdbId}/similar`, mediaType);
+    },
+
+    /**
+     * Browse by genre and era, for a wizard that starts from a mood rather
+     * than from a title.
+     *
+     * `voteCountGte` is the honesty filter: sorting by rating with no vote
+     * floor returns films with a single 10/10 vote, which is how a "best
+     * comedies" list ends up full of things that do not exist.
+     */
+    async discover(options: DiscoverOptions): Promise<OverseerrSearchResult[]> {
+      const mediaType = options.mediaType ?? "movie";
+      const params: Record<string, string | number> = {
+        page: options.page ?? 1,
+        sortBy: options.sortBy ?? "popularity.desc",
+      };
+      if (options.genres && options.genres.length > 0) params["genre"] = options.genres.join(",");
+      if (options.voteCountGte !== undefined) params["voteCountGte"] = options.voteCountGte;
+      if (options.voteAverageGte !== undefined) params["voteAverageGte"] = options.voteAverageGte;
+      if (options.releasedAfter) params["primaryReleaseDateGte"] = options.releasedAfter;
+      if (options.releasedBefore) params["primaryReleaseDateLte"] = options.releasedBefore;
+      if (options.withRuntimeLte !== undefined) params["withRuntimeLte"] = options.withRuntimeLte;
+      const path = mediaType === "tv" ? "/discover/tv" : "/discover/movies";
+      const { json } = await get(path, params);
+      if (!isRaw(json)) return [];
+      return rawArray(json["results"])
+        .map((r) => normalizeSearchResult(r, mediaType))
+        .filter((r): r is OverseerrSearchResult => r !== undefined);
+    },
+
+    /** The genre vocabulary, live — never a hardcoded list that drifts. */
+    async genres(mediaType: MediaType): Promise<GenreOption[]> {
+      const { json } = await get(`/genres/${mediaType === "tv" ? "tv" : "movie"}`);
+      return rawArray(json)
+        .map((raw) => ({ id: num(raw, "id"), name: str(raw, "name") }))
+        .filter((genre) => genre.id > 0 && genre.name !== "");
     },
 
     async details(tmdbId: number, mediaType: MediaType): Promise<OverseerrDetails> {

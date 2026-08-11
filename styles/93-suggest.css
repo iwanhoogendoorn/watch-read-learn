@@ -1,0 +1,198 @@
+/**
+ * Suggestions — the wizard modal and the dashboard panel.
+ *
+ * Two surfaces, one vocabulary. The wizard is a full-width list with room for
+ * an overview; the dashboard panel reuses the recent-row rhythm from
+ * `50-dashboard.css` so a suggestion sits at the same height as the "Recently
+ * watched" row beside it. Nothing here declares a class that partial owns.
+ */
+
+/* --- the wizard ---------------------------------------------------------- */
+
+.wl-suggest-modal {
+  width: min(760px, 92vw);
+}
+
+.wl-suggest-head {
+  margin-bottom: var(--wl-space-3);
+}
+
+.wl-suggest-steps {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-suggest-types,
+.wl-suggest-genres {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wl-space-2);
+  margin-bottom: var(--wl-space-4);
+}
+
+/* A toggle that reads as pressed, not as a link that has been clicked. */
+.wl-chip-toggle {
+  padding: var(--wl-space-1) var(--wl-space-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-pill);
+  background: var(--background-secondary);
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: var(--font-ui-smaller);
+  cursor: pointer;
+}
+
+.wl-chip-toggle:hover {
+  border-color: var(--text-accent);
+}
+
+.wl-chip-toggle.is-active {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.wl-suggest-search {
+  width: 100%;
+  margin-bottom: var(--wl-space-2);
+}
+
+.wl-suggest-hits {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: var(--wl-space-3);
+}
+
+.wl-suggest-hit {
+  display: flex;
+  gap: var(--wl-space-3);
+  padding: var(--wl-space-2) var(--wl-space-3);
+  border: none;
+  border-radius: var(--wl-radius-s);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  text-align: left;
+  cursor: pointer;
+}
+
+.wl-suggest-hit:hover {
+  background: var(--background-modifier-hover);
+}
+
+.wl-suggest-hit-year {
+  color: var(--text-faint);
+}
+
+.wl-suggest-seed {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-3);
+  margin-bottom: var(--wl-space-3);
+  padding: var(--wl-space-2) var(--wl-space-3);
+  border-radius: var(--wl-radius-s);
+  background: var(--background-secondary);
+}
+
+.wl-suggest-note {
+  margin-bottom: var(--wl-space-3);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-suggest-empty {
+  padding: var(--wl-space-4) 0;
+  color: var(--text-muted);
+}
+
+.wl-suggest-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+  max-height: 52vh;
+  overflow-y: auto;
+}
+
+.wl-suggest-row {
+  display: flex;
+  gap: var(--wl-space-3);
+  padding: var(--wl-space-2);
+  border-radius: var(--wl-radius-s);
+}
+
+.wl-suggest-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.wl-suggest-row.is-added {
+  opacity: 0.55;
+}
+
+.wl-suggest-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.wl-suggest-titlerow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--wl-space-2);
+}
+
+.wl-suggest-name {
+  font-weight: var(--font-semibold);
+}
+
+.wl-suggest-year,
+.wl-suggest-score {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+/* Held even when empty, so every row's overview starts on the same line. */
+.wl-suggest-reason {
+  min-height: 1.3em;
+  color: var(--text-accent);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-suggest-overview {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-suggest-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--wl-space-2);
+}
+
+/* --- the dashboard panel ------------------------------------------------- */
+
+.wl-suggest-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+}
+
+.wl-suggest-mini-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wl-suggest-mini-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--wl-space-2);
+}
