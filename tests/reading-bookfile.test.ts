@@ -222,3 +222,31 @@ describe("pdfProgressActions", () => {
     expect(done).toEqual([{ id: "dune", read: 320 }]);
   });
 });
+
+describe("what may be imported from disk", () => {
+  it("accepts the formats a vault plausibly holds a book in", () => {
+    // The file picker's `accept` list is built from this, so a format missing
+    // here is a format the user cannot choose.
+    for (const ext of ["pdf", "epub", "mobi", "azw3", "cbz", "cbr", "djvu"]) {
+      expect(isBookFilePath(`Somewhere/A Book.${ext}`), ext).toBe(true);
+    }
+  });
+
+  it("refuses what is not a book, whatever it is called", () => {
+    expect(isBookFilePath("Notes/A Book.md")).toBe(false);
+    expect(isBookFilePath("Covers/A Book.jpg")).toBe(false);
+    expect(isBookFilePath("A Book")).toBe(false);
+  });
+
+  it("lands an import in the reading folder, and in the root without one", () => {
+    expect(importDestination("WRL/Reading", "Dune.epub")).toBe("WRL/Reading/Dune.epub");
+    expect(importDestination("", "Dune.epub")).toBe("Dune.epub");
+  });
+
+  it("never overwrites a book already sitting there", () => {
+    const taken = new Set(["WRL/Reading/Dune.epub", "WRL/Reading/Dune-2.epub"]);
+    expect(collisionFreePath("WRL/Reading/Dune.epub", (p) => taken.has(p))).toBe(
+      "WRL/Reading/Dune-3.epub",
+    );
+  });
+});

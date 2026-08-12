@@ -30,6 +30,7 @@ import type {
 import { READING_STATUSES } from "../../../types";
 import type { BookSuggestionHit } from "../../../types";
 import type { BookSuggestion } from "../suggest";
+import { readPdfPageCount } from "../pdfpages";
 import { renderDateInput } from "../../../ui/components/dates";
 import { renderPosterPlaceholder } from "../../../ui/components/posters";
 import { createStars } from "../../../ui/components/stars";
@@ -38,7 +39,12 @@ import { confirmAction } from "../../../ui/modals/confirm";
 import { columnDisplay, selectOptions, writeColumnValue } from "../columns";
 import { coverIsbn, loadCover, type CoverHandle } from "../covers";
 import { fetchCoverBytes } from "../coverfetch";
-import { BookFileSuggestModal, importBookFile, openBookFile } from "../bookfile";
+import {
+  BOOK_FILE_EXTENSIONS,
+  BookFileSuggestModal,
+  importBookFile,
+  openBookFile,
+} from "../bookfile";
 import {
   amazonUrl,
   availableCategories,
@@ -54,6 +60,7 @@ import {
   isBook,
   isFutureRelease,
   primaryCounter,
+  totalPatchFor,
   progressLabel,
   progressPatch,
   readingProgress,
@@ -519,6 +526,15 @@ export class ReadingDetailModal extends Modal {
    * file is linked, Browse over what the vault already holds, Import to copy
    * an epub/pdf in from outside and link it in one motion.
    */
+  /**
+   * Where an imported book lands: the reading folder when one is configured,
+   * the vault root otherwise. Read live rather than captured, because the user
+   * may have changed it since the modal opened.
+   */
+  private readingFolder(): string {
+    return (this.options.store.reading.settings.defaultFolder ?? "").trim();
+  }
+
   private renderFileField(grid: HTMLElement, entry: ReadingEntry): void {
     const field = grid.createDiv({ cls: "wl-field wl-reading-file-field" });
     field.createDiv({ cls: "wl-field-label", text: "File in vault" });
@@ -533,7 +549,21 @@ export class ReadingDetailModal extends Modal {
       this.patch({ filePath: input.value.trim() }, "reading-file"),
     );
 
-    const link = (path: string): void => this.patch({ filePath: path }, "reading-file");
+    /**
+     * Link a file — and, when it is a PDF the book has no length for, take the
+     * page count out of it there and then. The Reading tab does this on mount
+     * anyway, but "I just attached the book and it still says no pages" is a
+     * bad half-second to leave lying around.
+     */
+    const link = (path: string): void => {
+      this.patch({ filePath: path }, "reading-file");
+      if (primaryCounter(entry).total > 0 || !path.toLowerCase().endsWith(".pdf")) return;
+      void readPdfPageCount(this.app.vault.adapter, path).then((pages) => {
+        if (pages === null) return;
+        this.patch(totalPatchFor(entry, pages), "reading-pages-from-file");
+        new Notice(`${pages} pages, read from the file.`);
+      });
+    };
 
     if ((entry.filePath ?? "").trim() !== "") {
       const open = row.createEl("button", {
@@ -546,31 +576,47 @@ export class ReadingDetailModal extends Modal {
       );
     }
 
+    // Two ways to fill this in, and which one a person wants depends on where
+    // the book already is. With nothing linked they are spelled out — an
+    // unlabelled pair of icons is not an offer anyone can accept. Once a file
+    // *is* linked the row is mostly the open button, so they shrink back to
+    // icons rather than crowding it.
+    const linked = (entry.filePath ?? "").trim() !== "";
+
     const browse = row.createEl("button", {
-      cls: "wl-btn wl-icon-btn",
+      cls: linked ? "wl-btn wl-icon-btn" : "wl-btn",
       attr: {
         type: "button",
-        "aria-label": "Pick a file from the vault",
-        title: "Pick a file from the vault",
+        "aria-label": "Pick a file already in the vault",
+        title: "Pick a file already in the vault",
       },
     });
-    setIcon(browse, "folder-search");
+    if (linked) setIcon(browse, "folder-search");
+    else browse.setText("Choose from vault");
     browse.addEventListener("click", () =>
       new BookFileSuggestModal(this.app, entry.title, link).open(),
     );
 
     const importButton = row.createEl("button", {
-      cls: "wl-btn wl-icon-btn",
+      cls: linked ? "wl-btn wl-icon-btn" : "wl-btn mod-cta",
       attr: {
         type: "button",
-        "aria-label": "Import a file into the vault",
-        title: "Import a file into the vault",
+        "aria-label": "Import a file from your computer",
+        title: "Copy an epub or PDF from your computer into the vault",
       },
     });
-    setIcon(importButton, "file-down");
+    if (linked) setIcon(importButton, "file-down");
+    else importButton.setText("Import from disk…");
     importButton.addEventListener("click", () =>
-      importBookFile(this.app, this.options.store.reading.settings.defaultFolder ?? "", link),
+      importBookFile(this.app, this.readingFolder(), link),
     );
+
+    if (!linked) {
+      field.createDiv({
+        cls: "wl-reading-hint",
+        text: `Importing copies the file into ${this.readingFolder() || "your vault"} and links it here — the original is left where it is. ${BOOK_FILE_EXTENSIONS.map((e) => `.${e}`).join(", ")}`,
+      });
+    }
 
     // The bookmark the page-watcher keeps while the PDF is open.
     if ((entry.filePage ?? 0) > 1) {
