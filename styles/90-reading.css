@@ -324,12 +324,28 @@
   display: flex;
   flex-direction: column;
   gap: var(--wl-space-2);
+  /* Already here, and load-bearing: it lets the column shrink inside the
+     header row. It was never the problem — an unconstrained chip inside it
+     was, which is what `.wl-reading-author` now handles. */
   min-width: 0;
 }
 
 .wl-reading-author {
   color: var(--text-muted);
   font-size: var(--font-ui-small);
+  /*
+   * A book with ten authors is normal, and its name is one unbroken string.
+   * As a chip that string sets the element's intrinsic width, which pushed the
+   * whole header past the edge of the modal and over the cover. It gets one
+   * line and an ellipsis; the full list is in the Author field below, and in
+   * the tooltip.
+   */
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 
 .wl-reading-detail-stars {
@@ -461,13 +477,40 @@
 
 .wl-reading-file-row {
   display: flex;
+  /* Three controls in a half-width column do not fit on one line once two of
+     them are words rather than icons. Wrapping is the honest answer: the row
+     grows a line instead of running off the side. */
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--wl-space-2);
 }
 
+/* Keeps a usable field: below this it collapses to a sliver and the buttons
+   take the whole row, which is what "Choose from vault" beside a 30px box was. */
 .wl-reading-file-row .wl-input {
-  flex: 1 1 auto;
+  flex: 1 1 12rem;
+  min-width: 8rem;
+}
+
+.wl-reading-file-row .wl-btn {
+  flex: 0 0 auto;
+}
+
+/* The two labelled buttons, on one line below the path. They share the width
+   and truncate rather than wrapping — a four-row file field in a half-width
+   column is what "fix this layout" was about. */
+.wl-reading-file-actions {
+  display: flex;
+  gap: var(--wl-space-2);
+  margin-top: var(--wl-space-2);
+}
+
+.wl-reading-file-actions .wl-btn {
+  flex: 1 1 0;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Inline in the title cell: quiet until hovered, like every row affordance. */

@@ -583,7 +583,12 @@ export class ReadingDetailModal extends Modal {
     // icons rather than crowding it.
     const linked = (entry.filePath ?? "").trim() !== "";
 
-    const browse = row.createEl("button", {
+    // With labels rather than icons the two buttons need a line of their own,
+    // and they need to be *on it together* — left to wrap, each took a line
+    // and the field became four rows tall in a half-width column.
+    const actions = linked ? row : field.createDiv({ cls: "wl-reading-file-actions" });
+
+    const browse = actions.createEl("button", {
       cls: linked ? "wl-btn wl-icon-btn" : "wl-btn",
       attr: {
         type: "button",
@@ -597,7 +602,7 @@ export class ReadingDetailModal extends Modal {
       new BookFileSuggestModal(this.app, entry.title, link).open(),
     );
 
-    const importButton = row.createEl("button", {
+    const importButton = actions.createEl("button", {
       cls: linked ? "wl-btn wl-icon-btn" : "wl-btn mod-cta",
       attr: {
         type: "button",
