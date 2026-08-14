@@ -257,8 +257,23 @@ export class DetailModal extends Modal {
     return this.store.getTitle(this.titleId);
   }
 
+  /**
+   * Write, then repaint.
+   *
+   * The repaint used to be left to the `watchlog-data-changed` listener, on the
+   * theory that a write emits an event and the event redraws. That holds only
+   * while the modal's document and the store's are the same object — not in a
+   * popout window, not in a harness — and when it does not hold the modal
+   * writes correctly and shows the old value forever. Rating and review looked
+   * "not connected" for three releases because of it: the data moved every
+   * time, the screen never did.
+   *
+   * `requestRefresh` still defers while a text field has focus, so this cannot
+   * interrupt typing.
+   */
   private patch(patch: Parameters<WatchLogStoreApi["updateTitle"]>[1], reason: string): void {
     this.store.updateTitle(this.titleId, patch, reason);
+    this.requestRefresh();
   }
 
   /** Debounced write for free-text fields; keystrokes never hit the store. */
@@ -296,8 +311,13 @@ export class DetailModal extends Modal {
 
   /** A refresh asked for while an input has focus waits until focus leaves. */
   private requestRefresh(): void {
-    const active = this.contentEl.ownerDocument.activeElement;
-    if (active instanceof HTMLElement && this.contentEl.contains(active) && isEditable(active)) {
+    const active = this.contentEl.ownerDocument?.activeElement as
+      | { tagName?: string; isContentEditable?: boolean }
+      | null
+      | undefined;
+    if (active && isEditable(active)) {
+      // Something is being typed into: repaint when the field is left, or the
+      // caret jumps and half a sentence goes with it.
       this.pendingRefresh = true;
       return;
     }
@@ -1030,6 +1050,10 @@ export class DetailModal extends Modal {
       const option = select.createEl("option", { value, text: value === "" ? "—" : value });
       if (value === current) option.selected = true;
     }
+    // Set explicitly as well as via `selected`: the two are equivalent in a
+    // browser, and being explicit means the control states what it shows
+    // rather than leaving it to be derived.
+    select.value = current;
     select.addEventListener("change", () => onChange(select.value));
   }
 
@@ -1226,12 +1250,15 @@ export class DetailModal extends Modal {
   }
 }
 
-function isEditable(el: HTMLElement): boolean {
-  return (
-    el instanceof HTMLInputElement ||
-    el instanceof HTMLTextAreaElement ||
-    el.isContentEditable
-  );
+/**
+ * Duck-typed on purpose. `instanceof HTMLInputElement` compares against *this*
+ * window's constructor, and Obsidian's popout windows each have their own — so
+ * a field in a popped-out modal is not an instance of the main window's input
+ * class, and the guard silently reads "not editable". Tag names cross realms.
+ */
+function isEditable(el: { tagName?: string; isContentEditable?: boolean }): boolean {
+  const tag = (el.tagName ?? "").toLowerCase();
+  return tag === "input" || tag === "textarea" || el.isContentEditable === true;
 }
 
 /** `sci-fi, rewatch , ,cosy` → `["sci-fi","rewatch","cosy"]`. */
