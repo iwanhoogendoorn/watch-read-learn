@@ -14,6 +14,8 @@ import {
   isSingleSitting,
   ratingForReview,
   reviewForRating,
+  syncedRatingPatch,
+  syncedReviewPatch,
 } from "../src/data/review";
 import { createTitle } from "../src/data/schema";
 import type { TitleV4 } from "../src/types";
@@ -145,5 +147,72 @@ describe("an IMDb id out of a pasted link", () => {
   it("round-trips into a link the plugin will render", () => {
     const id = imdbIdFromUrl("https://www.imdb.com/title/tt33043892/");
     expect(imdbUrl({ imdbId: id })).toBe("https://www.imdb.com/title/tt33043892/");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Keeping the two in step — the rules that shipped wrong twice
+// ---------------------------------------------------------------------------
+
+describe("changing the rating", () => {
+  it("always moves the review with it", () => {
+    expect(syncedRatingPatch({ rating: 1, review: "Nah" }, 5, REVIEWS)).toEqual({
+      rating: 5,
+      review: "Marvelous",
+    });
+  });
+
+  it("moves a review the user set by hand", () => {
+    // The bug: an earlier rule only synced "while they agree", so a review
+    // chosen by hand froze the link and the pair looked disconnected.
+    expect(syncedRatingPatch({ rating: 0, review: "Marvelous" }, 1, REVIEWS)).toEqual({
+      rating: 1,
+      review: "Nah",
+    });
+  });
+
+  it("writes no review when it is already right", () => {
+    expect(syncedRatingPatch({ rating: 4, review: "Marvelous" }, 5, REVIEWS)).toEqual({ rating: 5 });
+  });
+
+  it("clears the review when the rating is cleared", () => {
+    expect(syncedRatingPatch({ rating: 4, review: "Marvelous" }, 0, REVIEWS)).toEqual({
+      rating: 0,
+      review: "",
+    });
+  });
+});
+
+describe("changing the review", () => {
+  it("moves the rating with it", () => {
+    const patch = syncedReviewPatch({ rating: 0, review: "" }, "Marvelous", REVIEWS);
+    expect(patch.review).toBe("Marvelous");
+    expect(patch.rating).toBeCloseTo(4.2, 1);
+  });
+
+  it("leaves a rating that already means this review alone", () => {
+    // 4.5 already reads as Marvelous; rewriting it as the band's midpoint
+    // would lose half a star for no change in meaning.
+    expect(syncedReviewPatch({ rating: 4.5, review: "Marvelous" }, "Marvelous", REVIEWS)).toEqual({
+      review: "Marvelous",
+    });
+  });
+
+  it("overwrites a rating that means something else", () => {
+    const patch = syncedReviewPatch({ rating: 5, review: "Marvelous" }, "Nah", REVIEWS);
+    expect(patch.rating).toBeCloseTo(0.8, 1);
+  });
+
+  it("clearing the review clears the rating", () => {
+    expect(syncedReviewPatch({ rating: 4, review: "Marvelous" }, "", REVIEWS)).toEqual({
+      review: "",
+      rating: 0,
+    });
+  });
+
+  it("survives a vault with no review labels configured", () => {
+    expect(syncedReviewPatch({ rating: 3, review: "" }, "Anything", [])).toEqual({
+      review: "Anything",
+    });
   });
 });

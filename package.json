@@ -1,6 +1,6 @@
 {
   "name": "watch-read-learn",
-  "version": "1.18.0",
+  "version": "1.19.0",
   "description": "Watch, Read and Learn — films, TV, books, manga and games tracked in Obsidian, with Plex availability and Overseerr requests",
   "private": true,
   "type": "module",

@@ -29,7 +29,7 @@ import {
   seasonEpisodes,
   seasonRange,
 } from "../../data/episodes";
-import { SAVE_DEBOUNCE_MS, STATUS_COMPLETED } from "../../constants";
+import { SAVE_DEBOUNCE_MS, STATUS_COMPLETED, STATUS_PLAN_TO_WATCH } from "../../constants";
 import {
   DATA_CHANGED_EVENT,
   type OverseerrSearchResult,
@@ -51,7 +51,13 @@ import {
 import { plexStateOf, yearOf } from "../components/facets";
 import { renderDateInput } from "../components/dates";
 import { openWatchedWizard } from "./watched";
-import { imdbUrl, isSingleSitting, ratingForReview, reviewForRating } from "../../data/review";
+import {
+  imdbUrl,
+  isSingleSitting,
+  reviewForRating,
+  syncedRatingPatch,
+  syncedReviewPatch,
+} from "../../data/review";
 // The one classifier for "is this a film?" — `tmdbMediaType` first, the type
 // name second, the episode shape last. Re-deriving it here is how a movie ends
 // up with a season grid and a show with a "Mark as watched" button.
@@ -466,6 +472,11 @@ export class DetailModal extends Modal {
     // The same wizard the status change opens, reachable on purpose — for the
     // film you watched last week and are only now filling in.
     this.textButton(actions, "check-check", "Watched…", () => this.askWatched(title));
+    // …and the way back out. Offered only when there is something to undo, so
+    // it does not sit there on a film nobody has started.
+    if (title.status === STATUS_COMPLETED || title.watchedEpisodes.length > 0) {
+      this.textButton(actions, "rotate-ccw", "Not watched", () => this.askUnwatch(title));
+    }
   }
 
   private textButton(
@@ -1038,35 +1049,57 @@ export class DetailModal extends Modal {
    * rating alone in there must leave the rating alone here.
    */
   /**
-   * Rating and review, kept in step.
-   *
-   * They are two ways of saying the same thing, so changing one should move
-   * the other — but only while they still agree. The moment someone sets a
-   * review that is not the one their rating implies, they have said something
-   * deliberate, and from then on the two are left alone. Empty counts as
-   * agreeing: there is nothing there to contradict.
+   * Rating and review are one judgement with two spellings, so changing either
+   * changes the other. No conditions: an earlier version only synced "while
+   * they still agree", which meant a review set by hand quietly froze the link
+   * and looked broken.
    */
   private ratingPatch(title: TitleV4, rating: number): TitlePatch {
-    const patch: TitlePatch = { rating };
-    const reviews = this.store.settings.reviews;
-    const inStep =
-      title.review.trim() === "" || title.review === reviewForRating(title.rating, reviews);
-    if (!inStep) return patch;
-    const proposed = reviewForRating(rating, reviews);
-    if (proposed !== "" && proposed !== title.review) patch.review = proposed;
-    return patch;
+    return syncedRatingPatch(title, rating, this.store.settings.reviews);
   }
 
   private reviewPatch(title: TitleV4, review: string): TitlePatch {
-    const patch: TitlePatch = { review };
-    const reviews = this.store.settings.reviews;
-    // Only fills a rating nobody has given: a star count is finer-grained than
-    // a label, so overwriting 4.5 with the middle of a band would lose detail
-    // the user actually entered.
-    if (title.rating > 0 || review.trim() === "") return patch;
-    const implied = ratingForReview(review, reviews);
-    if (implied > 0) patch.rating = implied;
-    return patch;
+    return syncedReviewPatch(title, review, this.store.settings.reviews);
+  }
+
+  /**
+   * Put a title back to unwatched.
+   *
+   * "Watched" is four separate pieces of state — a status, two dates and a
+   * list of ticked episodes — so undoing it by hand means four edits, one of
+   * which (the episode list) has no obvious control at all. This does the lot.
+   *
+   * What it deliberately does not touch is the rating and the review. Those
+   * are what you thought of it, and they remain true whether or not you are
+   * about to watch it again; the confirm offers to clear them for the case
+   * where the entry was a mistake.
+   */
+  private askUnwatch(title: TitleV4): void {
+    const single = isSingleSitting(title);
+    void confirmAction(this.app, {
+      title: `Mark «${title.title}» as not watched?`,
+      message: single
+        ? "Clears the watched date and puts it back on the watchlist."
+        : `Clears every ticked episode (${title.watchedEpisodes.length}), the dates, and puts it back on the watchlist.`,
+      details: ["Your rating and review are kept unless you say otherwise."],
+      confirmText: "Not watched",
+      cancelText: "Keep it",
+      checkbox: { label: "Also clear my rating and review", default: false },
+    }).then((result) => {
+      if (!result.confirmed) return;
+      const patch: TitlePatch = {
+        status: STATUS_PLAN_TO_WATCH,
+        watchedEpisodes: [],
+        dateFinished: null,
+        ...(single ? { dateStarted: null } : {}),
+      };
+      // The two go together, because they are one judgement (`ratingPatch`).
+      if (result.checked) {
+        patch.rating = 0;
+        patch.review = "";
+      }
+      this.patch(patch, "detail-unwatched");
+    });
   }
 
   private askWatched(title: TitleV4): void {

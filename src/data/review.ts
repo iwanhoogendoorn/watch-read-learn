@@ -84,3 +84,47 @@ export function imdbUrl(title: { imdbId?: string }): string {
   const id = (title.imdbId ?? "").trim();
   return /^tt\d+$/.test(id) ? `https://www.imdb.com/title/${id}/` : "";
 }
+
+// ---------------------------------------------------------------------------
+// The two patches that keep them in step
+// ---------------------------------------------------------------------------
+
+/** The subset of a title these two rules read. */
+interface Judged {
+  rating: number;
+  review: string;
+}
+
+/**
+ * Changing the rating changes the review to match. Unconditionally: an earlier
+ * version only synced "while they still agree", which meant a review set by
+ * hand silently froze the link and looked broken.
+ */
+export function syncedRatingPatch(
+  title: Judged,
+  rating: number,
+  reviews: readonly { name: string }[],
+): { rating: number; review?: string } {
+  const review = reviewForRating(rating, reviews);
+  return review === title.review ? { rating } : { rating, review };
+}
+
+/**
+ * Changing the review changes the rating to match, with one exception: a
+ * rating that already *means* this review is left alone. Rewriting 4.5 stars
+ * as "the middle of the Marvelous band" would throw away precision the user
+ * entered, and would not change what the review says.
+ */
+export function syncedReviewPatch(
+  title: Judged,
+  review: string,
+  reviews: readonly { name: string }[],
+): { review: string; rating?: number } {
+  if (review.trim() === "") {
+    // Clearing the review clears the judgement.
+    return title.rating > 0 ? { review, rating: 0 } : { review };
+  }
+  if (reviewForRating(title.rating, reviews) === review) return { review };
+  const rating = ratingForReview(review, reviews);
+  return rating > 0 ? { review, rating } : { review };
+}
