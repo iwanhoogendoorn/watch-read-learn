@@ -131,6 +131,21 @@ describe("the wizard's rating and review", () => {
     expect(w.result()?.date).toBe(todayString(new Date(2026, 7, 14)));
   });
 
+  it("opens with no opinion in it, whatever the title already says", () => {
+    // A pre-selected review reads as "this is what you think", and one click
+    // on Mark watched would make it true.
+    const w = open({ rating: 4, review: "Awesome" });
+    expect(w.select().value).toBe("");
+    expect(w.stars().getAttribute("aria-valuetext")).toBe("unrated");
+  });
+
+  it("leaving it blank writes nothing, so a stored opinion survives", () => {
+    const w = open({ rating: 4, review: "Awesome" });
+    w.save();
+    // The caller applies rating/review only when they were filled in.
+    expect(w.result()).toMatchObject({ rating: 0, review: "" });
+  });
+
   it("changes nothing when cancelled", () => {
     const w = open({ rating: 0, review: "" });
     press(w.stars(), 5);

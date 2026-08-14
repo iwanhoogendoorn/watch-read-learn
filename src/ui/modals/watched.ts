@@ -63,8 +63,17 @@ export class WatchedModal extends Modal {
     super(app);
     const { title } = options;
     this.date = title.dateFinished ?? todayString(options.now ?? new Date());
-    this.rating = title.rating;
-    this.review = title.review;
+    /*
+     * Blank, not pre-filled from the title.
+     *
+     * This is a form about the viewing that just happened, so it should not
+     * arrive with an opinion already in it — a pre-selected review reads as
+     * "this is what you think", and one click on Mark watched makes it true.
+     * Leaving either blank writes nothing (see the caller), so what is already
+     * stored survives untouched.
+     */
+    this.rating = 0;
+    this.review = "";
   }
 
   /** What the two controls currently say, as the shared rule wants it. */
