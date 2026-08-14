@@ -11,9 +11,9 @@
  *   - **The date defaults to today**, because that is the answer nine times in
  *     ten, and it is a real field rather than an assumption: change it and the
  *     backdated entry is just as easy.
- *   - **The rating proposes the review** (`data/review.ts`), which is what binds
- *     two fields that always meant the same thing. It only ever fills a review
- *     that is still empty — a proposal, never an overwrite.
+ *   - **The rating and the review are one judgement** (`data/review.ts`), so
+ *     each control moves the other. Two fields that always meant the same
+ *     thing should never be able to sit there contradicting each other.
  *
  * Cancelling changes nothing at all, including the status: a wizard you can
  * back out of is only trustworthy if backing out is complete.
@@ -22,7 +22,7 @@ import { Modal, type App } from "obsidian";
 import type { NamedColor, RatingTier, TitleV4 } from "../../types";
 import { createStars } from "../components/stars";
 import { renderDateInput } from "../components/dates";
-import { reviewForRating } from "../../data/review";
+import { syncedRatingPatch, syncedReviewPatch } from "../../data/review";
 import type { DateFormat } from "../../types";
 
 export interface WatchedResult {
@@ -55,8 +55,6 @@ export class WatchedModal extends Modal {
   private date: string | null;
   private rating: number;
   private review: string;
-  /** True once the user picks a review by hand; stops proposals overwriting it. */
-  private reviewChosen = false;
 
   constructor(
     app: App,
@@ -67,7 +65,11 @@ export class WatchedModal extends Modal {
     this.date = title.dateFinished ?? todayString(options.now ?? new Date());
     this.rating = title.rating;
     this.review = title.review;
-    this.reviewChosen = title.review.trim() !== "";
+  }
+
+  /** What the two controls currently say, as the shared rule wants it. */
+  private judgement(): { rating: number; review: string } {
+    return { rating: this.rating, review: this.review };
   }
 
   override onOpen(): void {
@@ -98,6 +100,12 @@ export class WatchedModal extends Modal {
     });
 
     // --- how good ---------------------------------------------------------
+    //
+    // One judgement, two controls, and each drives the other — the same rule
+    // the detail modal follows (`data/review.ts`). An earlier version here
+    // only pushed one way and stopped entirely once the review had been
+    // touched, which is exactly how you end up looking at one star next to
+    // the word "Good".
     const ratingField = contentEl.createDiv({ cls: "wl-field" });
     ratingField.createDiv({ cls: "wl-field-label", text: "Rating" });
     const reviewSelectHost = contentEl.createDiv({ cls: "wl-field" });
@@ -107,28 +115,30 @@ export class WatchedModal extends Modal {
       select.createEl("option", { text: name === "" ? "— none —" : name, value: name });
     }
     select.value = this.review;
-    select.addEventListener("change", () => {
-      this.review = select.value;
-      // Once touched it is the user's answer, and a later rating must not
-      // quietly replace it.
-      this.reviewChosen = true;
-    });
 
-    createStars(ratingField, {
+    const stars = createStars(ratingField, {
       value: this.rating,
       tiers: this.options.ratingTiers,
       allowHalf: this.options.halfStars,
       showTierLabel: true,
       ariaLabel: `Rating for ${this.options.title.title}`,
       onChange: (value) => {
-        this.rating = value;
-        if (this.reviewChosen) return;
-        const proposed = reviewForRating(value, this.options.reviews);
-        if (proposed !== "") {
-          this.review = proposed;
-          select.value = proposed;
+        const patch = syncedRatingPatch(this.judgement(), value, this.options.reviews);
+        this.rating = patch.rating;
+        if (patch.review !== undefined) {
+          this.review = patch.review;
+          select.value = patch.review;
         }
       },
+    });
+
+    select.addEventListener("change", () => {
+      const patch = syncedReviewPatch(this.judgement(), select.value, this.options.reviews);
+      this.review = patch.review;
+      if (patch.rating !== undefined) {
+        this.rating = patch.rating;
+        stars.set(patch.rating);
+      }
     });
 
     // --- out --------------------------------------------------------------
