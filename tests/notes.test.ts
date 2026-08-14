@@ -266,8 +266,13 @@ describe("composeNote", () => {
   });
 
   it("round-trips a note it wrote itself", () => {
-    const first = composeNote(undefined, title());
-    const second = composeNote(first, title());
+    // One title, used for both passes. `createTitle` stamps dateAdded and
+    // dateModified with the wall clock, so calling it twice produced two
+    // titles a millisecond apart — which is not a round-trip, and which
+    // passed locally and failed on a slower CI runner.
+    const entry = title();
+    const first = composeNote(undefined, entry);
+    const second = composeNote(first, entry);
     expect(second).toBe(first);
     expect(readNotesSection(second)).toBe("Best season since the original run.");
   });
