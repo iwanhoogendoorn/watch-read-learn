@@ -51,7 +51,7 @@ import {
 import { plexStateOf, yearOf } from "../components/facets";
 import { renderDateInput } from "../components/dates";
 import { openWatchedWizard } from "./watched";
-import { imdbUrl, isSingleSitting } from "../../data/review";
+import { imdbUrl, isSingleSitting, ratingForReview, reviewForRating } from "../../data/review";
 // The one classifier for "is this a film?" — `tmdbMediaType` first, the type
 // name second, the episode shape last. Re-deriving it here is how a movie ends
 // up with a season grid and a show with a "Mark as watched" button.
@@ -405,7 +405,7 @@ export class DetailModal extends Modal {
       allowHalf: this.store.settings.halfStarRatings,
       showTierLabel: true,
       ariaLabel: `${title.title} rating`,
-      onChange: (value) => this.patch({ rating: value }, "detail-rating"),
+      onChange: (value) => this.patch(this.ratingPatch(title, value), "detail-rating"),
     });
 
     if (title.communityRating > 0) {
@@ -963,7 +963,7 @@ export class DetailModal extends Modal {
       "Review",
       ["", ...this.store.settings.reviews.map((r) => r.name)],
       title.review,
-      (value) => this.patch({ review: value }, "detail-review"),
+      (value) => this.patch(this.reviewPatch(title, value), "detail-review"),
     );
     this.selectField(grid, "Type", this.store.settings.types.map((t) => t.name), title.type, (value) =>
       this.patch({ type: value }, "detail-type"),
@@ -996,9 +996,6 @@ export class DetailModal extends Modal {
       tags: readTagList(this.fieldValue("tags")),
     }));
 
-    this.textField(grid, "Link", title.externalLink, "link", () => ({
-      externalLink: this.fieldValue("link").trim(),
-    }));
   }
 
   private fieldValues = new Map<string, string>();
@@ -1040,6 +1037,38 @@ export class DetailModal extends Modal {
    * Only the fields the wizard actually returns are written: leaving the
    * rating alone in there must leave the rating alone here.
    */
+  /**
+   * Rating and review, kept in step.
+   *
+   * They are two ways of saying the same thing, so changing one should move
+   * the other — but only while they still agree. The moment someone sets a
+   * review that is not the one their rating implies, they have said something
+   * deliberate, and from then on the two are left alone. Empty counts as
+   * agreeing: there is nothing there to contradict.
+   */
+  private ratingPatch(title: TitleV4, rating: number): TitlePatch {
+    const patch: TitlePatch = { rating };
+    const reviews = this.store.settings.reviews;
+    const inStep =
+      title.review.trim() === "" || title.review === reviewForRating(title.rating, reviews);
+    if (!inStep) return patch;
+    const proposed = reviewForRating(rating, reviews);
+    if (proposed !== "" && proposed !== title.review) patch.review = proposed;
+    return patch;
+  }
+
+  private reviewPatch(title: TitleV4, review: string): TitlePatch {
+    const patch: TitlePatch = { review };
+    const reviews = this.store.settings.reviews;
+    // Only fills a rating nobody has given: a star count is finer-grained than
+    // a label, so overwriting 4.5 with the middle of a band would lose detail
+    // the user actually entered.
+    if (title.rating > 0 || review.trim() === "") return patch;
+    const implied = ratingForReview(review, reviews);
+    if (implied > 0) patch.rating = implied;
+    return patch;
+  }
+
   private askWatched(title: TitleV4): void {
     openWatchedWizard(this.app, {
       title,

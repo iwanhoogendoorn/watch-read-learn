@@ -54,6 +54,7 @@ import {
 import { seasonsFromDetails } from "./ui/modals/add";
 import { recomputeOffsets, totalFromSeasons, withAddedSeason } from "./data/episodes";
 import { readExtra, writeExtra } from "./types";
+import { imdbIdFromUrl } from "./data/review";
 import type {
   DateString,
   GenreOption,
@@ -612,6 +613,17 @@ export class Integrations {
    * that have a provider id but no IMDb one.
    */
   private async backfillImdbIds(): Promise<void> {
+    // Free first: the id may already be sitting in a link the user pasted by
+    // hand, which is the only source for a title no provider knows.
+    for (const title of this.store.allTitles()) {
+      if (title.imdbId) continue;
+      const harvested = imdbIdFromUrl(title.externalLink ?? "");
+      if (harvested === "") continue;
+      this.store.updateTitle(title.id, { imdbId: harvested }, "imdb-from-link", {
+        autoStatus: false,
+      });
+    }
+
     const due = this.store
       .allTitles()
       .filter((title) => title.tmdbId && !title.imdbId)

@@ -67,6 +67,18 @@ export function isSingleSitting(title: TitleV4): boolean {
   return title.type === TYPE_MOVIE || title.totalEpisodes <= 1;
 }
 
+/**
+ * An IMDb id out of a URL someone pasted by hand.
+ *
+ * Before there was a button, the way to keep an IMDb link was to paste it into
+ * the free-text Link field — so that field is where the ids already are, on
+ * exactly the titles a provider lookup cannot help with.
+ */
+export function imdbIdFromUrl(url: string): string {
+  const match = /imdb\.com\/title\/(tt\d+)/i.exec(url ?? "");
+  return match?.[1] ?? "";
+}
+
 /** The IMDb page for a title, or "" when nothing links it to one. */
 export function imdbUrl(title: { imdbId?: string }): string {
   const id = (title.imdbId ?? "").trim();

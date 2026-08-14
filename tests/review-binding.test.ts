@@ -8,7 +8,13 @@
  * applies it where the user has not already answered.
  */
 import { describe, expect, it } from "vitest";
-import { imdbUrl, isSingleSitting, ratingForReview, reviewForRating } from "../src/data/review";
+import {
+  imdbIdFromUrl,
+  imdbUrl,
+  isSingleSitting,
+  ratingForReview,
+  reviewForRating,
+} from "../src/data/review";
 import { createTitle } from "../src/data/schema";
 import type { TitleV4 } from "../src/types";
 
@@ -116,5 +122,28 @@ describe("the IMDb link", () => {
   it("refuses anything that is not an IMDb id", () => {
     expect(imdbUrl({ imdbId: "219971" })).toBe("");
     expect(imdbUrl({ imdbId: "https://example.com/evil" })).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Harvesting an id from a link someone pasted by hand
+// ---------------------------------------------------------------------------
+
+describe("an IMDb id out of a pasted link", () => {
+  it("reads the id out of a page URL", () => {
+    expect(imdbIdFromUrl("https://www.imdb.com/title/tt33764258")).toBe("tt33764258");
+    expect(imdbIdFromUrl("https://www.imdb.com/title/tt22084616/?ref_=nv_sr_1")).toBe("tt22084616");
+    expect(imdbIdFromUrl("http://imdb.com/title/tt0145487/")).toBe("tt0145487");
+  });
+
+  it("takes nothing from a link to somewhere else", () => {
+    expect(imdbIdFromUrl("https://www.themoviedb.org/movie/557")).toBe("");
+    expect(imdbIdFromUrl("https://example.com/imdb.com/title/tt1")).toBe("tt1");
+    expect(imdbIdFromUrl("")).toBe("");
+  });
+
+  it("round-trips into a link the plugin will render", () => {
+    const id = imdbIdFromUrl("https://www.imdb.com/title/tt33043892/");
+    expect(imdbUrl({ imdbId: id })).toBe("https://www.imdb.com/title/tt33043892/");
   });
 });
