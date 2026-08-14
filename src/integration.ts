@@ -602,6 +602,38 @@ export class Integrations {
   // Suggestions
   // -------------------------------------------------------------------------
 
+  /**
+   * Fill in IMDb ids the sweep could not.
+   *
+   * Two kinds of title never get one from the airing pass: anime, which routes
+   * to AniList (a catalogue with no IMDb ids in it), and anything the sweep
+   * skips as settled — a released film or an ended show is not refreshed, and
+   * that is most of a real library. One request each, once ever, for titles
+   * that have a provider id but no IMDb one.
+   */
+  private async backfillImdbIds(): Promise<void> {
+    const due = this.store
+      .allTitles()
+      .filter((title) => title.tmdbId && !title.imdbId)
+      .slice(0, 25); // a bounded first pass; the next sweep takes the next 25
+    if (due.length === 0) return;
+
+    for (const title of due) {
+      try {
+        const details = await this.overseerr.details(
+          title.tmdbId as number,
+          mediaTypeForTitle(title),
+        );
+        if (!details.imdbId) continue;
+        this.store.updateTitle(title.id, { imdbId: details.imdbId }, "imdb-backfilled", {
+          autoStatus: false,
+        });
+      } catch (err) {
+        console.warn("[wrl] could not look up an IMDb id for", title.title, err);
+      }
+    }
+  }
+
   /** TMDB ids already tracked — never suggested back at the user. */
   private ownedIds(): Set<number> {
     const owned = new Set<number>();
@@ -857,6 +889,7 @@ export class Integrations {
       }
 
       const { updated, failed } = this.applyAiringResults(results);
+      await this.backfillImdbIds();
 
       if (results.length === 0) return "Nothing was due for an airing refresh.";
       const tail = failed > 0 ? `, ${failed} failed` : "";
@@ -912,6 +945,16 @@ export class Integrations {
         reason: "airing-refreshed",
         silent: true,
       });
+      // Backfill for titles added before the field existed. `updateTitle`
+      // rather than `updateCaches` because an external id is real data, not a
+      // cache — but it is upstream's answer, so it must not stamp the title as
+      // user-modified either, hence `autoStatus: false` and nothing else in
+      // the patch.
+      if (result.imdbId) {
+        this.store.updateTitle(result.titleId, { imdbId: result.imdbId }, "imdb-backfilled", {
+          autoStatus: false,
+        });
+      }
       this.applySeasonSync(result.titleId, result.seasonSync);
       updated += 1;
       if (!result.change) continue;

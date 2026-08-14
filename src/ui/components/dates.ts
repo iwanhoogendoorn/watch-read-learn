@@ -15,6 +15,7 @@
  * Storage never changes: `YYYY-MM-DD`, calendar-only, no timezone. Only the
  * presentation moves.
  */
+import { setIcon } from "obsidian";
 import type { DateFormat } from "../../types";
 
 /** `2026-07-31` → `31-07-2026` / `07/31/2026` / `2026-07-31`. `""` when unparseable. */
@@ -128,7 +129,11 @@ export interface DateInputOptions {
 export function renderDateInput(host: HTMLElement, options: DateInputOptions): HTMLInputElement {
   const { format } = options;
   const placeholder = dateFormatPlaceholder(format);
-  const input = host.createEl("input", {
+  // The typed field and the calendar button live in one row: typing stays the
+  // fast path, the picker is there for the days you cannot remember whether
+  // the 12th was a Tuesday.
+  const wrap = host.createDiv({ cls: "wl-date-field" });
+  const input = wrap.createEl("input", {
     cls: `wl-input wl-date-input${options.cls ? ` ${options.cls}` : ""}`,
     attr: {
       type: "text",
@@ -166,6 +171,45 @@ export function renderDateInput(host: HTMLElement, options: DateInputOptions): H
     event.preventDefault();
     commit();
   });
+
+  /*
+   * The picker is a real `<input type="date">`, kept out of sight.
+   *
+   * It cannot be *the* field — it renders in the host locale and ignores
+   * `settings.dateFormat` entirely, which is the bug this component exists to
+   * fix (QA1 B5). But it is also the only calendar the platform will give us,
+   * and `showPicker()` opens it without it ever being seen. What comes back is
+   * written through the same commit path, so the value on screen stays in the
+   * user's own format.
+   */
+  const native = wrap.createEl("input", {
+    cls: "wl-date-native",
+    attr: { type: "date", tabindex: "-1", "aria-hidden": "true" },
+  });
+  const stored = splitStoredDate(options.value);
+  if (stored) native.value = `${stored.y}-${stored.m}-${stored.d}`;
+
+  const openPicker = wrap.createEl("button", {
+    cls: "wl-btn wl-icon-btn wl-date-open",
+    attr: { type: "button", "aria-label": `Pick a date for ${options.label}`, title: "Pick a date" },
+  });
+  setIcon(openPicker, "calendar");
+  openPicker.addEventListener("click", () => {
+    // `showPicker` is Chromium-only and Obsidian is Chromium; the click
+    // fallback is what a stray non-Electron host gets.
+    const withPicker = native as HTMLInputElement & { showPicker?: () => void };
+    if (typeof withPicker.showPicker === "function") withPicker.showPicker();
+    else native.click();
+  });
+
+  native.addEventListener("change", () => {
+    const value = native.value.trim();
+    if (value === "") return;
+    clearError();
+    input.value = formatDate(value, format);
+    options.onCommit(value);
+  });
+
   return input;
 }
 

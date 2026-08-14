@@ -225,3 +225,35 @@
     animation-iteration-count: 1 !important;
   }
 }
+
+/* --- date field: a typed value plus the platform's calendar ---------------- */
+
+.wl-date-field {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+}
+
+.wl-date-field .wl-date-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/*
+ * The native picker is present but never seen: it renders in the host locale,
+ * which is exactly what this component exists to avoid. It is here only so
+ * `showPicker()` has something to open.
+ */
+.wl-date-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.wl-date-open {
+  flex: 0 0 auto;
+}

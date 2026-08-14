@@ -29,11 +29,12 @@ import {
   seasonEpisodes,
   seasonRange,
 } from "../../data/episodes";
-import { SAVE_DEBOUNCE_MS } from "../../constants";
+import { SAVE_DEBOUNCE_MS, STATUS_COMPLETED } from "../../constants";
 import {
   DATA_CHANGED_EVENT,
   type OverseerrSearchResult,
   type Season,
+  type TitlePatch,
   type TitleV4,
   type WatchLogStoreApi,
 } from "../../types";
@@ -49,6 +50,8 @@ import {
 } from "../components/pills";
 import { plexStateOf, yearOf } from "../components/facets";
 import { renderDateInput } from "../components/dates";
+import { openWatchedWizard } from "./watched";
+import { imdbUrl, isSingleSitting } from "../../data/review";
 // The one classifier for "is this a film?" — `tmdbMediaType` first, the type
 // name second, the episode shape last. Re-deriving it here is how a movie ends
 // up with a season grid and a show with a "Mark as watched" button.
@@ -447,11 +450,22 @@ export class DetailModal extends Modal {
         this.options.onOpenInPlex?.(title),
       );
     }
+    // IMDb, when the title is actually linked to one. A search URL built from
+    // the name would look the same and be wrong often enough to matter.
+    const imdb = imdbUrl(title);
+    if (imdb !== "") {
+      this.textButton(actions, "external-link", "IMDb", () => {
+        window.open(imdb, "_blank");
+      });
+    }
     if (this.options.onRefreshMetadata) {
       this.textButton(actions, "refresh-cw", "Refresh metadata", () =>
         this.options.onRefreshMetadata?.(title),
       );
     }
+    // The same wizard the status change opens, reachable on purpose — for the
+    // film you watched last week and are only now filling in.
+    this.textButton(actions, "check-check", "Watched…", () => this.askWatched(title));
   }
 
   private textButton(
@@ -923,8 +937,19 @@ export class DetailModal extends Modal {
     const section = host.createDiv({ cls: "wl-detail-section wl-detail-fields" });
     const grid = section.createDiv({ cls: "wl-field-grid" });
 
-    this.selectField(grid, "Status", this.store.settings.statuses.map((s) => s.name), title.status, (value) =>
-      this.patch({ status: value }, "detail-status"),
+    this.selectField(
+      grid,
+      "Status",
+      this.store.settings.statuses.map((s) => s.name),
+      title.status,
+      (value) => {
+        this.patch({ status: value }, "detail-status");
+        // Finishing something is the one status change that knows three other
+        // things — when, how good, what you thought — so it asks for them.
+        if (value === STATUS_COMPLETED && title.status !== STATUS_COMPLETED) {
+          this.askWatched(title);
+        }
+      },
     );
     this.selectField(
       grid,
@@ -944,12 +969,21 @@ export class DetailModal extends Modal {
       this.patch({ type: value }, "detail-type"),
     );
 
-    this.dateField(grid, "Started", title.dateStarted, (value) =>
-      this.patch({ dateStarted: value }, "detail-started"),
-    );
-    this.dateField(grid, "Finished", title.dateFinished, (value) =>
-      this.patch({ dateFinished: value }, "detail-finished"),
-    );
+    // A film is watched in an evening. Two date fields for one sitting is a
+    // question nobody has an interesting answer to, so films get one — and it
+    // writes both, keeping every "started/finished" reader working unchanged.
+    if (isSingleSitting(title)) {
+      this.dateField(grid, "Watched on", title.dateFinished ?? title.dateStarted, (value) =>
+        this.patch({ dateStarted: value, dateFinished: value }, "detail-watched-on"),
+      );
+    } else {
+      this.dateField(grid, "Started", title.dateStarted, (value) =>
+        this.patch({ dateStarted: value }, "detail-started"),
+      );
+      this.dateField(grid, "Finished", title.dateFinished, (value) =>
+        this.patch({ dateFinished: value }, "detail-finished"),
+      );
+    }
     this.dateField(grid, "Released", title.releaseDate, (value) =>
       this.patch({ releaseDate: value }, "detail-released"),
     );
@@ -1000,6 +1034,34 @@ export class DetailModal extends Modal {
    * shows, advertises and parses the configured format, and refuses to commit
    * text that is not a date instead of quietly writing a wrong one.
    */
+  /**
+   * Ask the three things finishing something tells you, then write them.
+   *
+   * Only the fields the wizard actually returns are written: leaving the
+   * rating alone in there must leave the rating alone here.
+   */
+  private askWatched(title: TitleV4): void {
+    openWatchedWizard(this.app, {
+      title,
+      dateFormat: this.store.settings.dateFormat,
+      ratingTiers: this.store.settings.ratingSystem,
+      halfStars: this.store.settings.halfStarRatings,
+      reviews: this.store.settings.reviews,
+      onConfirm: (result) => {
+        const patch: TitlePatch = { status: STATUS_COMPLETED };
+        if (result.date) {
+          patch.dateFinished = result.date;
+          // A film's two dates are one date; a series keeps whatever start it
+          // already had rather than being told it began the night it ended.
+          if (isSingleSitting(title) || !title.dateStarted) patch.dateStarted = result.date;
+        }
+        if (result.rating > 0) patch.rating = result.rating;
+        if (result.review !== "") patch.review = result.review;
+        this.patch(patch, "detail-watched");
+      },
+    });
+  }
+
   private dateField(
     host: HTMLElement,
     label: string,

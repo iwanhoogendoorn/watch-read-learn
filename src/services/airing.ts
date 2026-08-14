@@ -522,6 +522,15 @@ export interface AiringDeps {
 export interface AiringRefreshResult {
   titleId: string;
   airing?: AiringCache;
+  /**
+   * The provider's IMDb id, passed up when the title has none yet.
+   *
+   * The sweep already fetched the details this comes from, so backfilling here
+   * costs nothing — and the alternative is a per-title "Refresh metadata" for
+   * every title added before the field existed, which is not a thing anyone
+   * will do to get a link.
+   */
+  imdbId?: string;
   /** Set when the refresh failed; the previous cache must be left alone. */
   error?: string;
   /** Human sentence for the Activity log, when something actually changed. */
@@ -596,6 +605,9 @@ export function createAiringService(deps: AiringDeps) {
         titleId: title.id,
         airing,
         ...(change ? { change } : {}),
+        // Only when it is missing: the provider is the authority, but a value
+        // already stored is not worth a write on every sweep.
+        ...(details.imdbId && !title.imdbId ? { imdbId: details.imdbId } : {}),
         ...(isEmptySyncPlan(plan) ? {} : { seasonSync: plan }),
         ...(details.mediaInfo?.status !== undefined
           ? { mediaStatus: details.mediaInfo.status }
