@@ -44,8 +44,10 @@ export function ratingForReview(
   if (name === "" || reviews.length === 0) return 0;
   const index = reviews.findIndex((entry) => entry.name.trim().toLowerCase() === name);
   if (index < 0) return 0;
-  // The middle of that label's band, so round-tripping a rating through a
-  // review does not drift to an edge.
+  // Lists of equal length are the same scale twice, so a label names an exact
+  // star. Anything else has to land somewhere inside a band, and the middle is
+  // the only choice that round-trips back to the label it came from.
+  if (reviews.length === tiers) return index + 1;
   const band = tiers / reviews.length;
   return Math.round((index + 0.5) * band * 10) / 10;
 }

@@ -50,8 +50,16 @@ export const DEFAULT_PRIORITIES: NamedColor[] = [
   { name: "High", color: "#E24B4A" },
 ];
 
+/**
+ * Five, to line up one-for-one with the five rating tiers below — same order,
+ * same colours, so "4 stars" and "Awesome" are visibly the same statement.
+ * v3 shipped three, which made the mapping lossy in both directions: two star
+ * ratings shared a label and a label could not name a star.
+ */
 export const DEFAULT_REVIEWS: NamedColor[] = [
   { name: "Nah", color: "#E24B4A" },
+  { name: "Meh", color: "#E28C3C" },
+  { name: "Good", color: "#378ADD" },
   { name: "Awesome", color: "#1D9E75" },
   { name: "Marvelous", color: "#7F77DD" },
 ];

@@ -216,3 +216,48 @@ describe("changing the review", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Five labels against five stars: the same scale, spelled twice
+// ---------------------------------------------------------------------------
+
+describe("a review list the same length as the rating scale", () => {
+  const FIVE = [
+    { name: "Nah" },
+    { name: "Meh" },
+    { name: "Good" },
+    { name: "Awesome" },
+    { name: "Marvelous" },
+  ];
+
+  it("maps one star to one label", () => {
+    expect([1, 2, 3, 4, 5].map((r) => reviewForRating(r, FIVE))).toEqual([
+      "Nah",
+      "Meh",
+      "Good",
+      "Awesome",
+      "Marvelous",
+    ]);
+  });
+
+  it("maps a label back to a whole star, not to half of one", () => {
+    // With three labels a review lands mid-band (0.8, 2.5, 4.2). With five it
+    // is the same scale twice over, so it must land exactly.
+    expect(FIVE.map((r) => ratingForReview(r.name, FIVE))).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("round-trips in both directions", () => {
+    for (let stars = 1; stars <= 5; stars += 1) {
+      expect(ratingForReview(reviewForRating(stars, FIVE), FIVE), `${stars}★`).toBe(stars);
+    }
+  });
+
+  it("still keeps a half-star rating that already means the right label", () => {
+    // 3.5 rounds up into the Awesome band, so re-picking Awesome must not
+    // flatten it to a round 4 and lose the half star.
+    expect(reviewForRating(3.5, FIVE)).toBe("Awesome");
+    expect(syncedReviewPatch({ rating: 3.5, review: "Awesome" }, "Awesome", FIVE)).toEqual({
+      review: "Awesome",
+    });
+  });
+});
