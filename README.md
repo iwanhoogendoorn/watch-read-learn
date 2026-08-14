@@ -3,12 +3,26 @@
 An Obsidian plugin for the things you watch, read and play — films, TV, books,
 manga and games in one library, wired into a home media stack.
 
+- **Logging what you watched, in one go** — marking something finished asks
+  the three things you know at that moment: when (defaulted to today), how good,
+  and what you thought. A film gets one date rather than a start and an end,
+  because a film is watched in an evening. Every date field has a calendar
+  beside it, and there is a way back out: "Not watched" clears the status, the
+  dates and every ticked episode in one move.
+- **A rating and a review that are one judgement** — change either and the
+  other follows, because "4 stars" and "Awesome" were always the same sentence
+  twice. The two lists ship the same length so they line up one-for-one, and
+  they are configurable, so the mapping is proportional rather than hardcoded.
 - **Suggestions, both ways** — a "Suggested for you" panel built from what you
   already rated and finished, a **More like this** section inside any title or
   book, and a wizard for "I want a comedy, something like Ace Ventura". Nothing
   already in your library is ever suggested back, and "not interested" sticks.
 - **Plex availability** — every film and show says whether it is already on your
   server, matched by GUID rather than by title.
+- **IMDb, one click away** — when the title actually has an id. Never a search
+  URL built from the name, which looks identical and is wrong often enough to
+  matter; ids are backfilled from the provider, and from any IMDb link already
+  pasted into a title.
 - **Overseerr requests** — request something you do not have without leaving
   Obsidian, and watch the status come back (pending → approved → downloading →
   available). Nothing is ever requested without an explicit yes.
@@ -93,7 +107,7 @@ src/
   settings.ts    settings tab
   types.ts       FROZEN cross-module contract — read the header before editing
   constants.ts
-  data/          schema · migrate · backup · adopt · paths · store · episodes · notes
+  data/          schema · migrate · backup · adopt · paths · review · store · episodes · notes
   services/      http (requestUrl wrapper + ApiError taxonomy), providers,
                  airing, availability, suggest
   search/        query language, filters, sorting
