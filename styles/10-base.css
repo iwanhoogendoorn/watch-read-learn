@@ -36,6 +36,25 @@
   --wl-shadow-1: var(--shadow-s, 0 1px 2px var(--background-modifier-box-shadow));
   --wl-shadow-2: var(--shadow-l, 0 4px 12px var(--background-modifier-box-shadow));
 
+  /* --- the poster scrim: the one place theme-following is WRONG ------------
+     Every other colour in this stylesheet is an Obsidian variable, so it flips
+     with the theme. These two deliberately do not, and that is the point: a
+     card's caption sits over POSTER ARTWORK, not over the page. Artwork is
+     artwork in both themes, so the scrim over it is dark in both themes with
+     light text on it — the convention Netflix, Plex and every other media grid
+     uses. A theme-following scrim was built first and rejected on sight: in a
+     light theme it is a ~90% WHITE wash, and it fogs the art just as badly as
+     the opaque panel it replaced.
+
+     Channels rather than colours, so each use site picks its own alpha with
+     `rgb(var(--wl-scrim-rgb) / 0.6)`. These are the only two literal colour
+     values in the plugin. They are exempt from SPEC §6 for the same reason the
+     `black` stops in a mask are: they describe an overlay on an image, not a
+     surface of the app, and there is no theme variable that stays dark in both
+     themes to derive them from. Defined once, here — never inline. */
+  --wl-scrim-rgb: 10 10 14;
+  --wl-scrim-ink-rgb: 255 255 255;
+
   /* layering — keep every z-index in this list */
   --wl-z-sticky: 10;
   --wl-z-toolbar: 20;
@@ -107,6 +126,27 @@
 .wl-tab-icon {
   display: inline-flex;
   align-items: center;
+}
+
+/* Pushes the theme toggle to the far end of the bar. */
+.wl-tab-spacer {
+  flex: 1 1 auto;
+}
+
+/* The light/dark toggle.
+ *
+ * Colour only — it changes Obsidian's OWN theme (see `ui/theme.ts`), so it must
+ * not declare a single colour of its own beyond the accent it borrows on hover.
+ * Note what is deliberately absent: nothing here touches `--wl-scrim-rgb`, which
+ * is dark in both themes on purpose because it sits over poster artwork. */
+.wl-theme-toggle {
+  align-self: center;
+  margin-bottom: var(--wl-space-2);
+  color: var(--text-muted);
+}
+
+.wl-theme-toggle:hover {
+  color: var(--text-accent);
 }
 
 .wl-tab-icon .svg-icon {

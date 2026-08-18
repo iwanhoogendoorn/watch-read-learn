@@ -16,7 +16,7 @@
  * `pendingQuery` handoff, which is what makes every chip in the app functional
  * rather than decorative.
  */
-import { Menu, Modal, Notice, setIcon, type App } from "obsidian";
+import { Modal, Notice, setIcon, type App } from "obsidian";
 import {
   calcTimeRemaining,
   episodesRemaining,
@@ -24,23 +24,18 @@ import {
   getEffectiveTotal,
   getProgress,
   getWatchedCount,
-  isEpisodeSkipped,
   recomputeOffsets,
-  seasonEpisodes,
-  seasonRange,
 } from "../../data/episodes";
 import { SAVE_DEBOUNCE_MS, STATUS_COMPLETED, STATUS_PLAN_TO_WATCH } from "../../constants";
 import {
   DATA_CHANGED_EVENT,
   type OverseerrSearchResult,
-  type Season,
   type TitlePatch,
   type TitleV4,
   type WatchLogStoreApi,
 } from "../../types";
 import {
   colorFor,
-  episodeCode,
   renderAiringChip,
   renderPill,
   renderPlexBadge,
@@ -49,30 +44,39 @@ import {
   requestStatus,
 } from "../components/pills";
 import { plexStateOf, yearOf } from "../components/facets";
-import { renderDateInput } from "../components/dates";
-import { openWatchedWizard } from "./watched";
-import {
-  imdbUrl,
-  isSingleSitting,
-  reviewForRating,
-  syncedRatingPatch,
-  syncedReviewPatch,
-} from "../../data/review";
-// The one classifier for "is this a film?" — `tmdbMediaType` first, the type
-// name second, the episode shape last. Re-deriving it here is how a movie ends
-// up with a season grid and a show with a "Mark as watched" button.
-import { mediaTypeOf } from "../../services/requests";
+import { imdbUrl, isSingleSitting } from "../../data/review";
 import { needsTmdbBackfill } from "../../services/match";
-import {
-  isPosterFailed,
-  markPosterFailed,
-  posterUrlFor,
-  renderPosterPlaceholder,
-  resolvePosterUrl,
-} from "../components/posters";
-import { createStars } from "../components/stars";
-import { confirmAction } from "./confirm";
+import { renderPosterPlaceholder } from "../components/posters";
 import { SeasonEditorModal } from "./seasons";
+import { askDelete, askUnwatch, askWatched } from "../detail/actions";
+// The controls themselves live in `ui/detail/` because the workspace view uses
+// the same ones. One implementation each is not a tidiness preference here: two
+// copies of the rating/review binding is the bug that got reported four times.
+import {
+  iconTextButton,
+  renderDateField,
+  renderNotesField,
+  renderNumberField,
+  renderSelectField,
+  renderStatusField,
+  renderTextField,
+} from "../detail/fields";
+import {
+  renderCommunityRating,
+  renderRatingField,
+  renderReviewField,
+} from "../detail/judgement";
+import {
+  markEpisodesPatch,
+  plexEpisodeKeys,
+  progressAffordance,
+  renderSeasonBlock,
+  renderSingleToggle,
+  seasonsWithSkipToggled,
+} from "../detail/progress";
+import { renderDetailPoster } from "../detail/poster";
+import { renderStatTiles } from "../detail/stats";
+import { isEditable, readTagList, type DetailSurface } from "../detail/surface";
 import {
   renderTrailerEmbed,
   safeExternalUrl,
@@ -91,63 +95,12 @@ interface PendingCommit {
   read: () => Parameters<WatchLogStoreApi["updateTitle"]>[1];
 }
 
-/**
- * What the Progress section of the detail modal offers.
- *
- *   - `movie-toggle`  one "Mark as watched" button — **films only**;
- *   - `season-grid`   the per-episode grid, for any show that has seasons;
- *   - `needs-seasons` a show whose seasons are not filled in yet: a nudge to the
- *                     season editor, and deliberately *no* watched toggle.
- *
- * Exported and pure because this is the decision QA1 B2 got wrong: it was keyed
- * off `totalEpisodes <= 1`, which is also what an un-filled show looks like.
- */
-export type ProgressAffordance = "movie-toggle" | "season-grid" | "needs-seasons";
-
-export function progressAffordance(title: TitleV4): ProgressAffordance {
-  if (title.seasons.length > 0) return "season-grid";
-  return mediaTypeOf(title) === "movie" ? "movie-toggle" : "needs-seasons";
-}
-
-/**
- * The modal's poster — **eagerly loaded, never observed** (QA1 B3).
- *
- * A detail modal is by definition the thing you are looking at, so lazy loading
- * buys nothing here and costs everything: the modal used to fall back to the
- * letter placeholder whenever no `PosterLoader` was injected, which is exactly
- * what the Library's own `openDetail` does — a title whose card showed a poster
- * opened onto a placeholder.
- *
- * The same resolution rules as everywhere else (`posterUrlFor` for the manual
- * override, `resolvePosterUrl` for a bare TMDB path), the same negative cache,
- * and the same tinted-initial fallback when the image fails.
- */
-export function renderModalPoster(host: HTMLElement, title: TitleV4): HTMLElement {
-  const poster = host.createDiv({ cls: "wl-poster" });
-  poster.dataset.posterSeed = title.title;
-
-  const url = resolvePosterUrl(posterUrlFor(title));
-  if (url === "" || isPosterFailed(url)) {
-    renderPosterPlaceholder(poster, title.title);
-    return poster;
-  }
-
-  const img = poster.createEl("img", { cls: "wl-poster-img" });
-  img.setAttribute("decoding", "async");
-  img.setAttribute("alt", "");
-  img.addEventListener("load", () => {
-    img.addClass("is-loaded");
-    poster.addClass("has-poster");
-  });
-  img.addEventListener("error", () => {
-    markPosterFailed(url);
-    img.remove();
-    poster.removeClass("has-poster");
-    renderPosterPlaceholder(poster, title.title);
-  });
-  img.src = url;
-  return poster;
-}
+// Both of these moved to `ui/detail/` when the workspace view started using
+// them; re-exported here because this is the path callers and tests already
+// know, and moving a symbol is not a reason to break them.
+export { progressAffordance, type ProgressAffordance } from "../detail/progress";
+export { readTagList } from "../detail/surface";
+export { renderDetailPoster as renderModalPoster } from "../detail/poster";
 
 export interface DetailModalOptions {
   store: WatchLogStoreApi;
@@ -180,8 +133,8 @@ export interface MoreLikeThis {
   reasons: string[];
 }
 
-export class DetailModal extends Modal {
-  private store: WatchLogStoreApi;
+export class DetailModal extends Modal implements DetailSurface {
+  readonly store: WatchLogStoreApi;
   private titleId: string;
   private options: DetailModalOptions;
 
@@ -271,16 +224,13 @@ export class DetailModal extends Modal {
    * `requestRefresh` still defers while a text field has focus, so this cannot
    * interrupt typing.
    */
-  private patch(patch: Parameters<WatchLogStoreApi["updateTitle"]>[1], reason: string): void {
+  patch(patch: TitlePatch, reason: string): void {
     this.store.updateTitle(this.titleId, patch, reason);
     this.requestRefresh();
   }
 
   /** Debounced write for free-text fields; keystrokes never hit the store. */
-  private debouncedPatch(
-    key: string,
-    read: () => Parameters<WatchLogStoreApi["updateTitle"]>[1],
-  ): void {
+  debouncedPatch(key: string, read: () => TitlePatch): void {
     const existing = this.commitTimers.get(key);
     if (existing) clearTimeout(existing.timer);
     const timer = setTimeout(() => {
@@ -367,7 +317,7 @@ export class DetailModal extends Modal {
     const header = host.createDiv({ cls: "wl-detail-header" });
 
     const posterWrap = header.createDiv({ cls: "wl-detail-poster" });
-    renderModalPoster(posterWrap, title);
+    renderDetailPoster(posterWrap, title);
 
     const main = header.createDiv({ cls: "wl-detail-head-main" });
 
@@ -423,27 +373,9 @@ export class DetailModal extends Modal {
     renderSeasonChips(pills, title);
     renderAiringChip(pills, title);
 
-    const ratingRow = main.createDiv({ cls: "wl-detail-rating" });
-    ratingRow.createSpan({ cls: "wl-field-label", text: "My rating" });
-    createStars(ratingRow, {
-      value: title.rating,
-      tiers: this.store.settings.ratingSystem,
-      allowHalf: this.store.settings.halfStarRatings,
-      showTierLabel: true,
-      ariaLabel: `${title.title} rating`,
-      onChange: (value) => this.patch(this.ratingPatch(title, value), "detail-rating"),
-    });
+    renderRatingField(main, title, this);
 
-    if (title.communityRating > 0) {
-      const community = main.createDiv({ cls: "wl-detail-community" });
-      const icon = community.createSpan({ cls: "wl-detail-community-icon" });
-      setIcon(icon, "users");
-      const source = title.communitySource ? ` · ${title.communitySource}` : "";
-      const votes = title.communityVotes > 0 ? ` (${title.communityVotes} votes)` : "";
-      community.createSpan({
-        text: `${title.communityRating.toFixed(1)}${votes}${source}`,
-      });
-    }
+    renderCommunityRating(main, title);
 
     const actions = main.createDiv({ cls: "wl-detail-actions" });
     const favButton = actions.createEl("button", {
@@ -505,12 +437,7 @@ export class DetailModal extends Modal {
     label: string,
     onClick: () => void,
   ): HTMLElement {
-    const button = parent.createEl("button", { cls: "wl-btn", attr: { type: "button" } });
-    const iconEl = button.createSpan({ cls: "wl-btn-icon" });
-    setIcon(iconEl, icon);
-    button.createSpan({ cls: "wl-btn-label", text: label });
-    button.addEventListener("click", onClick);
-    return button;
+    return iconTextButton(parent, icon, label, onClick);
   }
 
   /**
@@ -797,21 +724,14 @@ export class DetailModal extends Modal {
       new SeasonEditorModal(this.app, this.store, title).open();
     });
 
-    const total = getEffectiveTotal(title);
-    const summary = section.createDiv({ cls: "wl-detail-progress-summary" });
-    summary.createSpan({
-      text:
-        total <= 1
-          ? title.watchedEpisodes.length > 0
-            ? "Watched"
-            : "Not watched yet"
-          : `${getWatchedCount(title)} of ${total} episodes · ${getProgress(title)}%`,
-    });
+    // The Dashboard's stat tiles, which this surface had never used: it said the
+    // same things in one line of muted grey and never showed *watched* at all.
+    renderStatTiles(section, title);
     const left = calcTimeRemaining(title);
     if (left > 0) {
-      summary.createSpan({
+      section.createDiv({
         cls: "wl-detail-note",
-        text: `${formatMinutes(left)} left · ${episodesRemaining(title)} episode(s)`,
+        text: `${episodesRemaining(title)} episode(s) to go`,
       });
     }
     renderProgressBar(section, title);
@@ -827,122 +747,34 @@ export class DetailModal extends Modal {
           ? "Single entry — use the button below to mark it watched."
           : "No seasons defined yet. “Edit seasons” gives this show a per-episode grid.",
       );
-      if (affordance === "movie-toggle") this.renderSingleToggle(section, title);
+      if (affordance === "movie-toggle") {
+        renderSingleToggle(section, title, this.store, () => this.requestRefresh());
+      }
       return;
     }
 
-    const plexEpisodes = new Set(
-      (title.plex?.episodes ?? []).map((entry) => `${entry.s}x${entry.e}`),
-    );
+    const plexEpisodes = plexEpisodeKeys(title);
 
     title.seasons.forEach((season, index) => {
-      this.renderSeasonBlock(section, title, season, index, plexEpisodes);
-    });
-  }
-
-  private renderSingleToggle(host: HTMLElement, title: TitleV4): void {
-    const watched = title.watchedEpisodes.includes(1);
-    const button = host.createEl("button", {
-      cls: `wl-ep ${watched ? "is-watched" : ""}`.trim(),
-      attr: { type: "button", "aria-pressed": String(watched) },
-      text: watched ? "Watched" : "Mark as watched",
-    });
-    button.addEventListener("click", () => {
-      this.store.markEpisodeWatched(title.id, 1, !watched);
-    });
-  }
-
-  private renderSeasonBlock(
-    host: HTMLElement,
-    title: TitleV4,
-    season: Season,
-    index: number,
-    plexEpisodes: Set<string>,
-  ): void {
-    const block = host.createDiv({ cls: "wl-season" });
-    const head = block.createDiv({ cls: "wl-season-head" });
-
-    const toggle = head.createEl("button", {
-      cls: "wl-icon-btn wl-season-collapse",
-      attr: { type: "button", "aria-label": `Collapse ${season.name}` },
-    });
-    const isCollapsed = this.collapsed.has(index);
-    setIcon(toggle, isCollapsed ? "chevron-right" : "chevron-down");
-    toggle.addEventListener("click", () => {
-      if (this.collapsed.has(index)) this.collapsed.delete(index);
-      else this.collapsed.add(index);
-      this.render();
-    });
-
-    head.createSpan({ cls: "wl-season-name", text: season.name });
-
-    const episodes = seasonEpisodes(title, index);
-    const watchedHere = episodes.filter((ep) => title.watchedEpisodes.includes(ep)).length;
-    head.createSpan({
-      cls: "wl-season-count",
-      text: episodes.length > 0 ? `${watchedHere}/${episodes.length}` : "—",
-    });
-
-    if (episodes.length > 0) {
-      const allWatched = watchedHere === episodes.length;
-      const bulk = head.createEl("button", {
-        cls: "wl-link-btn",
-        text: allWatched ? "Unwatch all" : "Watch all",
-        attr: { type: "button" },
-      });
-      bulk.addEventListener("click", () => {
-        this.store.markSeasonWatched(title.id, index, !allWatched);
-      });
-    }
-
-    if (isCollapsed) return;
-
-    const grid = block.createDiv({ cls: "wl-ep-grid" });
-    const seasonNumber = season.seasonNumber ?? index + 1;
-    const { first, last } = seasonRange(season);
-
-    for (let absolute = first; absolute <= Math.min(last, title.totalEpisodes); absolute += 1) {
-      const relative = absolute - season.offset;
-      const skipped = isEpisodeSkipped(title, absolute);
-      const watched = title.watchedEpisodes.includes(absolute);
-      const onPlex = plexEpisodes.has(`${seasonNumber}x${relative}`);
-
-      const cell = grid.createEl("button", {
-        cls: "wl-ep",
-        attr: {
-          type: "button",
-          "aria-pressed": String(watched),
-          "aria-label": `${episodeCode(seasonNumber, relative)}${skipped ? " (skipped)" : ""}`,
-          title: skipped
-            ? `${episodeCode(seasonNumber, relative)} — skipped. Right-click to unskip.`
-            : `${episodeCode(seasonNumber, relative)}${onPlex ? " — on Plex" : ""}. Right-click to skip.`,
+      renderSeasonBlock(section, {
+        title,
+        store: this.store,
+        season,
+        index,
+        collapsed: this.collapsed.has(index),
+        plexEpisodes,
+        onToggleCollapse: () => {
+          if (this.collapsed.has(index)) this.collapsed.delete(index);
+          else this.collapsed.add(index);
+          this.render();
         },
+        onToggleSkipped: (seasonIndex, relative) =>
+          this.toggleSkipped(title, seasonIndex, relative),
+        onWrote: () => this.requestRefresh(),
+        onMarkEpisodes: (episodes, watched) =>
+          this.patch(markEpisodesPatch(title, episodes, watched), "detail-season-aired"),
       });
-      cell.toggleClass("is-watched", watched);
-      cell.toggleClass("is-skipped", skipped);
-      cell.createSpan({ cls: "wl-ep-num", text: String(relative) });
-      if (onPlex) cell.createSpan({ cls: "wl-ep-plex" });
-
-      cell.addEventListener("click", () => {
-        if (skipped) {
-          new Notice("That episode is skipped — right-click it to unskip first.");
-          return;
-        }
-        this.store.markEpisodeWatched(title.id, absolute, !watched);
-      });
-
-      cell.addEventListener("contextmenu", (event: MouseEvent) => {
-        event.preventDefault();
-        const menu = new Menu();
-        menu.addItem((item) =>
-          item
-            .setTitle(skipped ? "Unskip this episode" : "Skip this episode")
-            .setIcon(skipped ? "rotate-ccw" : "skip-forward")
-            .onClick(() => this.toggleSkipped(title, index, relative)),
-        );
-        menu.showAtMouseEvent(event);
-      });
-    }
+    });
   }
 
   /**
@@ -951,13 +783,7 @@ export class DetailModal extends Modal {
    * episode from the watched list if it was ticked.
    */
   private toggleSkipped(title: TitleV4, seasonIndex: number, relative: number): void {
-    const seasons = title.seasons.map((season, index) => {
-      if (index !== seasonIndex) return { ...season, skippedEpisodes: [...season.skippedEpisodes] };
-      const set = new Set(season.skippedEpisodes);
-      if (set.has(relative)) set.delete(relative);
-      else set.add(relative);
-      return { ...season, skippedEpisodes: [...set].sort((a, b) => a - b) };
-    });
+    const seasons = seasonsWithSkipToggled(title, seasonIndex, relative);
     recomputeOffsets(seasons);
     this.patch({ seasons }, "detail-skip-toggled");
   }
@@ -968,37 +794,26 @@ export class DetailModal extends Modal {
     const section = host.createDiv({ cls: "wl-detail-section wl-detail-fields" });
     const grid = section.createDiv({ cls: "wl-field-grid" });
 
-    this.selectField(
-      grid,
-      "Status",
-      this.store.settings.statuses.map((s) => s.name),
-      title.status,
-      (value) => {
-        this.patch({ status: value }, "detail-status");
-        // Finishing something is the one status change that knows three other
-        // things — when, how good, what you thought — so it asks for them.
-        if (value === STATUS_COMPLETED && title.status !== STATUS_COMPLETED) {
-          this.askWatched(title);
-        }
-      },
-    );
-    this.selectField(
-      grid,
-      "Priority",
-      ["", ...this.store.settings.priorities.map((p) => p.name)],
-      title.priority,
-      (value) => this.patch({ priority: value }, "detail-priority"),
-    );
-    this.selectField(
-      grid,
-      "Review",
-      ["", ...this.store.settings.reviews.map((r) => r.name)],
-      title.review,
-      (value) => this.patch(this.reviewPatch(title, value), "detail-review"),
-    );
-    this.selectField(grid, "Type", this.store.settings.types.map((t) => t.name), title.type, (value) =>
-      this.patch({ type: value }, "detail-type"),
-    );
+    renderStatusField(grid, title, this, (value) => {
+      // Finishing something is the one status change that knows three other
+      // things — when, how good, what you thought — so it asks for them.
+      if (value === STATUS_COMPLETED && title.status !== STATUS_COMPLETED) {
+        this.askWatched(title);
+      }
+    });
+    renderSelectField(grid, {
+      label: "Priority",
+      values: ["", ...this.store.settings.priorities.map((p) => p.name)],
+      current: title.priority,
+      onChange: (value) => this.patch({ priority: value }, "detail-priority"),
+    });
+    renderReviewField(grid, title, this);
+    renderSelectField(grid, {
+      label: "Type",
+      values: this.store.settings.types.map((t) => t.name),
+      current: title.type,
+      onChange: (value) => this.patch({ type: value }, "detail-type"),
+    });
 
     // A film is watched in an evening. Two date fields for one sitting is a
     // question nobody has an interesting answer to, so films get one — and it
@@ -1019,14 +834,21 @@ export class DetailModal extends Modal {
       this.patch({ releaseDate: value }, "detail-released"),
     );
 
-    this.numberField(grid, "Minutes per episode", title.episodeDuration, (value) =>
-      this.patch({ episodeDuration: value }, "detail-duration"),
-    );
+    renderNumberField(grid, {
+      label: "Minutes per episode",
+      current: title.episodeDuration,
+      onChange: (value) => this.patch({ episodeDuration: value }, "detail-duration"),
+    });
 
-    this.textField(grid, "Tags", title.tags.join(", "), "tags", () => ({
-      tags: readTagList(this.fieldValue("tags")),
-    }));
-
+    this.fieldValues.set("tags", title.tags.join(", "));
+    renderTextField(grid, {
+      label: "Tags",
+      key: "tags",
+      current: title.tags.join(", "),
+      surface: this,
+      onInput: (value) => this.fieldValues.set("tags", value),
+      read: () => ({ tags: readTagList(this.fieldValue("tags")) }),
+    });
   }
 
   private fieldValues = new Map<string, string>();
@@ -1035,117 +857,13 @@ export class DetailModal extends Modal {
     return this.fieldValues.get(key) ?? "";
   }
 
-  private selectField(
-    host: HTMLElement,
-    label: string,
-    values: string[],
-    current: string,
-    onChange: (value: string) => void,
-  ): void {
-    const field = host.createDiv({ cls: "wl-field" });
-    field.createDiv({ cls: "wl-field-label", text: label });
-    const select = field.createEl("select", { cls: "wl-select" });
-    select.setAttribute("aria-label", label);
-    for (const value of values) {
-      const option = select.createEl("option", { value, text: value === "" ? "—" : value });
-      if (value === current) option.selected = true;
-    }
-    // Set explicitly as well as via `selected`: the two are equivalent in a
-    // browser, and being explicit means the control states what it shows
-    // rather than leaving it to be derived.
-    select.value = current;
-    select.addEventListener("change", () => onChange(select.value));
-  }
-
-  /**
-   * A date field in the user's own format (QA1 B5).
-   *
-   * `<input type="date">` renders whatever the host locale wants — `dd.mm.yyyy`
-   * here — and ignores `settings.dateFormat` completely, which is both wrong and
-   * visually foreign to the rest of the form. This is a plain text field that
-   * shows, advertises and parses the configured format, and refuses to commit
-   * text that is not a date instead of quietly writing a wrong one.
-   */
-  /**
-   * Ask the three things finishing something tells you, then write them.
-   *
-   * Only the fields the wizard actually returns are written: leaving the
-   * rating alone in there must leave the rating alone here.
-   */
-  /**
-   * Rating and review are one judgement with two spellings, so changing either
-   * changes the other. No conditions: an earlier version only synced "while
-   * they still agree", which meant a review set by hand quietly froze the link
-   * and looked broken.
-   */
-  private ratingPatch(title: TitleV4, rating: number): TitlePatch {
-    return syncedRatingPatch(title, rating, this.store.settings.reviews);
-  }
-
-  private reviewPatch(title: TitleV4, review: string): TitlePatch {
-    return syncedReviewPatch(title, review, this.store.settings.reviews);
-  }
-
-  /**
-   * Put a title back to unwatched.
-   *
-   * "Watched" is four separate pieces of state — a status, two dates and a
-   * list of ticked episodes — so undoing it by hand means four edits, one of
-   * which (the episode list) has no obvious control at all. This does the lot.
-   *
-   * What it deliberately does not touch is the rating and the review. Those
-   * are what you thought of it, and they remain true whether or not you are
-   * about to watch it again; the confirm offers to clear them for the case
-   * where the entry was a mistake.
-   */
+  /** Both of these are shared with the workspace view — see `detail/actions`. */
   private askUnwatch(title: TitleV4): void {
-    const single = isSingleSitting(title);
-    void confirmAction(this.app, {
-      title: `Mark «${title.title}» as not watched?`,
-      message: single
-        ? "Clears the watched date and puts it back on the watchlist."
-        : `Clears every ticked episode (${title.watchedEpisodes.length}), the dates, and puts it back on the watchlist.`,
-      details: ["Your rating and review are kept unless you say otherwise."],
-      confirmText: "Not watched",
-      cancelText: "Keep it",
-      checkbox: { label: "Also clear my rating and review", default: false },
-    }).then((result) => {
-      if (!result.confirmed) return;
-      const patch: TitlePatch = {
-        status: STATUS_PLAN_TO_WATCH,
-        watchedEpisodes: [],
-        dateFinished: null,
-        ...(single ? { dateStarted: null } : {}),
-      };
-      // The two go together, because they are one judgement (`ratingPatch`).
-      if (result.checked) {
-        patch.rating = 0;
-        patch.review = "";
-      }
-      this.patch(patch, "detail-unwatched");
-    });
+    askUnwatch(this.app, title, this);
   }
 
   private askWatched(title: TitleV4): void {
-    openWatchedWizard(this.app, {
-      title,
-      dateFormat: this.store.settings.dateFormat,
-      ratingTiers: this.store.settings.ratingSystem,
-      halfStars: this.store.settings.halfStarRatings,
-      reviews: this.store.settings.reviews,
-      onConfirm: (result) => {
-        const patch: TitlePatch = { status: STATUS_COMPLETED };
-        if (result.date) {
-          patch.dateFinished = result.date;
-          // A film's two dates are one date; a series keeps whatever start it
-          // already had rather than being told it began the night it ended.
-          if (isSingleSitting(title) || !title.dateStarted) patch.dateStarted = result.date;
-        }
-        if (result.rating > 0) patch.rating = result.rating;
-        if (result.review !== "") patch.review = result.review;
-        this.patch(patch, "detail-watched");
-      },
-    });
+    askWatched(this.app, title, this);
   }
 
   private dateField(
@@ -1154,67 +872,22 @@ export class DetailModal extends Modal {
     current: string | null,
     onChange: (value: string | null) => void,
   ): void {
-    const field = host.createDiv({ cls: "wl-field" });
-    field.createDiv({ cls: "wl-field-label", text: label });
-    renderDateInput(field, {
-      format: this.store.settings.dateFormat,
+    renderDateField(host, {
       label,
-      value: current,
-      messageHost: field,
-      onCommit: onChange,
-    });
-  }
-
-  private numberField(
-    host: HTMLElement,
-    label: string,
-    current: number,
-    onChange: (value: number) => void,
-  ): void {
-    const field = host.createDiv({ cls: "wl-field" });
-    field.createDiv({ cls: "wl-field-label", text: label });
-    const input = field.createEl("input", {
-      cls: "wl-input",
-      attr: { type: "number", min: "0", step: "1" },
-    });
-    input.setAttribute("aria-label", label);
-    input.value = String(current);
-    input.addEventListener("change", () => onChange(Math.max(0, Number(input.value) || 0)));
-  }
-
-  private textField(
-    host: HTMLElement,
-    label: string,
-    current: string,
-    key: string,
-    read: () => Parameters<WatchLogStoreApi["updateTitle"]>[1],
-  ): void {
-    const field = host.createDiv({ cls: "wl-field" });
-    field.createDiv({ cls: "wl-field-label", text: label });
-    const input = field.createEl("input", { cls: "wl-input", attr: { type: "text" } });
-    input.setAttribute("aria-label", label);
-    input.value = current;
-    this.fieldValues.set(key, current);
-    input.addEventListener("input", () => {
-      this.fieldValues.set(key, input.value);
-      this.debouncedPatch(key, read);
+      format: this.store.settings.dateFormat,
+      current,
+      onChange,
     });
   }
 
   // --- notes --------------------------------------------------------------
 
   private renderNotes(host: HTMLElement, title: TitleV4): void {
-    const section = host.createDiv({ cls: "wl-detail-section wl-detail-notes" });
-    section.createDiv({ cls: "wl-field-label", text: "Notes" });
-    const area = section.createEl("textarea", {
-      cls: "wl-textarea",
-      attr: { rows: "4", placeholder: "Anything worth remembering about this one…" },
-    });
-    area.setAttribute("aria-label", "Notes");
-    area.value = title.notes;
-    area.addEventListener("input", () => {
-      this.fieldValues.set("notes", area.value);
-      this.debouncedPatch("notes", () => ({ notes: this.fieldValue("notes") }));
+    renderNotesField(host, {
+      current: title.notes,
+      surface: this,
+      onInput: (value) => this.fieldValues.set("notes", value),
+      read: () => ({ notes: this.fieldValue("notes") }),
     });
   }
 
@@ -1231,42 +904,7 @@ export class DetailModal extends Modal {
     setIcon(del.createSpan({ cls: "wl-btn-icon" }), "trash-2");
     del.createSpan({ cls: "wl-btn-label", text: "Delete title" });
     del.addEventListener("click", () => {
-      const watched = getWatchedCount(title);
-      void confirmAction(this.app, {
-        title: `Delete “${title.title}”?`,
-        message: "It is removed from your library and from any groups it belongs to.",
-        details:
-          watched > 0
-            ? [`${watched} watched episode(s) and its rating go with it.`]
-            : undefined,
-        confirmText: "Delete",
-        danger: true,
-      }).then((result) => {
-        if (!result.confirmed) return;
-        this.store.deleteTitle(title.id);
-        this.close();
-      });
+      askDelete(this.app, title, this, getWatchedCount(title), () => this.close());
     });
   }
-}
-
-/**
- * Duck-typed on purpose. `instanceof HTMLInputElement` compares against *this*
- * window's constructor, and Obsidian's popout windows each have their own — so
- * a field in a popped-out modal is not an instance of the main window's input
- * class, and the guard silently reads "not editable". Tag names cross realms.
- */
-function isEditable(el: { tagName?: string; isContentEditable?: boolean }): boolean {
-  const tag = (el.tagName ?? "").toLowerCase();
-  return tag === "input" || tag === "textarea" || el.isContentEditable === true;
-}
-
-/** `sci-fi, rewatch , ,cosy` → `["sci-fi","rewatch","cosy"]`. */
-export function readTagList(raw: string): string[] {
-  const out: string[] = [];
-  for (const part of raw.split(",")) {
-    const tag = part.trim();
-    if (tag !== "" && !out.includes(tag)) out.push(tag);
-  }
-  return out;
 }

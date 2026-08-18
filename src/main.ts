@@ -60,6 +60,29 @@ import { Integrations } from "./integration";
 import { createLibraryEngine } from "./search/engine";
 import { WatchLogSettingTab } from "./settings";
 import { WatchLogView } from "./ui/view";
+import {
+  createImageCache,
+  normalizeCacheFolder,
+  type ImageCache,
+} from "./services/imagecache";
+import {
+  createPersonService,
+  createTmdbPersonClient,
+  creditNamesOf,
+  type PersonService,
+} from "./services/tmdb-person";
+import {
+  openPersonView,
+  registerPersonView,
+  type PersonScreenDeps,
+  type PersonTarget,
+} from "./ui/views/person";
+import {
+  openTitleDetail,
+  registerTitleDetailView,
+  type TitleDetailDeps,
+} from "./ui/views/title-detail";
+import { posterCacheEntries } from "./ui/components/posters";
 import { DraftsService, renderDraftsPanel } from "./domains/drafts/panel";
 import { mountGroupsExtension } from "./domains/groups/panel";
 import { CsvExportModal, CsvImportModal } from "./domains/csv/modals";
@@ -194,6 +217,24 @@ export default class WatchLogPlugin extends Plugin {
   private readingNotes: ReadingNoteWriter | null = null;
   private statusBarEl: HTMLElement | null = null;
 
+  /**
+   * The person screen's cache-and-resolve service (`services/tmdb-person.ts`).
+   *
+   * Plugin-lifetime rather than view-lifetime: the cache it owns lives in
+   * `data.json`, and a leaf that opens and closes must not throw that away.
+   */
+  private people: PersonService | null = null;
+
+  /**
+   * Optional local artwork cache (`services/imagecache.ts`).
+   *
+   * Always constructed, so the settings tab has something to talk to and the
+   * enable toggle is a `configure()` call rather than a reload — but it is
+   * constructed *disabled* unless the user opted in, and a disabled cache
+   * writes nothing, reads nothing and answers `""` to everything.
+   */
+  imageCache: ImageCache | null = null;
+
   /** The games domain's seams, bound in `setupGames()`. */
   private games: GamesStoreApi | null = null;
   private gameNotes: GameNoteWriter | null = null;
@@ -212,6 +253,17 @@ export default class WatchLogPlugin extends Plugin {
     this.addRibbonIcon(VIEW_ICON, VIEW_DISPLAY_NAME, () => {
       void this.activateView();
     });
+
+    // The two Wave-3 leaves, registered in the same breath and for the same
+    // reason: Obsidian restores a saved workspace layout *after* `onload`
+    // returns, so a leaf of either type left open in a previous session is
+    // recreated then. A view type that is not registered by that point is shown
+    // as "No view of type …" and the user's layout loses a tab. Both factories
+    // are lazy and both take their dependencies through closures that read
+    // `this` when a leaf actually opens — by which time the store has loaded —
+    // so registering here costs nothing and cannot throw.
+    registerPersonView(this, this.personScreenDeps());
+    registerTitleDetailView(this, () => this.titleDetailDeps());
 
     const dir = this.manifest.dir;
 
@@ -277,6 +329,8 @@ export default class WatchLogPlugin extends Plugin {
       this.posterLoader = null;
     });
 
+    this.setupImageCache();
+
     this.wireHooks();
 
     this.registerCommands();
@@ -291,7 +345,16 @@ export default class WatchLogPlugin extends Plugin {
     // open, so a week with Obsidian closed swallowed every notification. Deferred
     // to after the workspace settles so it never delays startup.
     this.app.workspace.onLayoutReady(() => {
+      // `catchUp` is where the library-wide metadata sweep is fired from
+      // (`integration.ts`) — deliberately last inside it and deliberately not
+      // awaited, so the slowest job in the plugin can never be between the user
+      // and a working view. Nothing here is awaited either: `onload` has
+      // already returned by the time this runs, and it must stay that way.
       void this.integrations.catchUp();
+      // Reading the artwork folder is one `list()` on a folder that usually
+      // does not exist. Deferred anyway, on the same principle: no disk read
+      // this plugin can defer belongs on the startup path.
+      void this.primeImageCache();
       // Deferred to here so a modal can never sit between the user and a
       // plugin that has finished loading. Guarded because a prompt that fails
       // to open must cost the user a prompt, not the rest of this callback.
@@ -1011,7 +1074,7 @@ export default class WatchLogPlugin extends Plugin {
 
     this.hooks = {
       openAddModal: () => this.openAddModal(),
-      openDetailModal: (title) => this.openDetailModal(title),
+      openDetailModal: (title) => this.openTitle(title),
       openTrailer: (title) => {
         openTrailer(this.app, title, this.store.settings.trailerMode);
       },
@@ -1021,7 +1084,12 @@ export default class WatchLogPlugin extends Plugin {
       refreshPlexIndex: () => this.integrations.refreshPlexIndex(),
       refreshAiring: () => this.integrations.refreshAiring(),
       buildCard: (parent, title, ctx) => {
-        buildTitleCard(parent, title, ctx);
+        // The artwork cache is handed down rather than reached for, the same way
+        // the poster loader is. Spread, never rebuilt: `ctx` carries a lane's own
+        // `CardExtras` callbacks that this file has never heard of, and a literal
+        // would drop every one of them.
+        const cache = this.imageCache;
+        buildTitleCard(parent, title, cache ? { ...ctx, posterCache: cache } : ctx);
       },
       ...(this.posterLoader ? { posterLoader: this.posterLoader } : {}),
       parseWidget: (source) => parseWidgetSource(source),
@@ -1041,7 +1109,7 @@ export default class WatchLogPlugin extends Plugin {
     const deps: TabDeps = { store: this.store, app: this.app };
     if (this.hooks.buildCard) deps.buildCard = this.hooks.buildCard;
     if (this.posterLoader) deps.posterLoader = this.posterLoader;
-    deps.onOpenTitle = (title) => this.openDetailModal(title);
+    deps.onOpenTitle = (title) => this.openTitle(title);
     deps.onRequest = (title) => {
       void runRequestFlow(this.app, title, this.integrations.requests);
     };
@@ -1172,6 +1240,100 @@ export default class WatchLogPlugin extends Plugin {
     return deps;
   }
 
+  // -------------------------------------------------------------------------
+  // Local artwork cache (services/imagecache.ts)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Build the cache. Always constructed, enabled only if the user asked.
+   *
+   * The adapter is Obsidian's vault adapter, never Node `fs` — `isDesktopOnly`
+   * is false and this has to work on a phone. `normalizeCacheFolder` is applied
+   * here as well as in the settings tab, because the value on disk may have been
+   * typed into `data.json` by hand.
+   */
+  private setupImageCache(): void {
+    this.imageCache = createImageCache({
+      adapter: this.app.vault.adapter,
+      enabled: this.store.settings.cacheImagesLocally,
+      folder: normalizeCacheFolder(this.store.settings.imageCacheFolder),
+      source: "tmdb",
+    });
+  }
+
+  /**
+   * Re-read the settings into the cache and re-read the folder into its index.
+   *
+   * Called on load and whenever the toggle or the folder changes. Reads only —
+   * nothing here downloads, and nothing here deletes.
+   */
+  async primeImageCache(): Promise<void> {
+    const cache = this.imageCache;
+    if (!cache) return;
+    cache.configure({
+      enabled: this.store.settings.cacheImagesLocally,
+      folder: normalizeCacheFolder(this.store.settings.imageCacheFolder),
+    });
+    try {
+      await cache.prime();
+    } catch (err) {
+      // A cache that cannot read its folder is a cache that serves remote URLs,
+      // which is the behaviour every user had before this feature existed.
+      console.warn("[wrl] could not read the artwork cache folder:", err);
+    }
+  }
+
+  /**
+   * Download every poster that is not already on disk.
+   *
+   * User-triggered only, and it says how it went. `warm()` is bounded-concurrency
+   * inside the service; a failure per image is counted, not thrown.
+   */
+  async cacheArtwork(): Promise<string> {
+    const cache = this.imageCache;
+    if (!cache || !this.store.settings.cacheImagesLocally) {
+      return "Turn on “Keep local copies of artwork” in the plugin's settings first.";
+    }
+    await this.primeImageCache();
+    const notice = new Notice("Downloading artwork…", 0);
+    try {
+      const result = await cache.warm(posterCacheEntries(this.store.allTitles()));
+      const tail = result.failed > 0 ? `, ${result.failed} failed` : "";
+      return result.downloaded === 0 && result.failed === 0
+        ? `Every poster is already cached (${result.skipped} file(s)).`
+        : `Downloaded ${result.downloaded} poster(s)${tail}. ${result.skipped} already cached.`;
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      console.error("[wrl] artwork download failed", err);
+      return `Could not download artwork — ${detail}`;
+    } finally {
+      notice.hide();
+    }
+  }
+
+  /**
+   * Files in the cache folder that no title references any more.
+   *
+   * Reporting only. Nothing in this plugin removes them on a timer, on load or
+   * on a settings change — `purgeArtwork` is the one code path that deletes, and
+   * it is only ever reached from a button the user pressed and confirmed.
+   */
+  async findOrphanArtwork(): Promise<string[]> {
+    const cache = this.imageCache;
+    if (!cache || !this.store.settings.cacheImagesLocally) return [];
+    await this.primeImageCache();
+    return cache.findOrphans(posterCacheEntries(this.store.allTitles()));
+  }
+
+  /** Remove exactly these paths. The service refuses anything outside the folder. */
+  async purgeArtwork(paths: readonly string[]): Promise<string> {
+    const cache = this.imageCache;
+    if (!cache || paths.length === 0) return "Nothing to remove.";
+    const result = await cache.purge(paths);
+    const tail = result.failed.length > 0 ? `, ${result.failed.length} could not be removed` : "";
+    return `Removed ${result.removed.length} unreferenced image(s)${tail}.`;
+  }
+
   /**
    * The Drafts scanner (SPEC2-PARITY.md §D-EXTRAS, item 2).
    *
@@ -1261,6 +1423,9 @@ export default class WatchLogPlugin extends Plugin {
         void this.integrations.openInPlex(title);
       },
       onOpenInOverseerr: (title) => this.integrations.openInOverseerr(title),
+      // Read per click, not per mount: flipping the setting takes effect on the
+      // next card you open rather than the next time the tab is rebuilt.
+      onOpenTitle: (title) => this.openTitle(title),
       onOpenNote: (title) => {
         void this.openNote(title);
       },
@@ -1312,7 +1477,7 @@ export default class WatchLogPlugin extends Plugin {
           .catch(() => undefined);
         void this.integrations.refreshAiring({ force: false }).catch(() => undefined);
         if (afterAdd) afterAdd(result.title);
-        else if (this.store.settings.openLibraryAfterAdd) this.openDetailModal(result.title);
+        else if (this.store.settings.openLibraryAfterAdd) this.openTitle(result.title);
       },
     }).open();
   }
@@ -1345,6 +1510,144 @@ export default class WatchLogPlugin extends Plugin {
       },
       onDismissSuggestion: (tmdbId) => this.integrations.dismissSuggestion(tmdbId),
     };
+  }
+
+  // -------------------------------------------------------------------------
+  // The two Wave-3 leaves (SPEC §7 Wave 3)
+  // -------------------------------------------------------------------------
+
+  /**
+   * The person service, built on first use.
+   *
+   * Lazy because `registerPersonView` runs before `store.load()` — the store
+   * object exists from the first line of `onload`, but nothing here reads it
+   * until a leaf opens, and the TMDB token is read per request rather than
+   * captured, so typing one into Settings works on the next lookup.
+   */
+  private personService(): PersonService {
+    if (!this.people) {
+      this.people = createPersonService({
+        store: this.store,
+        client: createTmdbPersonClient(() => ({ token: this.store.settings.tmdbToken })),
+      });
+    }
+    return this.people;
+  }
+
+  /**
+   * Everything the person screen needs, and nothing about how it renders.
+   *
+   * `onAdd` deliberately routes through `suggestionHooks().onAddSuggestion` —
+   * the *same* add path the suggestion wizard uses — rather than a second one
+   * written here. The screen's own doc comment makes that a rule, and honouring
+   * it is what stops "+ Add" from creating a title the rest of the plugin does
+   * not recognise.
+   */
+  private personScreenDeps(): PersonScreenDeps {
+    return {
+      people: this.personService(),
+      titles: () => this.store.allTitles(),
+      onOpenTitle: (title) => this.openTitle(title),
+      onAdd: async (result) => {
+        const add = this.suggestionHooks().onAddSuggestion;
+        if (!add) {
+          new Notice("Add an Overseerr server in the plugin's settings first.");
+          return undefined;
+        }
+        return add(result);
+      },
+      onJumpToQuery: (query) => this.openLibraryWithQuery(query),
+      onOpenUrl: (url) => {
+        window.open(url, "_blank");
+      },
+    };
+  }
+
+  /**
+   * The full-view detail leaf's bundle — deliberately the same callbacks the
+   * modal is handed in `openDetailModal`, because the two surfaces are the same
+   * screen in a different frame and a second set of behaviours here is exactly
+   * the defect the shared `ui/detail/` modules exist to prevent.
+   */
+  private titleDetailDeps(): TitleDetailDeps {
+    const deps: TitleDetailDeps = {
+      app: this.app,
+      store: this.store,
+      onJumpToQuery: (query) => this.openLibraryWithQuery(query),
+      onOpenNote: (title) => {
+        void this.openNote(title);
+      },
+      onOpenInPlex: (title) => {
+        void this.integrations?.openInPlex(title);
+      },
+      onRefreshMetadata: (title) => {
+        void this.refreshMetadata(title);
+      },
+      onRequest: (title) => {
+        void runRequestFlow(this.app, title, this.integrations.requests);
+      },
+    };
+    if (this.store.settings.trailerMode !== "off") {
+      deps.onPlayTrailer = (title) => {
+        openTrailer(this.app, title, this.store.settings.trailerMode);
+      };
+    }
+    return deps;
+  }
+
+  /**
+   * Open a title — the one entry point every surface calls.
+   *
+   * Which frame it lands in is `settings.openTitlesInFullView`, and it is a
+   * setting rather than a hard switch because the modal is what every existing
+   * user's hands already know. The command palette can always force the leaf,
+   * so the new surface is reachable without changing the default.
+   */
+  openTitle(title: TitleV4): void {
+    if (this.store.settings.openTitlesInFullView) {
+      void this.openTitleInLeaf(title);
+      return;
+    }
+    this.openDetailModal(title);
+  }
+
+  /** The full view, unconditionally. Falls back to the modal if the leaf fails. */
+  async openTitleInLeaf(title: TitleV4): Promise<void> {
+    try {
+      await openTitleDetail(this.app, title.id);
+    } catch (err) {
+      console.error("[wrl] could not open the title view", err);
+      this.openDetailModal(title);
+    }
+  }
+
+  /** The person screen, unconditionally. Never throws out of a click handler. */
+  async openPerson(target: PersonTarget): Promise<void> {
+    try {
+      await openPersonView(this.app, target);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      console.error("[wrl] could not open the person view", err);
+      new Notice(`Could not open that person — ${detail}`, 8000);
+    }
+  }
+
+  /**
+   * Every cast and director name the library knows, deduped and sorted.
+   *
+   * `creditNamesOf` is what defines "every" — API values *and* the user's own
+   * `manualCast`/`manualDirector` additions — so a person somebody typed in by
+   * hand is as openable as one TMDB supplied.
+   */
+  private creditNames(): string[] {
+    const names = new Set<string>();
+    for (const title of this.store.allTitles()) {
+      for (const name of creditNamesOf(title)) {
+        const trimmed = name.trim();
+        if (trimmed !== "") names.add(trimmed);
+      }
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
   }
 
   private openDetailModal(title: TitleV4): void {
@@ -1527,6 +1830,73 @@ export default class WatchLogPlugin extends Plugin {
           () => this.integrations.refreshAiring({ force: true }),
           "Refreshing airing data…",
         );
+      },
+    });
+
+    // The library-wide sweep (`services/sweep.ts`). It also runs on its TTL from
+    // `catchUp`; this is the "do it now, all of it" door, so it forces past the
+    // TTL *and* past the off switch — an explicit command is the user asking.
+    // The service's own re-entry guard and `integration.ts`'s `busy` set mean
+    // pressing it twice cannot start two passes.
+    this.addCommand({
+      id: "sweep-metadata",
+      name: "Refresh metadata for the whole library",
+      callback: () => {
+        void this.integrations
+          .sweepMetadata({ force: true })
+          .then((message) => new Notice(message, 8000));
+      },
+    });
+
+    this.addCommand({
+      id: "stop-metadata-sweep",
+      name: "Stop the metadata refresh",
+      callback: () => {
+        this.integrations.cancelMetadataSweep();
+        new Notice("The metadata refresh will stop after the title it is on.");
+      },
+    });
+
+    // --- the two Wave-3 leaves ---------------------------------------------
+    //
+    // Both surfaces are also reachable by clicking (a title through
+    // `openTitle`, a person from the person screen's own links), but a feature
+    // that only exists at the end of a click is a feature half the users never
+    // find. These are the doors that always work.
+    this.addCommand({
+      id: "open-title-view",
+      name: "Open a title in a full tab",
+      callback: () => {
+        const titles = [...this.store.allTitles()];
+        if (titles.length === 0) {
+          new Notice("Nothing tracked yet — add a title first.");
+          return;
+        }
+        new TitleLeafModal(this, titles).open();
+      },
+    });
+
+    this.addCommand({
+      id: "open-person",
+      name: "Open a person (actor or director)",
+      callback: () => {
+        const names = this.creditNames();
+        if (names.length === 0) {
+          new Notice(
+            "No cast or directors recorded yet — refresh a title's metadata to fill this in.",
+          );
+          return;
+        }
+        new PersonSearchModal(this, names).open();
+      },
+    });
+
+    // --- artwork cache ------------------------------------------------------
+    this.addCommand({
+      id: "cache-artwork",
+      name: "Download missing artwork to the vault",
+      callback: () => {
+        void this.cacheArtwork().then((message) => new Notice(message, 8000));
       },
     });
 
@@ -2097,5 +2467,64 @@ class TitleSearchModal extends FuzzySuggestModal<TitleV4> {
     // Land on the filtered Library, not on a modal: the command is "search",
     // and leaving the user somewhere they can keep searching is the point.
     this.plugin.openLibraryWithQuery(`"${title.title}"`);
+  }
+}
+
+/**
+ * "Open a title in a full tab" — the same picker, landing in the leaf.
+ *
+ * Separate from `TitleSearchModal` rather than a flag on it because the two
+ * commands answer different questions: one is "find it", the other is "show me
+ * this one, properly". This one ignores `openTitlesInFullView` — asking for the
+ * full tab by name is an explicit instruction, not a preference.
+ */
+class TitleLeafModal extends FuzzySuggestModal<TitleV4> {
+  constructor(
+    private readonly plugin: WatchLogPlugin,
+    private readonly titles: TitleV4[],
+  ) {
+    super(plugin.app);
+    this.setPlaceholder("Open a title in its own tab…");
+  }
+
+  override getItems(): TitleV4[] {
+    return this.titles;
+  }
+
+  override getItemText(title: TitleV4): string {
+    return `${title.title} ${title.type} ${title.status} ${(title.genres ?? []).join(" ")}`;
+  }
+
+  override onChooseItem(title: TitleV4): void {
+    void this.plugin.openTitleInLeaf(title);
+  }
+}
+
+/**
+ * "Open a person" — fuzzy over every cast and director name the library holds.
+ *
+ * Names rather than TMDB ids because names are what the titles store; the
+ * person service resolves one to an id (and asks, when a name is ambiguous)
+ * exactly as it does when the screen is opened any other way.
+ */
+class PersonSearchModal extends FuzzySuggestModal<string> {
+  constructor(
+    private readonly plugin: WatchLogPlugin,
+    private readonly names: string[],
+  ) {
+    super(plugin.app);
+    this.setPlaceholder("Open an actor or director…");
+  }
+
+  override getItems(): string[] {
+    return this.names;
+  }
+
+  override getItemText(name: string): string {
+    return name;
+  }
+
+  override onChooseItem(name: string): void {
+    void this.plugin.openPerson({ name });
   }
 }

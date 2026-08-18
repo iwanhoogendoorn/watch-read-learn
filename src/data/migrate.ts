@@ -499,6 +499,13 @@ function migrateSettings(raw: Rec, note: (m: string) => void): Settings {
   s.requestPollMinutes = num(s.requestPollMinutes, defaults.requestPollMinutes);
   s.airingTtlHours = num(s.airingTtlHours, defaults.airingTtlHours);
   s.plexTtlHours = num(s.plexTtlHours, defaults.plexTtlHours);
+  // A file written before the sweep existed has no key at all, so it defaults to
+  // weekly — the documented cadence, not "off". An explicit `0` the user typed
+  // is a real value and survives, because `num` only falls back on non-numbers.
+  s.metadataSweepTtlHours = Math.max(
+    0,
+    num(s.metadataSweepTtlHours, defaults.metadataSweepTtlHours),
+  );
 
   s.generateNotes = bool(s.generateNotes, defaults.generateNotes);
   s.trailerMode =
@@ -511,6 +518,12 @@ function migrateSettings(raw: Rec, note: (m: string) => void): Settings {
     bool(raw.openWatchlistAfterAdd, defaults.openLibraryAfterAdd),
   );
   s.dashboardTopCredits = num(s.dashboardTopCredits, defaults.dashboardTopCredits);
+  s.openTitlesInFullView = bool(s.openTitlesInFullView, defaults.openTitlesInFullView);
+
+  // Artwork cache. Both keys default to "off, in the default folder" for a file
+  // that predates them, which is exactly the behaviour that file already had.
+  s.cacheImagesLocally = bool(s.cacheImagesLocally, defaults.cacheImagesLocally);
+  s.imageCacheFolder = str(s.imageCacheFolder, defaults.imageCacheFolder) || defaults.imageCacheFolder;
 
   s.libraryViewMode = s.libraryViewMode === "table" ? "table" : defaults.libraryViewMode;
 

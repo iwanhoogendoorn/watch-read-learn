@@ -120,12 +120,24 @@ export function createDefaultSettings(): Settings {
     requestPollMinutes: 5,
     airingTtlHours: 12,
     plexTtlHours: 6,
+    // Weekly, from `SWEEP_TTL_HOURS_DEFAULT`. Spelled out rather than imported:
+    // this module is the defaults table and importing a service into it would
+    // point the dependency the wrong way. `0` here would mean "off".
+    metadataSweepTtlHours: 24 * 7,
 
     generateNotes: true,
     trailerMode: "embed",
     showUpcomingStatusBar: true,
     openLibraryAfterAdd: true,
     dashboardTopCredits: 5,
+    // The modal stays the default surface: it is what every existing user's
+    // muscle memory expects, and the leaf is the thing they opt into.
+    openTitlesInFullView: false,
+
+    // Off, because turning it on writes binary files into the user's vault.
+    cacheImagesLocally: false,
+    // Mirrors `DEFAULT_IMAGE_CACHE_FOLDER`; normalised again before any write.
+    imageCacheFolder: "WatchLog/images",
 
     libraryViewMode: "grid",
     filterState: createFilterState(),

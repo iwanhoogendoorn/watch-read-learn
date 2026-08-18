@@ -1,0 +1,332 @@
+/* ==========================================================================
+   95 — the title detail *view*
+
+   The modal's layout is a single stacked column in a narrow box, which is what
+   it has to be. A workspace leaf is not narrow, so this partial spends the width
+   the modal never had: the poster sits beside the facts, the four statistics sit
+   in a row of tiles, and the cast runs as one line of links instead of five
+   wrapped rows of chips.
+
+   Every class here is `wl-tdv-*` (title detail view) so nothing collides with
+   `60-modals.css`, which owns `.wl-detail-*`. Where a shared control is reused —
+   `.wl-detail-poster`, `.wl-field`, `.wl-season` — it is adjusted through a
+   *qualified* selector, never re-declared: one class, one component.
+
+   No literal colours. Obsidian's theme variables and `--wl-*` only.
+   ========================================================================== */
+
+.wl-tdv-host {
+  overflow-y: auto;
+}
+
+.wl-tdv {
+  display: block;
+  padding: var(--wl-space-5);
+}
+
+.wl-tdv-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-5);
+  /* A composed column rather than whatever the leaf happens to be wide. Past
+     roughly this, the synopsis becomes an unreadable measure, the control row
+     opens a gap in its middle, and the tile row strands its tiles at opposite
+     ends of the screen. */
+  max-width: 940px;
+  margin: 0 auto;
+}
+
+/* --- head: poster beside the facts -------------------------------------- */
+
+.wl-tdv-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--wl-space-5);
+}
+
+/* Wider than the modal's 110px — this is the one screen where the poster is
+   allowed to be a poster. The 2/3 ratio itself stays where it is declared. */
+.wl-tdv-head .wl-detail-poster {
+  width: 180px;
+}
+
+.wl-tdv-headmain {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-3);
+}
+
+.wl-tdv-titlerow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-3);
+}
+
+.wl-tdv-title {
+  margin: 0;
+  color: var(--text-normal);
+  font-size: var(--font-ui-large);
+  font-weight: var(--font-bold);
+  line-height: 1.2;
+}
+
+.wl-tdv-iconactions {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+}
+
+.wl-tdv-iconactions .wl-btn.is-on {
+  color: var(--text-accent);
+}
+
+.wl-tdv-syncrow {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-tdv-pills,
+.wl-tdv-chiprow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-2);
+}
+
+.wl-tdv-overview {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: 1.6;
+  /* Flowing text, not a truncated blurb: there is room for the whole synopsis
+     here and cutting it off would be the modal's problem all over again. */
+  max-width: 70ch;
+}
+
+/* --- the stat tiles ------------------------------------------------------ */
+
+/* The tile itself stays the Dashboard's `.wl-stat` (50-dashboard.css). Its
+   *container* cannot: `.wl-stat-grid` is written for `.wl-overview`, a flex
+   ROW, where `flex: 1 1 240px` means a 240px width and `repeat(auto-fit,
+   minmax(110px, 1fr))` fills the panel with columns.
+
+   Both detail surfaces are flex COLUMNS — `.wl-tdv-body` here and
+   `.wl-detail-section` in 60-modals.css — and in a column `flex-basis` is the
+   HEIGHT. That is the measured defect: a title with no `episodeDuration` drops
+   the two time tiles, and the remaining two sat at the top of a box holding
+   itself open at 240px plus padding. The `1fr` tracks then split that box in
+   half and flung the two tiles to opposite edges.
+
+   So the detail variant stops being a grid. It is a wrapping row of tiles that
+   are each their own size, `flex: 0 0 auto` so it is exactly as tall as they
+   are, and the two-tile case looks like two tiles rather than like something
+   that failed to load. Qualified with `.wl-stat-grid` so it beats the base rule
+   on specificity rather than on which partial happens to be concatenated last. */
+.wl-stat-grid.wl-stat-tiles {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: var(--wl-space-3);
+}
+
+/* Each figure carries its own frame instead of sharing one panel — the tiles
+   now have to read as a group without a box drawn around them, and it is also
+   what the reference does. */
+.wl-stat-tiles .wl-stat {
+  min-width: 70px;
+  padding: var(--wl-space-3) var(--wl-space-4);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-m);
+}
+
+/* Tabular, so a figure does not shuffle sideways as it ticks. */
+.wl-stat-tiles .wl-stat-value {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- one compact control row -------------------------------------------- */
+
+.wl-tdv-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--wl-space-4);
+  padding: var(--wl-space-4);
+  background: var(--background-secondary);
+  border-radius: var(--wl-radius-m);
+}
+
+/* The shared `.wl-field` stacks its label over its control; here the controls
+   sit shoulder to shoulder, so each one only takes the width it needs. */
+.wl-tdv-controls .wl-field {
+  flex: 0 0 auto;
+  min-width: 140px;
+}
+
+.wl-tdv-controls .wl-detail-rating {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--wl-space-1);
+}
+
+/* Beside the controls, not shoved to the far edge of the row: `margin-left:
+   auto` put a whole empty screen between "Your rating" and "Open note" on a
+   wide leaf. They wrap to the next line when there is genuinely no room. */
+.wl-tdv-rowbuttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-2);
+}
+
+/* --- cast and friends, inline ------------------------------------------- */
+
+.wl-tdv-people {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+}
+
+.wl-tdv-inline {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: 1.6;
+}
+
+.wl-tdv-inline-label {
+  color: var(--text-faint);
+  font-weight: var(--font-semibold);
+  margin-right: var(--wl-space-2);
+}
+
+.wl-tdv-inline-link {
+  color: var(--text-accent);
+  cursor: pointer;
+  border-radius: var(--wl-radius-s);
+}
+
+.wl-tdv-inline-link:hover,
+.wl-tdv-inline-link:focus-visible {
+  text-decoration: underline;
+}
+
+.wl-tdv-inline-sep {
+  color: var(--text-faint);
+}
+
+/* --- dates, inline, each with its Today button --------------------------- */
+
+.wl-tdv-dates {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--wl-space-4);
+}
+
+.wl-tdv-dates .wl-field {
+  flex: 0 0 auto;
+}
+
+/* The date input, its calendar button and "Today" read as one control. */
+.wl-tdv-dates .wl-date-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+}
+
+.wl-field-today {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.wl-tdv-readonly-value {
+  padding: var(--wl-space-2) 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+/* --- notes, tags, delete ------------------------------------------------- */
+
+.wl-tdv-notes .wl-textarea {
+  min-height: 120px;
+}
+
+.wl-tdv-tagedit .wl-field {
+  max-width: 480px;
+}
+
+.wl-tdv-footer {
+  display: flex;
+  justify-content: flex-start;
+}
+
+/* --- progress ------------------------------------------------------------ */
+
+/* A rule down the left of each season, so a long show is scannable rather than
+   one undifferentiated stack. The reference cycles six hardcoded hues; we have
+   no hardcoded colours, so the same effect comes from one accent mixed towards
+   the muted text in six steps, cycled by `:nth-of-type` — declarative, themed,
+   and needing no inline styles. */
+.wl-tdv-progress .wl-season {
+  padding: var(--wl-space-3) var(--wl-space-4);
+  background: var(--background-secondary);
+  border-radius: var(--wl-radius-m);
+  border-left: 3px solid
+    color-mix(
+      in srgb,
+      var(--interactive-accent) calc(40% + var(--wl-season-step, 0%)),
+      var(--text-muted)
+    );
+}
+
+.wl-tdv-progress .wl-season:nth-of-type(6n + 1) { --wl-season-step: 0%; }
+.wl-tdv-progress .wl-season:nth-of-type(6n + 2) { --wl-season-step: 12%; }
+.wl-tdv-progress .wl-season:nth-of-type(6n + 3) { --wl-season-step: 24%; }
+.wl-tdv-progress .wl-season:nth-of-type(6n + 4) { --wl-season-step: 36%; }
+.wl-tdv-progress .wl-season:nth-of-type(6n + 5) { --wl-season-step: 48%; }
+.wl-tdv-progress .wl-season:nth-of-type(6n) { --wl-season-step: 60%; }
+
+/* How many of a part-aired season actually exist yet. */
+.wl-season-aired {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
+/* An episode that has not aired: faded, no hover affordance, no pointer. Three
+   soft signals, so it reads as "not yet" — where a `disabled` control, greyed
+   out and unfocusable, reads as "broken". Deliberately still focusable, and the
+   right-click skip menu still opens on it. */
+.wl-ep.is-unaired {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.wl-ep.is-unaired:hover {
+  background: transparent;
+  border-color: var(--background-modifier-border);
+}
+
+/* --- narrow leaves and mobile -------------------------------------------- */
+
+@media (max-width: 700px) {
+  .wl-tdv {
+    padding: var(--wl-space-4);
+  }
+
+  .wl-tdv-head {
+    flex-direction: column;
+  }
+
+  .wl-tdv-head .wl-detail-poster {
+    width: 120px;
+  }
+}

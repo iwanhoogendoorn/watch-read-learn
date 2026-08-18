@@ -22,7 +22,13 @@
  *
  * Undated rows (a season announced without a date) are skipped: a calendar
  * cannot show what has no date.
+ *
+ * What an event *says* — its day, its summary, its body — is not decided here.
+ * That lives in `event.ts` and is shared with the per-row Google Calendar link,
+ * so the two calendar exits from this tab can never describe the same evening
+ * under two different names.
  */
+import { compactDate, nextCompactDay, upcomingEventFor } from "./event";
 import type { UnifiedRow } from "./unified";
 
 /** RFC 5545 §3.3.11 TEXT escaping: backslash first, then structure characters. */
@@ -62,23 +68,6 @@ export function foldIcsLine(line: string): string {
   }
   if (current !== "") out.push(current);
   return out.join("\r\n ");
-}
-
-/** `2026-08-14` (or a longer ISO string) → `20260814`; null for anything else. */
-function basicDate(date: string | null): string | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(date ?? "");
-  return match ? `${match[1]}${match[2]}${match[3]}` : null;
-}
-
-/** The day after a `YYYYMMDD`, for the exclusive all-day DTEND. */
-function nextDay(basic: string): string {
-  const y = Number(basic.slice(0, 4));
-  const m = Number(basic.slice(4, 6));
-  const d = Number(basic.slice(6, 8));
-  const next = new Date(Date.UTC(y, m - 1, d + 1));
-  const mm = String(next.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(next.getUTCDate()).padStart(2, "0");
-  return `${next.getUTCFullYear()}${mm}${dd}`;
 }
 
 /** UTC basic format for DTSTAMP: `20260810T193000Z`. */
@@ -122,23 +111,20 @@ export function buildUpcomingIcs(
   let eventCount = 0;
   let skippedUndated = 0;
   for (const row of rows) {
-    const start = basicDate(row.date);
-    if (start === null) {
+    const event = upcomingEventFor(row);
+    if (event === null) {
       skippedUndated += 1;
       continue;
     }
-
-    const summary = row.label === "" ? row.name : `${row.name} — ${row.label}`;
-    const description = [row.detail, "Tracked by Watch, Read and Learn."]
-      .filter((part) => part !== "")
-      .join("\n");
+    const start = compactDate(event.date);
+    const { summary, description } = event;
 
     lines.push(
       "BEGIN:VEVENT",
       `UID:watchlog-${uidToken(row.source)}-${uidToken(row.id)}-${uidToken(row.kind)}-${start}@watchlog`,
       `DTSTAMP:${stamp}`,
       `DTSTART;VALUE=DATE:${start}`,
-      `DTEND;VALUE=DATE:${nextDay(start)}`,
+      `DTEND;VALUE=DATE:${nextCompactDay(start)}`,
       `SUMMARY:${escapeIcsText(summary)}`,
       `DESCRIPTION:${escapeIcsText(description)}`,
       "TRANSP:TRANSPARENT",

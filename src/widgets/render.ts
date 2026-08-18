@@ -768,6 +768,10 @@ function renderNowView(el: HTMLElement, titles: TitleV4[], deps: WidgetDeps): vo
     const checkbox = row.createEl("input", { attr: { type: "checkbox" } });
     checkbox.addEventListener("change", () => {
       deps.store.markEpisodeWatched(title.id, next, checkbox.checked);
+      // The store refuses an episode that has not aired (and one that is
+      // skipped), and a refusal that leaves the box ticked is a lie the widget
+      // is telling. Re-read the answer rather than trusting the click.
+      checkbox.checked = title.watchedEpisodes.includes(next);
     });
     row.createSpan({ cls: "wl-widget-now-label", text: label });
     if (title.totalEpisodes > 1) {

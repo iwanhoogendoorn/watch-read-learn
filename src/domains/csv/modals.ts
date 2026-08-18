@@ -5,6 +5,12 @@
  *
  *     pick a file  →  check the column mapping  →  see what will happen  →  go
  *
+ * A tracker export (Trakt, Letterboxd, Simkl, IMDb, Ryot) is a different animal
+ * and gets its own three screens at the bottom of this file — no mapping step,
+ * because its shape is known, and a much larger preview, because it merges into
+ * a library rather than filling an empty one. Everything it decides lives in
+ * `domains/import/`.
+ *
  * v3's shape, and the reason it is right is the third screen: a CSV import is
  * irreversible from inside the plugin, so the last thing before writing is a
  * count of new rows, a count of duplicates, and a list of columns nobody claimed.
@@ -28,6 +34,10 @@ import {
   parseCsv,
 } from "../../data/csv";
 import { createBook, createGame, createManga, createTitle, slugify, uniqueId } from "../../data/schema";
+import { applyTrackerPlan } from "../import/apply";
+import { buildTrackerPlan, type TrackerImportPlan } from "../import/plan";
+import { detectSource, parseExport, readExportFile } from "../import/sources";
+import { TRACKER_LABELS, TRACKER_SOURCES, type ImportRecord, type TrackerSource } from "../import/types";
 import {
   READING_STATUSES,
   type CsvImportPlan,
@@ -252,6 +262,23 @@ export class CsvImportModal extends Modal {
       const chosen = file.files?.[0];
       if (!chosen) return;
       void chosen.text().then((text) => this.accept(text));
+    });
+
+    // A tracker export is not a spreadsheet: it has no header row to map, it may
+    // be a zip of six files, and it carries the external ids that make a match
+    // exact. Sending it through the column mapper would work and would be much
+    // worse, so the offer is made here, where someone with a `trakt-export.zip`
+    // is actually looking.
+    const handoff = host.createDiv({ cls: "wl-csv-handoff" });
+    handoff.createSpan({ text: "Exported from Trakt, Letterboxd, Simkl, IMDb or Ryot? " });
+    const link = handoff.createEl("button", {
+      cls: "wl-btn",
+      text: "Use the tracker importer",
+      attr: { type: "button" },
+    });
+    link.addEventListener("click", () => {
+      this.close();
+      new TrackerImportModal(this.app, this.store, this.onDone).open();
     });
 
     host.createEl("p", { cls: "wl-modal-detail", text: "…or paste the file's contents:" });
@@ -553,5 +580,282 @@ export class CsvImportModal extends Modal {
         ...(status ? { status } : {}),
       }),
     );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tracker import (Trakt, Letterboxd, Simkl, IMDb, Ryot)
+// ---------------------------------------------------------------------------
+
+/**
+ * The tracker importer.
+ *
+ * Three screens rather than the CSV importer's four, and the missing one is the
+ * column mapper: a tracker export has a known shape, so there is nothing to map
+ * and nothing for the user to get wrong. What replaces it is a *bigger* preview,
+ * because the interesting question has moved. For a spreadsheet it was "did the
+ * columns line up"; for an export of six thousand watch events landing on a
+ * library someone has been curating for years it is **"what is this going to do
+ * to what I already have"** — so the preview leads with how many titles would be
+ * merged rather than added, says per title what would change, and names the
+ * things it refuses to touch.
+ *
+ *     pick a file  →  see exactly what would happen  →  go
+ *
+ * Nothing is written until the last button. Everything before it is pure.
+ */
+export class TrackerImportModal extends Modal {
+  private readonly store: WatchLogStoreApi;
+  private readonly onDone: () => void;
+
+  private step: "source" | "preview" | "running" = "source";
+  private files: Map<string, string> = new Map();
+  private fileLabel = "";
+  private source: TrackerSource | null = null;
+  private records: ImportRecord[] = [];
+  private parseWarnings: string[] = [];
+  private skipExisting = false;
+  private cancelled = false;
+  private body: HTMLElement | null = null;
+
+  constructor(app: App, store: WatchLogStoreApi, onDone: () => void) {
+    super(app);
+    this.store = store;
+    this.onDone = onDone;
+  }
+
+  override onOpen(): void {
+    const { contentEl, modalEl } = this;
+    modalEl.addClass("wl-modal", "wl-csv-modal");
+    contentEl.empty();
+    contentEl.createEl("h3", { cls: "wl-modal-title", text: "Import from a tracker" });
+    this.body = contentEl.createDiv({ cls: "wl-csv-body" });
+    this.render();
+  }
+
+  override onClose(): void {
+    this.cancelled = true;
+    this.contentEl.empty();
+  }
+
+  private render(): void {
+    const host = this.body;
+    if (!host) return;
+    host.empty();
+    if (this.step === "source") this.renderSource(host);
+    else if (this.step === "preview") this.renderPreview(host);
+  }
+
+  // --- step 1: the file ----------------------------------------------------
+
+  private renderSource(host: HTMLElement): void {
+    host.createEl("p", {
+      cls: "wl-modal-message",
+      text: "Pick the export file. Trakt's and Letterboxd's zips are read as they are — no need to unpack them. Nothing is written until you have seen what it would do.",
+    });
+
+    const file = host.createEl("input", {
+      cls: "wl-csv-file",
+      attr: {
+        type: "file",
+        accept: ".zip,.csv,.json,application/zip,text/csv,application/json",
+        "aria-label": "Tracker export file",
+      },
+    });
+    file.addEventListener("change", () => {
+      const chosen = file.files?.[0];
+      if (!chosen) return;
+      void this.accept(chosen);
+    });
+
+    const list = host.createDiv({ cls: "wl-csv-sources" });
+    list.createDiv({
+      cls: "wl-modal-detail",
+      text: "Trakt — the full export zip · Letterboxd — the data export zip · Simkl — the CSV backup · IMDb — a ratings or watchlist CSV · Ryot — the CompleteExport JSON",
+    });
+
+    const row = host.createDiv({ cls: "wl-modal-buttons" });
+    row
+      .createEl("button", { cls: "wl-btn", text: "Cancel", attr: { type: "button" } })
+      .addEventListener("click", () => this.close());
+  }
+
+  private async accept(chosen: File): Promise<void> {
+    try {
+      this.files = await readExportFile(chosen.name, await chosen.arrayBuffer());
+    } catch (error) {
+      console.error("[wrl] tracker import: could not read the file", error);
+      new Notice(error instanceof Error ? error.message : "Could not read that file.");
+      return;
+    }
+    this.fileLabel = chosen.name;
+    this.source = detectSource(this.files);
+    if (this.source === null) {
+      new Notice("That file does not look like a Trakt, Letterboxd, Simkl, IMDb or Ryot export.");
+      // Not fatal: the picker on the next screen lets the user say which it is.
+      this.source = "imdb";
+    }
+    this.reparse();
+    this.step = "preview";
+    this.render();
+  }
+
+  private reparse(): void {
+    if (this.source === null) return;
+    const parsed = parseExport(this.source, this.files);
+    this.records = parsed.records;
+    this.parseWarnings = parsed.warnings;
+  }
+
+  // --- step 2: what would happen -------------------------------------------
+
+  private plan(): TrackerImportPlan {
+    return buildTrackerPlan(
+      this.source ?? "imdb",
+      this.records,
+      this.store.allTitles(),
+      this.store.settings,
+      this.parseWarnings,
+      { skipExisting: this.skipExisting },
+    );
+  }
+
+  private renderPreview(host: HTMLElement): void {
+    const plan = this.plan();
+    const { add, merge, skip, exact, byName } = plan.counts;
+
+    const picker = host.createDiv({ cls: "wl-csv-scopes" });
+    for (const source of TRACKER_SOURCES) {
+      const button = picker.createEl("button", {
+        cls: `wl-btn wl-csv-scope${source === this.source ? " is-active" : ""}`,
+        attr: { type: "button" },
+      });
+      button.createDiv({ cls: "wl-csv-scope-label", text: TRACKER_LABELS[source] });
+      button.addEventListener("click", () => {
+        this.source = source;
+        this.reparse();
+        this.render();
+      });
+    }
+
+    host.createEl("p", {
+      cls: "wl-modal-message",
+      text: `${this.fileLabel}: ${plan.entries.length} entr${plan.entries.length === 1 ? "y" : "ies"} — ${add} new, ${merge} merged into a title you already have, ${skip} with nothing to add.`,
+    });
+    host.createEl("p", {
+      cls: "wl-modal-detail",
+      text: `${exact} matched exactly, by TMDB or IMDb id. ${byName} could only be matched by name and year.`,
+    });
+
+    // The promise the whole flow rests on, stated where the decision is made.
+    host.createDiv({
+      cls: "wl-csv-warn wl-csv-safe",
+      text: "Merging never overwrites your own data: a rating, review, note or watched episode you already have is left exactly as it is. A merge can only fill in what is empty and add episodes you have not ticked.",
+    });
+
+    for (const warning of plan.warnings) {
+      host.createDiv({ cls: "wl-csv-warn", text: warning });
+    }
+
+    if (byName > 0) {
+      // No lookup step here on purpose. `integration.ts:backfillTmdbIds` already
+      // searches every title that lands without a `tmdbId`, and it is the
+      // stricter path: an answer it is not sure about is recorded as
+      // `tmdbMatch: "ambiguous"` and surfaces the manual picker, rather than
+      // being guessed at here where nothing would remember that it was a guess.
+      host.createDiv({
+        cls: "wl-modal-detail",
+        text: `The ${byName} name-only ${byName === 1 ? "entry is" : "entries are"} looked up against TMDB after the import, by the same matcher the rest of the library uses. Anything it cannot settle asks you to pick.`,
+      });
+    }
+
+    const skipToggle = host.createEl("label", { cls: "wl-modal-check" });
+    const skipBox = skipToggle.createEl("input", { attr: { type: "checkbox" } });
+    skipBox.checked = this.skipExisting;
+    skipBox.addEventListener("change", () => {
+      this.skipExisting = skipBox.checked;
+      this.render();
+    });
+    skipToggle.createSpan({ text: "Leave titles I already have completely untouched" });
+
+    const table = host.createDiv({ cls: "wl-csv-preview" });
+    for (const entry of plan.entries.slice(0, 12)) {
+      const line = table.createDiv({
+        cls: `wl-csv-preview-row${entry.action === "merge" ? " is-duplicate" : ""}`,
+      });
+      line.createSpan({ cls: "wl-csv-preview-title", text: entry.record.title });
+      const detail =
+        entry.action === "add"
+          ? "new"
+          : entry.action === "merge"
+            ? `adds ${entry.changes.join(", ")}`
+            : entry.mergedIntoPlanned === true
+              // Not "nothing happened": its facts went into the entry above that
+              // is creating this same title, so there is nothing left to write.
+              ? "folded into the new entry above"
+              : "already up to date";
+      line.createSpan({ cls: "wl-csv-preview-meta", text: detail });
+      if (entry.action !== "add") {
+        const flag = line.createSpan({ cls: "wl-csv-preview-flag" });
+        setIcon(flag, "copy");
+        flag.setAttribute("title", `Matched by ${entry.matchedBy ?? "name"}`);
+      }
+    }
+    if (plan.entries.length > 12) {
+      table.createDiv({ cls: "wl-csv-preview-more", text: `…and ${plan.entries.length - 12} more.` });
+    }
+
+    const row = host.createDiv({ cls: "wl-modal-buttons" });
+    row
+      .createEl("button", { cls: "wl-btn", text: "Back", attr: { type: "button" } })
+      .addEventListener("click", () => {
+        this.step = "source";
+        this.render();
+      });
+    const go = row.createEl("button", {
+      cls: "wl-btn mod-cta",
+      text: "Import",
+      attr: { type: "button" },
+    });
+    go.disabled = add + merge === 0;
+    go.addEventListener("click", () => void this.run());
+  }
+
+  // --- step 3: the write ---------------------------------------------------
+
+  private async run(): Promise<void> {
+    const host = this.body;
+    if (!host) return;
+    this.step = "running";
+    this.cancelled = false;
+    host.empty();
+
+    const label = host.createDiv({ cls: "wl-csv-progress-label", text: "Working…" });
+    const bar = host.createDiv({ cls: "wl-csv-progress" }).createDiv({ cls: "wl-csv-progress-fill" });
+    const buttons = host.createDiv({ cls: "wl-modal-buttons" });
+    buttons
+      .createEl("button", { cls: "wl-btn mod-warning", text: "Cancel", attr: { type: "button" } })
+      .addEventListener("click", () => {
+        this.cancelled = true;
+      });
+
+    const paint = (done: number, total: number, what: string): void => {
+      label.setText(`${what}: ${done} of ${total}`);
+      bar.style.width = `${Math.round((done / Math.max(1, total)) * 100)}%`;
+    };
+
+    const plan = this.plan();
+    const result = await applyTrackerPlan(this.store, plan, {
+      onProgress: ({ done, total }) => paint(done, total, "Importing"),
+      isCancelled: () => this.cancelled,
+    });
+    this.onDone();
+
+    new Notice(
+      result.cancelled
+        ? `Import cancelled after ${result.added + result.merged} titles. What was written is kept.`
+        : `Imported ${result.added} new title${result.added === 1 ? "" : "s"} and updated ${result.merged}.`,
+    );
+    this.close();
   }
 }

@@ -52,6 +52,17 @@ export interface LibraryDeps {
   overseerr?: OverseerrClient;
   onRequest?: (title: TitleV4) => void;
   onPlayTrailer?: (title: TitleV4) => void;
+  /**
+   * Open a title. Absent means "use the detail modal", which is what the
+   * Library has always done and what a standalone mount (tests, any host that
+   * wires no root) still gets.
+   *
+   * The composition root supplies this so the Library obeys the same
+   * `openTitlesInFullView` choice as every other surface — otherwise the one
+   * grid people spend their time in would be the only place the setting did
+   * nothing.
+   */
+  onOpenTitle?: (title: TitleV4) => void;
   onOpenNote?: (title: TitleV4) => void;
   onOpenInPlex?: (title: TitleV4) => void;
   onOpenInOverseerr?: (title: TitleV4) => void;
@@ -291,6 +302,10 @@ export function mountLibraryTab(
   }
 
   function openDetail(title: TitleV4): void {
+    if (deps.onOpenTitle) {
+      deps.onOpenTitle(title);
+      return;
+    }
     new DetailModal(app, {
       store,
       titleId: title.id,

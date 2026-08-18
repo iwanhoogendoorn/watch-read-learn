@@ -15,6 +15,13 @@
 import { Modal, PluginSettingTab, Setting, setIcon, type App } from "obsidian";
 import { readV3Backup } from "./data/backup";
 import { DEFAULT_RATING_SYSTEM } from "./data/schema";
+import { DEFAULT_IMAGE_CACHE_FOLDER, normalizeCacheFolder } from "./services/imagecache";
+import {
+  SWEEP_MAX_PER_RUN,
+  SWEEP_TTL_DISABLED,
+  SWEEP_TTL_HOURS_DEFAULT,
+  SWEEP_TTL_HOURS_MIN,
+} from "./services/sweep";
 import { buildWidgetPresets } from "./widgets/palette";
 import { WIDGET_KEYS, WIDGET_STATS, WIDGET_VIEWS } from "./widgets/render";
 import type { NamedColor, Settings } from "./types";
@@ -390,6 +397,16 @@ export class WatchLogSettingTab extends PluginSettingTab {
       );
 
     this.addHelp(
+      new Setting(behaviour.content).setName("Open titles in a full tab").addToggle((toggle) =>
+        toggle.setValue(settings.openTitlesInFullView).onChange((value) => {
+          settings.openTitlesInFullView = value;
+          this.save();
+        }),
+      ),
+      "The modal is fine for a film. A show with a full cast and a season grid wraps its chips onto five rows and pushes Progress below the fold, because a modal is narrower than the poster deserves. On, a title opens as a real tab instead: poster beside the facts, cast on one line, and the four numbers you actually read. Every control is the same one — the two surfaces share their fields, their rating/review binding and their watched flows — so this only chooses the frame. The command palette can open a tab either way.",
+    );
+
+    this.addHelp(
       new Setting(behaviour.content).setName("Status bar item").addToggle((toggle) =>
         toggle.setValue(settings.showUpcomingStatusBar).onChange((value) => {
           settings.showUpcomingStatusBar = value;
@@ -464,6 +481,8 @@ export class WatchLogSettingTab extends PluginSettingTab {
       ),
       "Embeds use youtube-nocookie.com. Some studio uploads block embedding and some are region-locked, so an “open on YouTube” link is always offered as well.",
     );
+
+    this.renderArtwork(parent);
   }
 
   // -------------------------------------------------------------------------
@@ -1100,6 +1119,207 @@ export class WatchLogSettingTab extends PluginSettingTab {
             this.save();
           }),
       );
+
+    this.renderMetadataSweep(refresh);
+  }
+
+  /**
+   * The library-wide metadata sweep (`services/sweep.ts`).
+   *
+   * It lives under "Refresh cadences" with the other two TTLs because it is the
+   * same kind of thing, but it gets three controls instead of one: a lifetime, a
+   * plain off switch, and a "do it now". The off switch is separate from the
+   * slider on purpose — `0` hidden at the far left of a range is not a control
+   * anybody finds, and this is the one background job that touches every title
+   * the user owns, so turning it off has to be obvious.
+   */
+  private renderMetadataSweep(refresh: GroupHandle): void {
+    const settings = this.settings;
+
+    const describe = (): string => {
+      if (settings.metadataSweepTtlHours === SWEEP_TTL_DISABLED) return "off";
+      const due = this.plugin.integrations?.metadataSweepDue() ?? 0;
+      return due === 0 ? "up to date" : `${due} due`;
+    };
+    const chip = (): void => {
+      const off = settings.metadataSweepTtlHours === SWEEP_TTL_DISABLED;
+      refresh.setChip(describe(), off ? "muted" : "ok");
+    };
+    chip();
+
+    this.addHelp(
+      new Setting(refresh.content)
+        .setName("Refresh library metadata automatically")
+        .addToggle((toggle) =>
+          toggle
+            .setValue(settings.metadataSweepTtlHours !== SWEEP_TTL_DISABLED)
+            .onChange((value) => {
+              // Turning it back on restores the default cadence rather than
+              // whatever the slider happens to be showing: the slider is hidden
+              // from the DOM's point of view while this is off, and reinstating
+              // a value the user cannot see would be a surprise.
+              settings.metadataSweepTtlHours = value
+                ? SWEEP_TTL_HOURS_DEFAULT
+                : SWEEP_TTL_DISABLED;
+              this.save();
+              this.renderBody();
+            }),
+        ),
+      "Posters get replaced, casts get recast, and a show you finished in 2021 gets a new season. Nothing in the plugin used to notice any of that unless you pressed Refresh on that one title. This re-pulls provider metadata across the whole library on a slow schedule — never your ratings, reviews, notes, status, tags or watched episodes, and never a manual override you set to beat the API. Off means no background metadata requests at all.",
+    );
+
+    if (settings.metadataSweepTtlHours !== SWEEP_TTL_DISABLED) {
+      new Setting(refresh.content)
+        .setName("Library metadata lifetime")
+        .setDesc(
+          `Hours before a title's metadata is refetched. Default ${SWEEP_TTL_HOURS_DEFAULT} (weekly); ` +
+            `at most ${SWEEP_MAX_PER_RUN} titles per run, one request a second.`,
+        )
+        .addSlider((slider) =>
+          slider
+            .setLimits(SWEEP_TTL_HOURS_MIN, 24 * 30, 12)
+            .setValue(
+              Math.min(24 * 30, Math.max(SWEEP_TTL_HOURS_MIN, settings.metadataSweepTtlHours)),
+            )
+            .setDynamicTooltip()
+            .onChange((value) => {
+              settings.metadataSweepTtlHours = value;
+              this.save();
+              chip();
+            }),
+        );
+    }
+
+    new Setting(refresh.content)
+      .setName("Refresh everything now")
+      .setDesc("Ignores the lifetime above. Runs in the background; click its notice to stop.")
+      .addButton((button) =>
+        button.setButtonText("Refresh now").onClick(() => {
+          const integrations = this.plugin.integrations;
+          if (!integrations) {
+            refresh.setChip("not ready — reload the plugin", "warn");
+            return;
+          }
+          refresh.setChip("refreshing…", "pending");
+          void integrations.sweepMetadata({ force: true }).then((message) => {
+            refresh.setChip(message.slice(0, 60), "ok");
+          });
+        }),
+      );
+  }
+
+  // -------------------------------------------------------------------------
+  // Artwork cache
+  // -------------------------------------------------------------------------
+
+  /**
+   * Local copies of poster art (`services/imagecache.ts`).
+   *
+   * Off by default and stated as such, because this is the only thing the plugin
+   * writes into the user's vault that is not a note they asked for. Downloading
+   * and removing are both buttons: nothing here runs on a timer, on load or on a
+   * settings change, and in particular nothing deletes a file without this
+   * confirm in front of it.
+   */
+  private renderArtwork(parent: HTMLElement): void {
+    const settings = this.settings;
+    const cache = this.plugin.imageCache;
+
+    const group = this.group(parent, {
+      icon: "image",
+      title: "Artwork",
+      subtitle: "Optional local copies of poster art, so a library opened offline still has pictures in it.",
+      chip: settings.cacheImagesLocally ? "on" : "off",
+      tone: settings.cacheImagesLocally ? "ok" : "muted",
+    });
+
+    this.addHelp(
+      new Setting(group.content).setName("Keep local copies of artwork").addToggle((toggle) =>
+        toggle.setValue(settings.cacheImagesLocally).onChange((value) => {
+          settings.cacheImagesLocally = value;
+          this.save();
+          void this.plugin.primeImageCache();
+          this.renderBody();
+        }),
+      ),
+      "Off by default, because this is the one feature that writes binary files into your vault. On, posters are downloaded once into the folder below and served from there; a missing or failed file falls back to the remote URL, so nothing ever breaks because of this. Turning it off stops using them — it deletes nothing.",
+    );
+
+    if (!settings.cacheImagesLocally) return;
+
+    new Setting(group.content)
+      .setName("Folder")
+      .setDesc("Vault-relative. Anything that would escape the vault is normalised away.")
+      .addText((text) =>
+        text
+          .setPlaceholder(DEFAULT_IMAGE_CACHE_FOLDER)
+          .setValue(settings.imageCacheFolder)
+          .onChange((value) => {
+            settings.imageCacheFolder = normalizeCacheFolder(value);
+            this.saveSoon();
+            void this.plugin.primeImageCache();
+          }),
+      );
+
+    const stats = cache?.stats();
+    group.content.createDiv({
+      cls: "wl-settings-note",
+      text: stats
+        ? `${stats.files} file(s) in ${stats.folder}.`
+        : "Not started yet — reload the plugin.",
+    });
+
+    new Setting(group.content)
+      .setName("Download missing artwork")
+      .setDesc("Fetches every poster that is not already on disk, a few at a time.")
+      .addButton((button) =>
+        button.setButtonText("Download").onClick(() => {
+          group.setChip("downloading…", "pending");
+          void this.plugin.cacheArtwork().then((message) => {
+            group.setChip("on", "ok");
+            group.content.createDiv({ cls: "wl-settings-note", text: message });
+          });
+        }),
+      );
+
+    const purge = new Setting(group.content)
+      .setName("Remove unreferenced images")
+      .setDesc(
+        "Files left behind by a deleted title or a changed poster URL. Nothing is ever removed " +
+          "automatically — this button is the only thing in the plugin that deletes them.",
+      );
+    purge.settingEl.addClass("wl-danger-setting");
+    purge.addButton((button) =>
+      button
+        .setButtonText("Find and remove")
+        .setWarning()
+        .onClick(() => {
+          void this.plugin.findOrphanArtwork().then((orphans) => {
+            if (orphans.length === 0) {
+              group.content.createDiv({
+                cls: "wl-settings-note",
+                text: "Nothing unreferenced — every cached file belongs to a title you still have.",
+              });
+              return;
+            }
+            new ConfirmModal(this.app, {
+              title: `Delete ${orphans.length} unreferenced image(s)?`,
+              body:
+                `These files are in ${normalizeCacheFolder(settings.imageCacheFolder)} and no title ` +
+                `references them any more. Your titles, notes and data.json are untouched, and ` +
+                `anything still in use is re-downloaded on demand.\n\n` +
+                orphans.slice(0, 8).join("\n") +
+                (orphans.length > 8 ? `\n… and ${orphans.length - 8} more` : ""),
+              confirmLabel: `Delete ${orphans.length} file(s)`,
+              onConfirm: () => {
+                void this.plugin.purgeArtwork(orphans).then((message) => {
+                  group.content.createDiv({ cls: "wl-settings-note", text: message });
+                });
+              },
+            }).open();
+          });
+        }),
+    );
   }
 
   // -------------------------------------------------------------------------

@@ -16,7 +16,7 @@
  * `computeDashboard` is pure and unit-tested; the mount function only paints it.
  */
 import { Notice, setIcon } from "obsidian";
-import { NON_COUNTING_STATUSES } from "../../constants";
+import { NON_COUNTING_STATUSES, STATUS_WATCHING } from "../../constants";
 import { renderPosterPlaceholder } from "../components/posters";
 import {
   calcTimeRemaining,
@@ -27,6 +27,8 @@ import {
 } from "../../data/episodes";
 import {
   READING_STATUSES,
+  readExtra,
+  writeExtra,
   type GamesData,
   type ReadingData,
   type Settings,
@@ -34,6 +36,10 @@ import {
   type TitleV4,
 } from "../../types";
 import { bookStats, mangaStats } from "../../domains/reading/stats";
+import { buildShelves } from "../../domains/shelves";
+import { openShelfSettings } from "../modals/shelfsettings";
+import { openPersonView } from "../views/person";
+import { renderShelfRow } from "../components/shelf";
 import { derivedStatus, progressLabel, readingProgress } from "../../domains/reading/progress";
 import { daysUntil, toDateString } from "../../services/airing";
 import { formatPlaytime, gamesCompletedStat, timePlayedStat } from "../../domains/games/stats";
@@ -110,6 +116,48 @@ function formatCount(value: number): string {
 export const DASHBOARD_SHELF_LIMIT = 8;
 export const DASHBOARD_UP_NEXT_LIMIT = 3;
 export const DASHBOARD_MONTHS = 12;
+
+// ---------------------------------------------------------------------------
+// Which arrangement the tab paints
+// ---------------------------------------------------------------------------
+
+/**
+ * The two Dashboard arrangements.
+ *
+ * `rich` is everything this tab has ever shown — rings, three charts, the
+ * per-library cards, the two recency lists — and is the default, permanently.
+ * `compact` is the same *statistics* in a tighter arrangement: a single row of
+ * five tiles, the per-type tiles, the poster rails, and one four-column panel of
+ * ranked lists. Not a second implementation of anything; every number in the
+ * compact layout comes out of the same `DashboardModel` the rich one reads.
+ *
+ * Watchlist only — see `mountDashboardTab`. Books and games have exactly one
+ * dashboard, the rich one, and offering a switch that does nothing would be
+ * worse than not offering it.
+ */
+export type DashboardLayout = "rich" | "compact";
+
+export const DASHBOARD_LAYOUTS: readonly DashboardLayout[] = ["rich", "compact"];
+
+/**
+ * `Settings` key holding the chosen layout.
+ *
+ * Read and written through `readExtra`/`writeExtra` (see the header of
+ * `types.ts`), so this lane persists a preference without touching the frozen
+ * contract. Anything that is not exactly `"compact"` — missing, misspelled,
+ * written by a future version, hand-edited to nonsense — reads as `"rich"`, so
+ * the default survives every way the key can be wrong.
+ */
+export const DASHBOARD_LAYOUT_KEY = "dashboardLayout";
+
+export function readDashboardLayout(settings: Settings): DashboardLayout {
+  return readExtra<unknown>(settings, DASHBOARD_LAYOUT_KEY) === "compact" ? "compact" : "rich";
+}
+
+/** Mutates in place — `Settings` carries keys TypeScript cannot see. */
+export function setDashboardLayout(settings: Settings, layout: DashboardLayout): void {
+  writeExtra(settings, DASHBOARD_LAYOUT_KEY, layout);
+}
 
 function counts(title: TitleV4): boolean {
   return !NON_COUNTING_STATUSES.includes(title.status);
@@ -520,34 +568,59 @@ function renderColumns(parent: HTMLElement, buckets: readonly CountBucket[]): vo
   }
 }
 
+interface CreditListOptions {
+  /**
+   * Overrides the `queryField` handoff for this list.
+   *
+   * The Library search is the right destination for a studio — there is no
+   * studio screen — but it is the *wrong* one for a person: `cast:"Nolan"` can
+   * only ever show you what you already own, which is the exact limitation the
+   * person view was built to lift. So the compact layout hands its two people
+   * lists an `onPick` that opens that view instead, and everything else keeps
+   * the search.
+   */
+  onPick?: (label: string) => void;
+  /**
+   * Replaces the "No <heading> recorded yet" sentence.
+   *
+   * The default is built from the heading, which reads correctly for a list of
+   * things ("No directors recorded yet") and not at all for a list of buckets
+   * ("No by year recorded yet").
+   */
+  emptyText?: string;
+}
+
 function renderCreditList(
   parent: HTMLElement,
   heading: string,
   buckets: readonly CountBucket[],
   deps: TabDeps,
   queryField: "cast" | "director" | "studio" | null,
+  options: CreditListOptions = {},
 ): void {
   const card = parent.createDiv({ cls: "wl-credit-card" });
   card.createDiv({ cls: "wl-credit-heading", text: heading });
   if (buckets.length === 0) {
     card.createDiv({
       cls: "wl-chart-empty",
-      text: `No ${heading.toLowerCase()} recorded yet — refresh a title's metadata to fill this in.`,
+      text:
+        options.emptyText ??
+        `No ${heading.toLowerCase()} recorded yet — refresh a title's metadata to fill this in.`,
     });
     return;
   }
   const list = card.createDiv({ cls: "wl-credit-list" });
   for (const bucket of buckets) {
     const row = list.createDiv({ cls: "wl-credit-row" });
-    if (deps.onJumpToQuery && queryField) {
+    const jump = deps.onJumpToQuery && queryField ? () => deps.onJumpToQuery?.(`${queryField}:"${bucket.label}"`) : null;
+    const act = options.onPick ? () => options.onPick?.(bucket.label) : jump;
+    if (act) {
       const chip = row.createEl("button", {
         cls: "wl-chip is-clickable",
         text: bucket.label,
         attr: { type: "button" },
       });
-      chip.addEventListener("click", () =>
-        deps.onJumpToQuery?.(`${queryField}:"${bucket.label}"`),
-      );
+      chip.addEventListener("click", act);
     } else {
       row.createSpan({ cls: "wl-chip", text: bucket.label });
     }
@@ -783,6 +856,155 @@ function renderRecentRow(parent: HTMLElement, title: TitleV4, deps: TabDeps, met
   }
 }
 
+// ---------------------------------------------------------------------------
+// The compact layout
+//
+// A different *arrangement* of the pieces above, not a second set of them: the
+// tiles read `DashboardModel`, the rails go through `buildShelves` and
+// `renderShelfRow`, the ranked lists go through `renderCreditList`, and every
+// duration goes through `formatMinutes`. If a number here ever disagrees with
+// the same number in the rich layout, something has been computed twice, and
+// that is the bug.
+// ---------------------------------------------------------------------------
+
+/**
+ * One bordered tile: a label, a value under it, and up to two faint lines.
+ *
+ * Label *above* value, which is the one deliberate difference from `renderStat`
+ * in the rich overview — in a row of five bordered boxes the label is what the
+ * eye needs first, whereas in a bare stat grid the number is. Same classes
+ * either way; the order is markup, not CSS.
+ */
+function renderStatTile(
+  grid: HTMLElement,
+  label: string,
+  value: string,
+  subs: readonly string[] = [],
+): HTMLElement {
+  const tile = grid.createDiv({ cls: "wl-panel wl-stat wl-stat-tile" });
+  tile.createDiv({ cls: "wl-stat-label", text: label });
+  tile.createDiv({ cls: "wl-stat-value", text: value });
+  for (const sub of subs) {
+    if (sub !== "") tile.createDiv({ cls: "wl-stat-sub", text: sub });
+  }
+  return tile;
+}
+
+/**
+ * The strip of poster rails, shared by both layouts.
+ *
+ * Watchlist only — a shelf is a row of `TitleV4` cards and books and games are
+ * neither. Selection (including which shelves the user has switched off in the
+ * shelf modal) is `domains/shelves.ts`, which already drops the empty ones, so
+ * there is no such thing here as a heading over a void.
+ */
+function renderShelfStrip(
+  el: HTMLElement,
+  titles: readonly TitleV4[],
+  settings: Settings,
+  deps: TabDeps,
+): void {
+  const build = cardRenderer(deps);
+  // `mini`, not `full`. A shelf card is 110px wide and the `full` caption does
+  // not compress: measured in the live vault it produced status pills reading
+  // "Pla…" and "Co…", and meta lines reading "2024 · 20 / 20…". A truncated
+  // pill is worse than no pill — it costs the same space and carries none of
+  // the meaning. `mini` is poster + title and nothing else, which is what its
+  // own header comment says it was built for.
+  const shelfCtx = cardContext(deps, "mini");
+  for (const shelf of buildShelves(titles, depsNow(deps), settings)) {
+    // One `section()` each, so a shelf that throws costs one row rather than
+    // the whole strip — the same error isolation every other panel gets.
+    section(el, shelf.label, (s) => {
+      renderShelfRow(s, { label: shelf.label, titles: shelf.titles, build, ctx: shelfCtx });
+    });
+  }
+}
+
+/** Newest year first, `(unknown)` last, capped like the credit lists. */
+function topYears(buckets: readonly CountBucket[], limit: number): CountBucket[] {
+  return [...buckets]
+    .sort((a, b) => {
+      const na = Number(a.label);
+      const nb = Number(b.label);
+      if (!Number.isFinite(na)) return Number.isFinite(nb) ? 1 : 0;
+      if (!Number.isFinite(nb)) return -1;
+      return nb - na;
+    })
+    .slice(0, Math.max(1, limit));
+}
+
+function renderCompactDashboard(
+  el: HTMLElement,
+  model: DashboardModel,
+  settings: Settings,
+  titles: readonly TitleV4[],
+  deps: TabDeps,
+): void {
+  // --- one row of five tiles ------------------------------------------------
+  section(el, "Overview", (s) => {
+    const grid = s.createDiv({ cls: "wl-stat-strip" });
+    renderStatTile(grid, "Total titles", formatCount(model.total), [
+      // "168 movies, 102 TV shows" — straight off the per-type stats, so the
+      // subtext cannot disagree with the By-type tiles two rows below it. A
+      // title whose type was never set still has to be counted somewhere, and
+      // "1 " with nothing after it is not a place.
+      model.byType
+        .map((type) => `${formatCount(type.total)} ${type.type || "(no type)"}`)
+        .join(", "),
+    ]);
+    // Statuses are the user's, so this tile is offered only when the status it
+    // counts exists. A "Watching: 0" for a vault that calls it something else
+    // is furniture that also happens to be a lie.
+    const watching = model.byStatus.find((bucket) => bucket.label === STATUS_WATCHING);
+    if (watching) renderStatTile(grid, STATUS_WATCHING, formatCount(watching.count));
+    renderStatTile(grid, "Completed", formatCount(model.completed), [
+      `${model.percent}% of ${formatCount(model.counting)} counted`,
+    ]);
+    renderStatTile(grid, "Time watched", formatMinutes(model.timeWatched));
+    renderStatTile(grid, "Time remaining", formatMinutes(model.timeRemaining));
+  });
+
+  // --- by type, as two wide tiles ------------------------------------------
+  section(el, "By type", (s) => {
+    sectionHeader(s, "By type");
+    const grid = s.createDiv({ cls: "wl-stat-strip is-wide" });
+    for (const type of model.byType) {
+      renderStatTile(grid, type.type || "(no type)", `${type.percent}%`, [
+        `${formatCount(type.total)} total, ${formatCount(type.completed)} completed`,
+        type.timeWatched > 0 || type.timeRemaining > 0
+          ? `${formatMinutes(type.timeWatched)} watched, ${formatMinutes(type.timeRemaining)} left`
+          : "",
+      ]);
+    }
+  });
+
+  // --- the poster rails ----------------------------------------------------
+  renderShelfStrip(el, titles, settings, deps);
+
+  // --- one panel of ranked lists -------------------------------------------
+  section(el, "Library statistics", (s) => {
+    s.addClass("wl-panel");
+    sectionHeader(s, "Library statistics");
+    const limit = Math.max(1, settings.dashboardTopCredits || 5);
+    const grid = s.createDiv({ cls: "wl-credit-grid" });
+
+    renderCreditList(grid, "By year", topYears(model.byYear, limit), deps, null, {
+      emptyText: "No release years known — refresh metadata to fill this in.",
+    });
+
+    // A person is a place, not a filter — but only if there is an `app` to open
+    // a leaf in. Without one (a headless host, or a test) the lists fall back
+    // to the Library-search handoff every other credit chip already uses.
+    const app = deps.app;
+    const onPick = app ? (name: string): void => void openPersonView(app, { name }) : undefined;
+    renderCreditList(grid, "Top cast", model.topCast, deps, "cast", { onPick });
+    renderCreditList(grid, "Top directors", model.topDirectors, deps, "director", { onPick });
+    // A studio is not a person; it keeps the search.
+    renderCreditList(grid, "Top studios", model.topStudios, deps, "studio");
+  });
+}
+
 /**
  * Which library the "More statistics" block is describing (v3 §2.2).
  *
@@ -883,14 +1105,26 @@ export function mountDashboardTab(host: HTMLElement, deps: TabDeps): TabControll
     );
     if (!available.includes(source)) source = available[0] ?? "watchlist";
 
+    // Read fresh every render rather than held in a closure: the shelf modal
+    // and the layout button both write to `settings` and then call `render`,
+    // and a cached copy is how a screen ends up disagreeing with what it saved.
+    const layout = readDashboardLayout(settings);
+    const compact = layout === "compact" && source === "watchlist";
+    el.toggleClass("is-compact", compact);
+
     // --- which library is this? --------------------------------------------
     //
     // The switch used to sit inside "More statistics" and govern three charts,
     // which meant clicking Reading changed almost nothing on a page still full
     // of films. It governs the whole tab now: every panel below asks the same
     // question of whichever library is selected.
+    //
+    // Not a `.wl-section`: a section is a panel of *content*, and this row is a
+    // control strip. Making it one put an unnamed, wordless entry at the top of
+    // every "does each section say something" check, which is a check worth
+    // keeping honest. It spans the grid through its own rule instead.
+    const bar = el.createDiv({ cls: "wl-source-bar" });
     if (available.length > 1) {
-      const bar = el.createDiv({ cls: "wl-section wl-source-bar" });
       const chips = bar.createDiv({ cls: "wl-source-chips" });
       for (const option of available) {
         const chip = chips.createDiv({ cls: "wl-chip is-clickable" });
@@ -911,6 +1145,76 @@ export function mountDashboardTab(host: HTMLElement, deps: TabDeps): TabControll
         });
       }
     }
+
+    // --- the tab's own controls --------------------------------------------
+    //
+    // Two buttons, right-aligned in the same bar as the library chips: which
+    // arrangement this tab uses, and which shelves it draws. Both are `<button
+    // class="wl-icon-btn">` rather than `.wl-chip`, deliberately — the chips in
+    // this bar mean "pick a library" and a third kind of chip meaning something
+    // else entirely would make the row unreadable.
+    //
+    // Both are offered only where they mean something. Books and games have
+    // exactly one dashboard and no shelves, and a button that visibly does
+    // nothing is worse than no button — so on those sources there is no group
+    // at all rather than an empty one.
+    if (source === "watchlist") {
+      const tools = bar.createDiv({ cls: "wl-dash-tools" });
+      const nextLayout: DashboardLayout = layout === "compact" ? "rich" : "compact";
+      const label = nextLayout === "compact" ? "Switch to the compact layout" : "Switch to the full layout";
+      const layoutBtn = tools.createEl("button", {
+        cls: "wl-icon-btn",
+        attr: { type: "button", "aria-label": label, title: label },
+      });
+      setIcon(layoutBtn, layout === "compact" ? "layout-dashboard" : "rows-3");
+      layoutBtn.addEventListener("click", () => {
+        setDashboardLayout(settings, nextLayout);
+        deps.store.save?.("dashboard layout");
+        render();
+      });
+
+      if (deps.app) {
+        const shelvesBtn = tools.createEl("button", {
+          cls: "wl-icon-btn",
+          attr: {
+            type: "button",
+            "aria-label": "Choose visible shelves",
+            title: "Choose visible shelves",
+          },
+        });
+        setIcon(shelvesBtn, "sliders-horizontal");
+        shelvesBtn.addEventListener("click", () => {
+          if (!deps.app) return;
+          openShelfSettings(deps.app, {
+            settings,
+            // Save *and* repaint, on every single toggle: the strip behind the
+            // modal is the preview, so a change the user cannot see is a change
+            // they cannot judge.
+            onChange: () => {
+              deps.store.save?.("visible shelves");
+              render();
+            },
+          });
+        });
+      }
+    }
+
+    // --- the compact arrangement -------------------------------------------
+    //
+    // Everything below this point is the rich layout, unchanged. The compact
+    // one is a full alternative rather than a variation, so it returns.
+    if (compact) {
+      renderCompactDashboard(el, model, settings, titles, deps);
+      return;
+    }
+
+    // --- shelves -----------------------------------------------------------
+    //
+    // Above the statistics on purpose: the first question this tab is opened
+    // with is "what now", not "how am I doing", and a row of posters answers it
+    // in one glance where a completion ring never can. Watchlist only — a shelf
+    // is a row of `TitleV4` cards, and books and games are neither.
+    if (source === "watchlist") renderShelfStrip(el, titles, settings, deps);
 
     // --- unified card ------------------------------------------------------
     section(el, "Overview", (s) => {

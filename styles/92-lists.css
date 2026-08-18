@@ -799,3 +799,40 @@
   display: flex;
   gap: var(--wl-space-2);
 }
+
+/* -----------------------------------------------------------------------------
+ * Tracker import — the handoff out of the CSV dialog, and the safety promise
+ * -------------------------------------------------------------------------- */
+
+.wl-csv-handoff {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-1);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-csv-handoff .wl-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  color: var(--text-accent);
+  font-size: inherit;
+  text-decoration: underline;
+}
+
+.wl-csv-sources {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+/* The one line the whole flow rests on, so it reads as reassurance and not as
+ * another warning stacked among the warnings. */
+.wl-csv-safe {
+  padding: var(--wl-space-2);
+  border-radius: var(--wl-radius-m);
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+}

@@ -446,6 +446,21 @@ export function fieldsFor(domain: WidgetDomain): CsvField[] {
  * direction the mapping UI edits it in: one row per column in the file, each
  * with a dropdown. A header that matches nothing is simply absent, and turns up
  * in `unmapped`.
+ *
+ * **Two passes, exact before substring.** The header comment at the top of this
+ * file claims a Trakt, Letterboxd or IMDb export "lands somewhere in that
+ * table". With equality alone it partly did not: IMDb's real column is
+ * `Your Rating`, which is not in `["rating", "score"]`, so the one column a
+ * ratings export exists for was silently dropped into `unmapped`.
+ *
+ * The passes are whole-header-row rather than per-header, and that ordering is
+ * the load-bearing part: a substring hit must never take a field an exact hit
+ * elsewhere in the row wants. `Title` claims `title` in pass one, so by the time
+ * `Title Type` is considered it can only reach for `type`.
+ *
+ * Containment is one-directional — the header may contain the synonym, never
+ * the reverse. `Your Rating` contains `rating`; `type` must not be allowed to
+ * claim a column called `t`.
  */
 export function autoDetectMapping(
   headers: readonly string[],
@@ -454,16 +469,33 @@ export function autoDetectMapping(
   const fields = fieldsFor(domain);
   const mapping: Record<string, string> = {};
   const claimed = new Set<string>();
-  for (const header of headers) {
-    const needle = header.trim().toLowerCase();
-    if (needle === "") continue;
-    const field = fields.find(
-      (candidate) => !claimed.has(candidate.key) && candidate.synonyms.includes(needle),
-    );
-    if (!field) continue;
-    mapping[header] = field.key;
-    claimed.add(field.key);
-  }
+
+  const assign = (
+    matches: (candidate: CsvField, needle: string) => boolean,
+  ): void => {
+    for (const header of headers) {
+      if (mapping[header] !== undefined) continue;
+      const needle = header.trim().toLowerCase();
+      if (needle === "") continue;
+      const field = fields.find(
+        (candidate) => !claimed.has(candidate.key) && matches(candidate, needle),
+      );
+      if (!field) continue;
+      mapping[header] = field.key;
+      claimed.add(field.key);
+    }
+  };
+
+  assign((candidate, needle) => candidate.synonyms.includes(needle));
+  // Longest synonym first, so `date started` is tried before `started` and a
+  // column named "Date started" cannot be claimed by the shorter spelling of a
+  // different field.
+  assign((candidate, needle) =>
+    [...candidate.synonyms]
+      .sort((a, b) => b.length - a.length)
+      .some((synonym) => synonym.length >= 3 && needle.includes(synonym)),
+  );
+
   return mapping;
 }
 

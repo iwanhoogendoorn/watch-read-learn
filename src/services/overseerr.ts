@@ -179,7 +179,7 @@ function normalizeDetails(raw: Raw, tmdbId: number, mediaType: MediaType): Overs
     trailerUrl: trailerFromRelatedVideos(raw["relatedVideos"]),
     director: directorNames(credits),
     cast: castNames(credits),
-    studio: studioNames(raw),
+    studio: studioNames(raw, mediaType),
   };
 
   const imdbId = str(raw, "imdbId") || (externalIds ? str(externalIds, "imdbId", "imdb_id") : "");

@@ -141,6 +141,15 @@
   border-color: var(--text-error);
 }
 
+/* The "Add to Calendar" action is an <a>, because it is genuinely a link and an
+ * anchor needs no script to open one. Obsidian's own link styling would give it
+ * an underline and an accent colour that no other row action has, so it is
+ * undone here rather than in a wrapper element. */
+.wl-upcoming-gcal,
+.wl-upcoming-gcal:hover {
+  text-decoration: none;
+}
+
 /* Reveal-on-hover, scoped to the two row types that asked for it.
  *
  * This used to live on the bare `.wl-icon-btn`, which meant `opacity: 0` on
@@ -518,4 +527,178 @@
 .wl-upcoming-source {
   color: var(--text-faint);
   font-size: var(--font-ui-smaller);
+}
+
+/* -----------------------------------------------------------------------------
+ * The compact layout — an OPTION, never a replacement
+ *
+ * Everything above draws the detailed layout, which is still the default. This
+ * block draws the dense one: month headings over single-line rows with the
+ * countdown pushed hard right. Nothing here restyles a class the detailed
+ * layout uses, so switching cannot change how the other one looks.
+ * -------------------------------------------------------------------------- */
+
+/* The toolbar's detailed↔compact button. */
+.wl-upcoming-layout {
+  color: var(--text-muted);
+}
+
+.wl-upcoming-layout:hover {
+  color: var(--text-accent);
+}
+
+.wl-upcoming-layout.is-compact {
+  color: var(--text-accent);
+}
+
+.wl-upcoming-month {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+}
+
+.wl-upcoming-month-label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--wl-space-2);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+}
+
+.wl-upcoming-month-count {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-normal);
+}
+
+/* The divider between rows is the PAGE, not a border: a 1px gap over a
+   background-primary panel, with the rows painted background-secondary and the
+   whole stack clipped to a radius. One less colour to keep in step with a
+   theme, and the rows read as one object rather than a pile of cards. */
+.wl-upcoming-compact-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+  border-radius: var(--wl-radius-m);
+  background: var(--background-primary);
+}
+
+.wl-upcoming-compact-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-3);
+  padding: var(--wl-space-2) var(--wl-space-3);
+  background: var(--background-secondary);
+}
+
+.wl-upcoming-compact-row.is-clickable {
+  cursor: pointer;
+}
+
+.wl-upcoming-compact-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.wl-upcoming-compact-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-3);
+  min-width: 0;
+  margin-top: var(--wl-space-1);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+
+/* Every meta item may be the one that has to give way; the row must never grow
+   a horizontal scrollbar because a book had a long subtitle. */
+.wl-upcoming-compact-meta > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wl-upcoming-compact-chip {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* "Every Thursday" — only ever printed when the airing cache evidences it. */
+.wl-upcoming-compact-cadence {
+  flex: 0 0 auto;
+}
+
+.wl-upcoming-compact-detail {
+  min-width: 0;
+}
+
+/* The number is what the eye runs down the column; the unit is its footnote.
+   Baseline-aligned so the two sit on one line despite the size difference. */
+.wl-upcoming-countdown {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: var(--wl-space-2);
+  color: var(--interactive-accent);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+}
+
+.wl-upcoming-countdown-value {
+  /* NOT --font-ui-larger: Obsidian does not define one, so a declaration using
+     it is silently dropped and the number renders at the inherited size. */
+  font-size: var(--font-ui-large);
+}
+
+.wl-upcoming-countdown-unit {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-normal);
+}
+
+/* Arrived rows are news you may have missed rather than news you are waiting
+   for, and the compact list keeps them in their real month rather than in a
+   separate section — so the countdown itself has to say which it is. */
+.wl-upcoming-countdown.is-aired {
+  color: var(--text-faint);
+}
+
+.wl-upcoming-countdown.is-tba {
+  color: var(--text-muted);
+}
+
+.wl-upcoming-compact-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--wl-space-1);
+}
+
+.wl-upcoming-compact-action {
+  color: var(--text-faint);
+}
+
+.wl-upcoming-compact-action:hover {
+  color: var(--text-accent);
+}
+
+@media (hover: hover) {
+  .wl-upcoming-compact-row.is-clickable:hover {
+    background: var(--background-modifier-hover);
+  }
+}
+
+@media (max-width: 600px) {
+  /* The date is the one meta item the month heading and the countdown already
+     answer between them, so it is the first thing to go when space is short. */
+  .wl-upcoming-compact-meta .wl-upcoming-date {
+    display: none;
+  }
 }

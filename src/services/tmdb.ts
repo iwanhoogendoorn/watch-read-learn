@@ -133,7 +133,7 @@ export function createTmdbClient(getConfig: () => TmdbConfig, deps: TmdbDeps = {
       trailerUrl: trailerUrlFrom(videos),
       director: directorNames(credits),
       cast: castNames(credits),
-      studio: studioNames(raw),
+      studio: studioNames(raw, mediaType),
     };
 
     const imdbId = str(raw, "imdb_id") || (externalIds ? str(externalIds, "imdb_id") : "");

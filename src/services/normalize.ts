@@ -286,8 +286,25 @@ export function castNames(credits: Raw | undefined, limit = 20): string[] {
   ).slice(0, limit);
 }
 
-export function studioNames(raw: Raw): string[] {
-  const companies = firstDefined(raw, ["productionCompanies", "production_companies", "networks"]);
+/**
+ * Studios for a film, networks for a show.
+ *
+ * TMDB sends *both* `production_companies` and `networks` on a TV payload, so a
+ * single first-present lookup across the two never reached `networks`: every
+ * show reported its production company and no show ever reported the network
+ * it airs on. The two are not spellings of one field — on a show the network is
+ * the answer to "where does this air", which is what this field is asked for —
+ * so the key order depends on the media type rather than on which key TMDB
+ * happens to send first. The other list stays as a fallback, because a payload
+ * missing the preferred key should still say something rather than nothing.
+ */
+export function studioNames(raw: Raw, mediaType?: MediaType): string[] {
+  const companies = firstDefined(
+    raw,
+    mediaType === "tv"
+      ? ["networks", "productionCompanies", "production_companies"]
+      : ["productionCompanies", "production_companies", "networks"],
+  );
   return dedupe(
     rawArray(companies)
       .map((c) => str(c, "name"))

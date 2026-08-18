@@ -116,6 +116,14 @@ export interface DateInputOptions {
   /** Called only when the text parses — with storage form, or `null` if cleared. */
   onCommit: (value: string | null) => void;
   cls?: string;
+  /**
+   * Adds a "Today" button to the control, reading the clock from this function.
+   * Injectable rather than calling `new Date()` so a test can pin the day.
+   *
+   * Omit it on surfaces where "today" is not a plausible answer — a release
+   * date, a due date — and the button is not drawn at all.
+   */
+  today?: () => Date;
 }
 
 /**
@@ -202,15 +210,54 @@ export function renderDateInput(host: HTMLElement, options: DateInputOptions): H
     else native.click();
   });
 
+  // Storage form in, the user's own format on screen, one `onCommit`. Both the
+  // calendar and "Today" already know the exact day, so neither goes back
+  // through `parseDisplayDate` — they only have to agree with it about what the
+  // field then *shows*.
+  const writeStored = (value: string): void => {
+    clearError();
+    input.value = formatDate(value, format);
+    native.value = value;
+    options.onCommit(value);
+  };
+
   native.addEventListener("change", () => {
     const value = native.value.trim();
     if (value === "") return;
-    clearError();
-    input.value = formatDate(value, format);
-    options.onCommit(value);
+    writeStored(value);
   });
 
+  /*
+   * "Today" beside the field.
+   *
+   * The date a user reaches for most is the one they are living in, and typing
+   * it is six keystrokes and a format to remember. It sits inside `.wl-date-field`
+   * with the calendar button so the three read as one control on every surface
+   * that renders a date — the modal and the view alike, without either laying
+   * it out itself.
+   */
+  if (options.today) {
+    const clock = options.today;
+    const todayBtn = wrap.createEl("button", {
+      cls: "wl-link-btn wl-field-today",
+      text: "Today",
+      attr: { type: "button", "aria-label": `Set ${options.label} to today` },
+    });
+    todayBtn.addEventListener("click", () => {
+      const now = clock();
+      // Local calendar day, never `toISOString()`: at 01:00 in Amsterdam that
+      // would write yesterday.
+      writeStored(
+        `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
+      );
+    });
+  }
+
   return input;
+}
+
+function pad(n: number): string {
+  return String(n).padStart(2, "0");
 }
 
 function splitStoredDate(

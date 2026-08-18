@@ -62,12 +62,21 @@ import {
   UPCOMING_SORT_KEYS,
   UPCOMING_WINDOWS,
   UPCOMING_WINDOW_LABELS,
+  UPCOMING_LAYOUT_LABELS,
   type UpcomingFacetKey,
+  type UpcomingLayout,
   type UpcomingPreset,
   type UpcomingSortKey,
   type UpcomingSortSpec,
   type UpcomingWindow,
 } from "../../domains/upcoming/filters";
+import {
+  cadenceFor,
+  compactCountdown,
+  compactTypeLabel,
+  groupByMonth,
+} from "../../domains/upcoming/months";
+import { googleCalendarLabel, googleCalendarUrl } from "../../domains/upcoming/gcal";
 import { UpcomingSearchEngine } from "../../domains/upcoming/query";
 import { UpcomingSearchTipsModal } from "../../domains/upcoming/tips";
 
@@ -163,6 +172,16 @@ export interface TabDeps {
   onRefresh?: (announce: boolean) => Promise<string>;
   /** Write the feed as an .ics into the vault. Absent means no button. */
   onExportCalendar?: () => void;
+  /**
+   * The same, for **one** row — the compact layout's second calendar action.
+   *
+   * Separate from `onExportCalendar` because it is a different question: that
+   * one exports the feed you are looking at, this one exports the single thing
+   * under the cursor. Both end in `buildUpcomingIcs`; only the row set differs.
+   * Absent means the compact row shows the Google Calendar link alone, which is
+   * the honest degradation — a button that cannot write a file must not appear.
+   */
+  onExportRowCalendar?: (row: UnifiedRow) => void;
   /** Open a reading or games entry — the other libraries' Upcoming rows. */
   onOpenDomainEntry?: (domain: "reading" | "games", id: string) => void;
   /** Injectable clock; tests pin it, production leaves it out. */
@@ -794,6 +813,40 @@ function miniButton(
   return button;
 }
 
+/**
+ * "Add to Google Calendar" on one row.
+ *
+ * An anchor rather than a button, deliberately: the URL is a plain GET that
+ * Obsidian hands to the default browser, so there is nothing to script and no
+ * `window` call to mock. `stopPropagation` is the only handler, and only
+ * because the row itself is clickable — following the link must not also open
+ * the title behind it.
+ *
+ * Returns `null` for an undated row, and adds nothing to the DOM in that case.
+ * A season announced without a date has no day to put in a calendar, and a link
+ * that opens an empty create-event form is a worse answer than no link at all.
+ */
+export function renderCalendarLink(row: HTMLElement, data: UnifiedRow): HTMLElement | null {
+  const url = googleCalendarUrl(data);
+  if (url === null) return null;
+
+  // Watchlist rows already have the action strip; the plainer reading/games
+  // rows do not, so this is the one thing that gives them one.
+  const states =
+    (row.querySelector(".wl-upcoming-states") as HTMLElement | null) ??
+    row.createDiv({ cls: "wl-upcoming-states" });
+
+  const label = googleCalendarLabel(data);
+  const link = states.createEl("a", {
+    cls: "wl-mini-btn wl-upcoming-gcal",
+    href: url,
+    text: "Add to Calendar",
+    attr: { target: "_blank", rel: "noopener", "aria-label": label, title: label },
+  });
+  link.addEventListener("click", (evt: MouseEvent) => evt.stopPropagation());
+  return link;
+}
+
 // ---------------------------------------------------------------------------
 // The tab
 // ---------------------------------------------------------------------------
@@ -975,6 +1028,42 @@ export function mountUpcomingTab(host: HTMLElement, deps: TabDeps): TabControlle
     },
   });
 
+  /**
+   * Detailed ↔ compact, in one button.
+   *
+   * A two-state control rather than a menu because there are exactly two states
+   * and no third is coming. The icon shows the layout that is *on* — the same
+   * rule the theme toggle follows, so the two controls in this plugin that show
+   * a state show it the same way — and the label says what pressing it would do,
+   * because "Compact" alone tells a screen-reader user nothing about direction.
+   */
+  const layoutButton = toolbar.createEl("button", {
+    cls: "wl-btn wl-icon-btn wl-upcoming-layout",
+    attr: { type: "button" },
+  });
+  layoutButton.addEventListener("click", () => {
+    view.layout = view.layout === "compact" ? "detailed" : "compact";
+    persist("upcoming-layout");
+    syncLayoutButton();
+    render();
+  });
+
+  function syncLayoutButton(): void {
+    const next: UpcomingLayout = view.layout === "compact" ? "detailed" : "compact";
+    const label = `Switch to the ${UPCOMING_LAYOUT_LABELS[next].toLowerCase()} layout`;
+    layoutButton.dataset.layout = view.layout;
+    layoutButton.toggleClass("is-compact", view.layout === "compact");
+    layoutButton.setAttr("aria-label", label);
+    layoutButton.setAttr("title", label);
+    // `setIcon` appends; without the empty the two icons would stack up, one
+    // per click, until the button is a column of chevrons.
+    layoutButton.empty();
+    // Long-standing Lucide names on purpose: `rows-3` is a recent rename of a
+    // deprecated icon and renders as nothing on an older Obsidian.
+    setIcon(layoutButton, view.layout === "compact" ? "list" : "layout-list");
+  }
+  syncLayoutButton();
+
   toolbar.createDiv({ cls: "wl-toolbar-spacer" });
 
   if (deps.onExportCalendar) {
@@ -1114,6 +1203,16 @@ export function mountUpcomingTab(host: HTMLElement, deps: TabDeps): TabControlle
       return;
     }
 
+    // The compact layout is one list under month headings, released rows and
+    // all: a month is a month, and pulling August's first week out into a
+    // separate "recently released" block would leave a heading that lies about
+    // what is under it. The detailed layout keeps the split, which is the whole
+    // reason the two are offered rather than one being replaced.
+    if (view.layout === "compact") {
+      renderCompact(results);
+      return;
+    }
+
     // The tab is a list of what is still to COME. What landed in the past week
     // is real news too, but it is a different question ("did I miss anything?"),
     // so it gets its own section underneath rather than the top of the list.
@@ -1122,6 +1221,37 @@ export function mountUpcomingTab(host: HTMLElement, deps: TabDeps): TabControlle
 
     renderAhead(ahead);
     renderArrived(arrived);
+  }
+
+  /**
+   * The compact layout: month headings over dense rows.
+   *
+   * Month grouping is a chronological aid and follows the same rule the buckets
+   * do — it is offered only while the list is actually in date order. Under
+   * `Title A→Z` the headings would be an index of nothing, so the list goes flat
+   * and each row's countdown carries the time.
+   */
+  function renderCompact(rows: readonly UnifiedRow[]): void {
+    const chronological = view.sort.key === "date" && view.sort.direction === "asc";
+    if (!chronological) {
+      section(resultsHost, "Upcoming", (sectionEl) => {
+        sectionEl.addClass("wl-upcoming-month");
+        const list = sectionEl.createDiv({ cls: "wl-upcoming-compact-list" });
+        for (const row of rows) renderCompactRow(list, row, deps);
+      });
+      return;
+    }
+
+    for (const group of groupByMonth(rows)) {
+      section(resultsHost, group.label, (sectionEl) => {
+        sectionEl.addClass("wl-upcoming-month");
+        const head = sectionEl.createDiv({ cls: "wl-upcoming-month-label" });
+        head.createSpan({ text: group.label });
+        head.createSpan({ cls: "wl-upcoming-month-count", text: `(${group.rows.length})` });
+        const list = sectionEl.createDiv({ cls: "wl-upcoming-compact-list" });
+        for (const row of group.rows) renderCompactRow(list, row, deps);
+      });
+    }
   }
 
   function renderAhead(rows: readonly UnifiedRow[]): void {
@@ -1182,10 +1312,15 @@ export function mountUpcomingTab(host: HTMLElement, deps: TabDeps): TabControlle
    * the compact one. Same shape, same buckets, different verbs.
    */
   function renderRow(list: HTMLElement, row: UnifiedRow): HTMLElement {
-    if (row.entry.source === "watchlist") {
-      return renderUpcomingRow(list, row.entry.value, deps);
-    }
-    return renderUnifiedRow(list, row, deps);
+    const el =
+      row.entry.source === "watchlist"
+        ? renderUpcomingRow(list, row.entry.value, deps)
+        : renderUnifiedRow(list, row, deps);
+    // Added here rather than inside either renderer because this is the one
+    // place that holds the *unified* row for both — and the unified row is what
+    // the calendar builder speaks.
+    renderCalendarLink(el, row);
+    return el;
   }
 
   /**
@@ -1375,6 +1510,144 @@ export function groupUnifiedByBucket(
     if (list && list.length > 0) out.push({ bucket, rows: list });
   }
   return out;
+}
+
+/** The cover a non-watchlist row carries, or `""` when it has none. */
+export function unifiedCoverUrl(row: UnifiedRow): string {
+  if (row.entry.source === "reading") return row.entry.value.coverUrl ?? "";
+  if (row.entry.source === "games") return row.entry.value.game.coverUrl ?? "";
+  return "";
+}
+
+/**
+ * One thumb for a row of any library.
+ *
+ * The watchlist path goes through `renderPosterThumb` so it keeps the shared
+ * lazy loader and the deterministic placeholder tint; the other two have a
+ * plain cover URL and no loader to hand it to. Same classes either way, so one
+ * CSS rule sizes them all.
+ */
+function renderRowThumb(parent: HTMLElement, row: UnifiedRow, deps: TabDeps, cls: string): HTMLElement {
+  if (row.entry.source === "watchlist") {
+    return renderPosterThumb(parent, row.entry.value.title, deps, cls);
+  }
+  const url = unifiedCoverUrl(row);
+  if (url) {
+    const el = parent.createDiv({ cls });
+    const img = el.createEl("img", { cls: "wl-thumb-img" });
+    img.setAttribute("alt", "");
+    img.setAttribute("loading", "lazy");
+    img.src = url;
+    return el;
+  }
+  const el = parent.createDiv({ cls: `${cls} is-placeholder` });
+  el.createSpan({ cls: "wl-thumb-initial", text: (row.name[0] ?? "?").toUpperCase() });
+  return el;
+}
+
+/**
+ * One row of the compact layout — every library, one shape.
+ *
+ * Reading left to right: a small cover, the title, a meta line that says what
+ * kind of thing this is and what specifically is arriving, and then, hard right,
+ * the countdown as a number you can scan down the column. The calendar actions
+ * are icons rather than the detailed layout's worded buttons, because at this
+ * density a word is the widest thing in the row.
+ *
+ * What it deliberately does NOT do is fake the detailed layout's affordances.
+ * There is no "Add season", no request button and no "Got it" here: those are
+ * watchlist-only, and a list that grew and shrank its right-hand edge depending
+ * on which library a row came from would lose the one thing this layout is for.
+ * The detailed layout is one click away and has all of them.
+ */
+export function renderCompactRow(
+  parent: HTMLElement,
+  row: UnifiedRow,
+  deps: TabDeps,
+): HTMLElement {
+  const el = parent.createDiv({ cls: `wl-upcoming-compact-row is-${row.kind} is-${row.source}` });
+
+  renderRowThumb(el, row, deps, "wl-thumb is-small");
+
+  const body = el.createDiv({ cls: "wl-upcoming-compact-body" });
+  body.createDiv({ cls: "wl-upcoming-name", text: row.name });
+
+  const meta = body.createDiv({ cls: "wl-upcoming-compact-meta" });
+  meta.createSpan({ cls: "wl-upcoming-compact-chip", text: compactTypeLabel(row) });
+
+  // Only when the airing cache actually evidences a rhythm — see `cadenceFor`.
+  // A book publication and a game launch have none and say nothing.
+  const cadence = cadenceFor(row);
+  if (cadence) meta.createSpan({ cls: "wl-upcoming-compact-cadence", text: cadence });
+
+  if (row.label) meta.createSpan({ cls: "wl-upcoming-label", text: row.label });
+  if (row.detail) meta.createSpan({ cls: "wl-upcoming-compact-detail", text: row.detail });
+  const dateText = formatDate(row.date, deps.store.settings.dateFormat);
+  if (dateText) meta.createSpan({ cls: "wl-upcoming-date", text: dateText });
+
+  // A number and a unit, at two sizes: "6" is what the eye catches running down
+  // the column, "days" is the footnote that makes it a duration.
+  const countdown = compactCountdown(row.daysUntil);
+  const countdownEl = el.createDiv({
+    cls: `wl-upcoming-countdown is-${bucketFor({ daysUntil: row.daysUntil } as UpcomingEntry)}`,
+  });
+  countdownEl.createSpan({ cls: "wl-upcoming-countdown-value", text: countdown.value });
+  if (countdown.unit) {
+    countdownEl.createSpan({ cls: "wl-upcoming-countdown-unit", text: countdown.unit });
+  }
+
+  const actions = el.createDiv({ cls: "wl-upcoming-compact-actions" });
+
+  const gcalUrl = googleCalendarUrl(row);
+  if (gcalUrl !== null) {
+    const label = googleCalendarLabel(row);
+    const link = actions.createEl("a", {
+      cls: "wl-icon-btn wl-upcoming-compact-action wl-upcoming-gcal",
+      href: gcalUrl,
+      attr: { target: "_blank", rel: "noopener", "aria-label": label, title: label },
+    });
+    setIcon(link, "calendar-plus");
+    link.addEventListener("click", (evt: MouseEvent) => evt.stopPropagation());
+  }
+
+  if (deps.onExportRowCalendar && row.date !== null) {
+    const label = `Export ${row.name} as a calendar file (.ics)`;
+    const button = actions.createEl("button", {
+      cls: "wl-icon-btn wl-upcoming-compact-action",
+      attr: { type: "button", "aria-label": label, title: label },
+    });
+    setIcon(button, "calendar-range");
+    button.addEventListener("click", (evt: MouseEvent) => {
+      evt.stopPropagation();
+      deps.onExportRowCalendar?.(row);
+    });
+  }
+
+  // Captured out of the union before the closure, because a discriminant
+  // narrowed on `row.entry` does not survive into a callback.
+  const entry = row.entry;
+  const domain: "reading" | "games" = row.source === "games" ? "games" : "reading";
+  let open: (() => void) | null = null;
+  if (entry.source === "watchlist") {
+    const title = entry.value.title;
+    if (deps.onOpenTitle) open = (): void => deps.onOpenTitle?.(title);
+  } else if (deps.onOpenDomainEntry) {
+    open = (): void => deps.onOpenDomainEntry?.(domain, row.id);
+  }
+
+  if (open) {
+    el.addClass("is-clickable");
+    el.setAttr("role", "button");
+    el.tabIndex = 0;
+    el.addEventListener("click", open);
+    el.addEventListener("keydown", (evt: KeyboardEvent) => {
+      if (evt.key !== "Enter" && evt.key !== " ") return;
+      evt.preventDefault();
+      open();
+    });
+  }
+
+  return el;
 }
 
 /**

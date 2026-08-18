@@ -14,7 +14,7 @@
  * reference `loadData()` produced. Keys v4 does not know about live on it and are
  * invisible to TypeScript. Mutate it; never rebuild it. See `types.ts` header.
  */
-import type { Plugin } from "obsidian";
+import { Notice, type Plugin } from "obsidian";
 import {
   DATA_FILE,
   EXTERNAL_WATCH_INTERVAL_MS,
@@ -40,6 +40,7 @@ import {
 } from "../types";
 import { migrate } from "./migrate";
 import { createDefaultData, createGamesData, createReadingData } from "./schema";
+import { airedEpisodesAmong, isAbsoluteEpisodeMarkable } from "./aired";
 import {
   getEffectiveTotal,
   getWatchedCount,
@@ -47,6 +48,7 @@ import {
   rememberSeasonGeometry,
   sanitizeWatchedEpisodes,
   seasonEpisodes,
+  toSeasonEpisode,
 } from "./episodes";
 
 // Episode maths is the store's public surface too; one import site for callers.
@@ -117,6 +119,21 @@ function todayIso(): string {
 
 function makeHistoryId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+/**
+ * `S04E08` for a refusal message, falling back to the absolute number when the
+ * episode belongs to no known season.
+ *
+ * `pills.episodeCode` says the same thing for the UI, and the store cannot
+ * import it: `data/` never depends on `ui/`. One format string in two places is
+ * a smaller price than a shared module that only exists to hold it.
+ */
+function episodeLabel(title: TitleV4, absoluteEpisode: number): string {
+  const at = toSeasonEpisode(title, absoluteEpisode);
+  if (!at) return `Episode ${absoluteEpisode}`;
+  const season = at.season.seasonNumber ?? at.seasonIndex + 1;
+  return `S${String(season).padStart(2, "0")}E${String(at.episode).padStart(2, "0")}`;
 }
 
 export class WatchLogStore implements WatchLogStoreApi {
@@ -648,6 +665,11 @@ export class WatchLogStore implements WatchLogStoreApi {
   ): TitleV4 | undefined {
     const title = this.getTitle(id);
     if (!title) return undefined;
+    // What was already ticked, before the patch lands. Only episodes the patch
+    // *adds* are put to the air-date guard: one that is somehow already stored
+    // stays stored, so an unrelated write can never quietly delete watch history
+    // and un-marking keeps working.
+    const alreadyWatched = patch.watchedEpisodes ? new Set(title.watchedEpisodes) : null;
     Object.assign(title, patch);
     title.dateModified = new Date().toISOString();
     if (patch.watchedEpisodes || patch.seasons || patch.totalEpisodes !== undefined) {
@@ -664,6 +686,25 @@ export class WatchLogStore implements WatchLogStoreApi {
       // are re-sanitised, and the new seasons become the basis for the next one.
       title.watchedEpisodes = sanitizeWatchedEpisodes(title);
       rememberSeasonGeometry(title);
+      // The third writer of `watchedEpisodes`, and the one every bulk path uses:
+      // the detail surfaces' `markEpisodesPatch`, CSV and tracker import, and
+      // the type-repair in `services/match`. Guarding only the two `mark*`
+      // methods would leave a wide-open door, so the same rule is applied to the
+      // episodes this patch introduces. (After the rebase, deliberately: a
+      // season edit changes which episode an absolute number *means*, so the
+      // question is only worth asking of the numbers as they finally stand.)
+      if (alreadyWatched) {
+        const kept = title.watchedEpisodes.filter(
+          (ep) => alreadyWatched.has(ep) || isAbsoluteEpisodeMarkable(title, ep),
+        );
+        const refused = title.watchedEpisodes.length - kept.length;
+        if (refused > 0) {
+          title.watchedEpisodes = kept;
+          new Notice(
+            `${title.title} — ${refused} episode${refused === 1 ? " has" : "s have"} not aired yet and ${refused === 1 ? "was" : "were"} not marked.`,
+          );
+        }
+      }
       // The denominator moved with the geometry, so "is it finished?" has to be
       // asked again: resizing the last season can complete a title, and adding
       // one can un-complete it.
@@ -729,12 +770,25 @@ export class WatchLogStore implements WatchLogStoreApi {
    *
    * Skipped episodes are a no-op — they are excluded from the denominator, so
    * letting them be ticked is what made v3's progress exceed 100%.
+   *
+   * Episodes that have not aired are refused **here**, not in the grid that
+   * draws them. The grid's dimmed cells only ever protected the grid; the card's
+   * quick "mark next episode" action, the command palette, the
+   * `obsidian://watchlog` URI handler and the code-block widgets all call this
+   * method directly, and every one of them could tick next month's episode.
+   * Un-marking is never refused: a user undoing a mistake must not be trapped by
+   * the guard, and an already-ticked future episode has to stay removable.
    */
   markEpisodeWatched(id: string, absoluteEpisode: number, watched: boolean): void {
     const title = this.getTitle(id);
     if (!title) return;
     if (absoluteEpisode < 1 || absoluteEpisode > title.totalEpisodes) return;
     if (isEpisodeSkipped(title, absoluteEpisode)) return;
+    if (watched && !isAbsoluteEpisodeMarkable(title, absoluteEpisode)) {
+      // Silence would read as a broken button, so say which episode and why.
+      new Notice(`${title.title} — ${episodeLabel(title, absoluteEpisode)} has not aired yet.`);
+      return;
+    }
 
     const set = new Set(title.watchedEpisodes);
     if (watched) set.add(absoluteEpisode);
@@ -756,11 +810,30 @@ export class WatchLogStore implements WatchLogStoreApi {
     this.commit("episode-toggled", [id]);
   }
 
+  /**
+   * Tick or untick a whole season.
+   *
+   * Marking is capped at what has actually **aired**: a season three episodes
+   * into an eight-episode run would otherwise be recorded as fully watched, and
+   * the progress maths, the time statistics and the auto-complete rule would all
+   * believe it. Unticking is never capped — see `markEpisodeWatched`.
+   */
   markSeasonWatched(id: string, seasonIndex: number, watched: boolean): void {
     const title = this.getTitle(id);
     if (!title) return;
-    const episodes = seasonEpisodes(title, seasonIndex);
-    if (episodes.length === 0) return;
+    const all = seasonEpisodes(title, seasonIndex);
+    if (all.length === 0) return;
+    const episodes = watched ? airedEpisodesAmong(title, all) : all;
+    const seasonName = title.seasons[seasonIndex]?.name ?? `Season ${seasonIndex + 1}`;
+    if (episodes.length === 0) {
+      new Notice(`${title.title} — nothing in ${seasonName} has aired yet.`);
+      return;
+    }
+    if (episodes.length < all.length) {
+      new Notice(
+        `${title.title} — marked the ${episodes.length} aired episode${episodes.length === 1 ? "" : "s"} of ${seasonName}; the rest have not aired yet.`,
+      );
+    }
 
     const set = new Set(title.watchedEpisodes);
     for (const ep of episodes) {
@@ -774,7 +847,10 @@ export class WatchLogStore implements WatchLogStoreApi {
     const season = title.seasons[seasonIndex];
     if (watched && season) {
       this.logActivity({
-        message: `${title.title} — ${season.name} marked as watched`,
+        message:
+          episodes.length < all.length
+            ? `${title.title} — ${season.name}, the ${episodes.length} episodes that have aired, marked as watched`
+            : `${title.title} — ${season.name} marked as watched`,
         source: "Watchlist",
         action: "season",
         titleName: title.title,

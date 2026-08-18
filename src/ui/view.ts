@@ -32,6 +32,7 @@ import { mountStubTab } from "./tabs/stub";
 import { mountReadingTab } from "../domains/reading";
 import { mountGamesTab } from "../domains/games/tab";
 import { mountListsTab } from "../domains/lists/tab";
+import { createThemeToggle, type ThemeCapableApp, type ThemeToggleController } from "./theme";
 import type WatchLogPlugin from "../main";
 
 interface TabDef {
@@ -63,6 +64,7 @@ export class WatchLogView extends ItemView {
   private tabBarEl: HTMLElement | null = null;
   private contentHostEl: HTMLElement | null = null;
   private controller: TabController | null = null;
+  private themeToggle: ThemeToggleController | null = null;
   private pendingQuery: string | null = null;
   /** Which tab the parked query belongs to. */
   private pendingDomain: TabId = "library";
@@ -121,6 +123,10 @@ export class WatchLogView extends ItemView {
   override async onClose(): Promise<void> {
     this.controller?.destroy();
     this.controller = null;
+    // Holds a `css-change` subscription on the workspace; a view that closed
+    // without releasing it keeps repainting a button that is no longer there.
+    this.themeToggle?.destroy();
+    this.themeToggle = null;
     this.contentEl.empty();
     this.contentEl.removeClass("wl-view", "wl-mobile");
   }
@@ -129,6 +135,9 @@ export class WatchLogView extends ItemView {
     const bar = this.tabBarEl;
     if (!bar) return;
     bar.empty();
+    // The old button went with the `empty()`; its workspace subscription did not.
+    this.themeToggle?.destroy();
+    this.themeToggle = null;
 
     for (const tab of TABS) {
       const button = bar.createEl("button", { cls: "wl-tab", attr: { type: "button" } });
@@ -141,6 +150,19 @@ export class WatchLogView extends ItemView {
       button.createSpan({ cls: "wl-tab-label", text: tab.label });
       button.addEventListener("click", () => this.setActiveTab(tab.id));
     }
+
+    // Pushed to the far end of the bar, past the tabs: it is not a place to go,
+    // it is a property of the whole window. The theme itself is Obsidian's — see
+    // `ui/theme.ts` for why this must never be a plugin-local dark mode.
+    bar.createDiv({ cls: "wl-tab-spacer" });
+    this.themeToggle = createThemeToggle(
+      bar,
+      {
+        app: this.app as unknown as ThemeCapableApp,
+        doc: this.containerEl.ownerDocument as unknown as { body?: { className?: string } | null },
+      },
+      setIcon,
+    );
   }
 
   // -------------------------------------------------------------------------

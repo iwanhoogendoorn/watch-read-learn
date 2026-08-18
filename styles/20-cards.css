@@ -2,8 +2,12 @@
  * WatchLog v4 — cards and the small chrome they share
  *
  * Colours: Obsidian CSS variables and injected --wl-* custom properties only.
- * The scrim and every tint are built with color-mix() over --background-primary,
- * so they invert with the theme instead of assuming a dark poster grid.
+ * Every tint is built with color-mix() over a theme variable, so it inverts with
+ * the theme — with ONE deliberate exception. The poster scrim and its text are
+ * dark-on-light in both themes, because they sit over artwork rather than over
+ * the page, and artwork does not change when the theme does. That exception is
+ * spelled out where the two channels are defined, in 10-base.css; nothing here
+ * invents a colour of its own, it only reads --wl-card-scrim / --wl-card-ink.
  *
  * Injected properties used here:
  *   --wl-pill    a type/status colour from the user's settings (hex, validated)
@@ -73,6 +77,27 @@
      cell has a definite one, which is the normal path. */
   aspect-ratio: 2 / 3;
   min-height: 90px;
+  /* How far the scrim ramps up over the poster above the caption. A length
+     rather than a percentage on purpose: the panel is sized to its content, so
+     a percentage would mean a different ramp on a card whose title happens to
+     wrap. It is long — most of it is under 50% alpha — because a short ramp is
+     a visible edge, and a visible edge is a slab however soft its colour. */
+  --wl-card-scrim-fade: 72px;
+  /* Local aliases for the two scrim channels 10-base.css defines, with the
+     literal repeated exactly once as a fallback for a card mounted outside
+     `.wl-view`. Everything below reads these, so the numbers live in one
+     place — see 10-base.css for why these two do not follow the theme. */
+  --wl-card-scrim: var(--wl-scrim-rgb, 10 10 14);
+  --wl-card-ink: var(--wl-scrim-ink-rgb, 255 255 255);
+  /* The card's own two layers, named here because 10-base.css asks for every
+     z-index to live in a list and these are local to a card rather than steps
+     on the view-wide --wl-z-* scale. The chrome outranks the scrim on purpose:
+     on touch the action column is always visible and can be five 32px buttons
+     tall, which on a 246px card reaches well into the scrim's ramp. Under it
+     those buttons would be both dimmed and, with the panel swallowing the
+     pointer, untappable. */
+  --wl-card-z-scrim: 1;
+  --wl-card-z-chrome: 2;
   /* Every card keeps the same outline. Without it the edge was the poster's:
      a dark poster ended in a crisp line and a pale one dissolved into the page,
      so a grid of mixed art read as a grid of mismatched components. */
@@ -106,34 +131,40 @@
 }
 
 /**
- * The hand-off from poster to caption — and nothing more.
+ * The caption: light text on a dark scrim, anchored to the bottom of the poster.
  *
- * It used to carry the legibility on its own: a tall fade to the theme's
- * background across most of the card. That made every card look different,
- * because how far up it *read* depended entirely on the poster underneath — a
- * dark poster faded gently, a bright one turned into a hard white band. The
- * caption sits on a solid panel now, so this only has to blend into it.
+ * The panel itself carries NO background. Its gradient and its blur live on
+ * `::before` instead, one layer behind the text — because `mask-image` applies
+ * to an element *and its children*, so masking this box would fade the title
+ * along with the surface it sits on. Keeping the mask on a separate background
+ * layer is what lets the scrim feather out over the poster while the text stays
+ * at full opacity.
+ *
+ * There used to be a second `.wl-card-scrim` layer over the whole card doing a
+ * weak pre-ramp. It is gone: the ramp below is long enough on its own, and the
+ * pre-ramp followed the theme, which meant a white veil over the top of every
+ * poster in a light theme — the exact thing this restyle exists to remove.
  */
-.wl-card-scrim {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(
-    to top,
-    var(--background-primary) 0%,
-    color-mix(in srgb, var(--background-primary) 60%, transparent) 24%,
-    transparent 44%
-  );
-}
-
 .wl-card-body {
   position: absolute;
   right: 0;
   bottom: 0;
   left: 0;
+  /* Own stacking context, so the `::before` at `z-index: -1` settles behind the
+     caption's text and no further — without it the background layer drops
+     underneath the poster and the caption has nothing to sit on. */
+  z-index: var(--wl-card-z-scrim, 1);
+  /* Nothing in the caption is an input — the title, the pills, the meta and the
+     read-only stars are all read-only decoration — so the panel must not be a
+     surface that eats clicks. It covers the lower half of the card and, on
+     touch, part of the always-visible action column: without this a tap on a
+     button under the scrim would hit the panel instead. The card's own open
+     handler still gets every click that lands on the caption, because the click
+     falls through to the card. */
+  pointer-events: none;
   display: flex;
   flex-direction: column;
-  gap: var(--wl-space-2, 4px);
+  gap: var(--wl-space-1, 2px);
   padding: var(--wl-space-3, 8px);
   /* The progress bar is the only optional row at the very bottom, and a
      single-episode title never has one — so a film's last line of text sat
@@ -141,14 +172,6 @@
      mixed types read as ragged. The strip is reserved on every card and the
      bar is drawn into it, so every card's text shares one baseline. */
   padding-bottom: calc(var(--wl-space-3, 8px) + var(--wl-space-2, 4px) + 3px);
-  /* One surface for the caption on every card, whatever the poster is doing
-     behind it: the text is theme text on theme background, always. */
-  background: var(--background-primary);
-  /* …and one size, so every poster is cropped on exactly the same line. Every
-     part of the caption below is bounded so the content fits this box by
-     construction rather than by luck: two title lines are always reserved, the
-     pills are one row, the meta is one line, and the airing chips float above
-     the panel instead of growing it. */
   /* No fixed height, and none needed: with the title reserving both its lines,
      the pills capped at one row, the meta at one line and the airing chips
      floated out of the flow, the caption's content is the *same shape* on every
@@ -157,16 +180,101 @@
      percentage that fits at 215px wide clips the last line at 120px. */
 }
 
+/**
+ * The scrim.
+ *
+ * Dark in BOTH themes, with light text on it — see 10-base.css for why this is
+ * the one place in the plugin that does not follow the theme. Short version: it
+ * covers poster artwork, not page, and artwork is artwork in either theme.
+ *
+ * The stops are long and gentle on purpose. It is only past halfway up that the
+ * scrim is anywhere near solid; by two-thirds it is at half alpha and the art is
+ * plainly readable through it, and it reaches zero rather than stopping on an
+ * edge. A short ramp reads as a slab no matter how soft its colour, which is
+ * what both earlier attempts at this got wrong — first an opaque panel, then a
+ * ~90% wash over a short fade. More poster showing is the entire point.
+ *
+ * The blur is small (3px) and deliberately so: over a dark scrim there is little
+ * detail left to hide, and a big radius is most of what made the last version
+ * look foggy. It earns its place only by taking the high-frequency edges out
+ * from under the 12px meta line.
+ */
+.wl-card-body::before {
+  content: "";
+  position: absolute;
+  top: calc(-1 * var(--wl-card-scrim-fade, 72px));
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    to top,
+    rgb(var(--wl-card-scrim) / 0.96) 0%,
+    rgb(var(--wl-card-scrim) / 0.88) 30%,
+    rgb(var(--wl-card-scrim) / 0.5) 65%,
+    rgb(var(--wl-card-scrim) / 0) 100%
+  );
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  /* Feathers the BLUR, which a gradient alone cannot do: without this the
+     backdrop-filter would stop dead on a straight line across the poster. It
+     lets go earlier than the gradient does, so the blur is gone well before the
+     tint is — a faint tint reads as shade, a faint blur reads as a smudge.
+     `black` here is not a colour: a mask reads only the alpha channel and these
+     stops mean "keep" and "drop". Nothing of it is ever painted. */
+  -webkit-mask-image: linear-gradient(to top, black 0%, black 32%, transparent 88%);
+  mask-image: linear-gradient(to top, black 0%, black 32%, transparent 88%);
+}
+
+/**
+ * The filmstrip: a slim strip of film stock along the card's bottom edge, with
+ * sprocket perforations punched through it by a repeating gradient.
+ *
+ * Full-bleed rather than inset, so it reads as part of the card's edge instead
+ * of as a stray rule floating inside the caption. The reserved strip above it
+ * (see `padding-bottom`) is unchanged, so every card's last line of text still
+ * sits on one baseline whether or not the bar is drawn.
+ */
 .wl-card-body .wl-progress {
   position: absolute;
-  right: var(--wl-space-3, 8px);
-  bottom: var(--wl-space-3, 8px);
-  left: var(--wl-space-3, 8px);
+  right: 0;
+  bottom: 0;
+  left: 0;
   width: auto;
+  height: 4px;
+  border-radius: 0;
+  /* Unexposed film, on the scrim's own dark rather than the theme's — this
+     strip sits at the very bottom of the card where the scrim is at 0.96, so a
+     theme-coloured track would be a white bar across a black caption. */
+  background: rgb(var(--wl-card-scrim) / 0.82);
+}
+
+.wl-card-body .wl-progress::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* Sprocket holes: light notches punched through both the track and the fill,
+     which is what makes it read as film stock rather than as a progress rule. */
+  background: repeating-linear-gradient(
+    to right,
+    transparent 0 4px,
+    rgb(var(--wl-card-ink) / 0.16) 4px 6px
+  );
+}
+
+/* The accent is a theme colour and can be a dark one in a light theme, which on
+   the scrim would be a bar you cannot see. Lifted towards the ink just enough
+   to guarantee it reads, while staying recognisably the theme's accent. */
+.wl-card-body .wl-progress-fill {
+  background: color-mix(in srgb, var(--interactive-accent) 78%, rgb(var(--wl-card-ink)));
 }
 
 .wl-card-title {
-  color: var(--text-normal);
+  /* Ink, not `--text-normal`: the caption is on a dark scrim in both themes, so
+     the theme's text colour would be near-black on near-black in a light theme. */
+  color: rgb(var(--wl-card-ink));
   font-size: var(--font-ui-small);
   font-weight: var(--font-semibold);
   line-height: 1.25;
@@ -177,6 +285,11 @@
   /* Reserved whether or not the title needs it: a one-line title that pulled
      everything below it up by 16px is exactly what made no two cards match. */
   min-height: 2.5em;
+  /* The title's top line reaches into the part of the ramp that is around 0.6
+     alpha — enough on most art, not enough on a blown-out white poster. The
+     halo is the scrim's own dark, so it deepens exactly the few pixels behind
+     the glyphs instead of darkening the whole panel to cover the worst case. */
+  text-shadow: 0 1px 3px rgb(var(--wl-card-scrim) / 0.85);
 }
 
 /*
@@ -191,7 +304,9 @@
  */
 .wl-card-pills,
 .wl-card-meta {
-  min-height: 1.4em;
+  /* Tighter than they were: the panel is translucent now, so every row it does
+     not need is poster the reader gets back. */
+  min-height: 1.3em;
 }
 
 /* The stars row and the gap it leaves behind, matched. Scoped to the card:
@@ -201,14 +316,37 @@
   min-height: 1.15em;
 }
 
+/* The stars on the scrim. The empty outlines are `--text-faint` everywhere else,
+   which in a light theme is a pale grey that vanishes on dark; the ink at low
+   alpha is the same idea done in the scrim's terms. The fill carries the rating
+   tier's configured colour and gets the same lift as a pill's text, for the same
+   reason — a tier the user set to a deep colour must still be visible. */
+.wl-card-body .wl-star-bg {
+  /* 0.38, not the 0.3 that looks right next to the filled stars: an empty star
+     is meaningful UI, not decoration — it is how "3 of 5" is read — so it wants
+     3:1 against the scrim. 0.3 measured 2.7:1; this measures 3.5:1. */
+  color: rgb(var(--wl-card-ink) / 0.38);
+}
+
+.wl-card-body .wl-star-fill {
+  /* The rating tier's colour is user-configured too, so it gets the same
+     lightness floor as a pill's text and for the same reason — a tier set to a
+     deep colour would be five invisible stars on the scrim. Fallback first. */
+  color: color-mix(in srgb, var(--wl-rating, var(--text-accent)) 50%, rgb(var(--wl-card-ink)));
+  color: oklch(from var(--wl-rating, var(--text-accent)) max(l, 0.75) c h);
+}
+
 .wl-card-meta {
-  color: var(--text-muted);
+  /* The dimmed ink is the scrim's equivalent of `--text-muted`: same job,
+     same one step down from the title, but on dark in both themes. */
+  color: rgb(var(--wl-card-ink) / 0.74);
   font-size: var(--font-ui-smaller);
   /* One line, always. The year and the progress are both short; a long custom
      type is the only thing that could ever wrap, and it truncates instead. */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-shadow: 0 1px 2px rgb(var(--wl-card-scrim) / 0.8);
 }
 
 .wl-card-pills,
@@ -232,8 +370,50 @@
   /* Tighter than a pill elsewhere: a type and a status have to share one row
      of a ~170px card, and the alternative is a second row that moves the crop
      line. If a name is still too long the text ellipses rather than clipping. */
-  padding: 1px var(--wl-space-2, 4px);
-  font-size: 0.92em;
+  padding: 0 var(--wl-space-2, 4px);
+  font-size: 0.86em;
+  /* 0.86em × 1.5 = 1.29em, which fits inside the 1.3em the pill row reserves.
+     Any taller and a card that has pills is a hair taller than one that has
+     none, and the crop line stops being shared. */
+  line-height: 1.5;
+  /**
+   * Still the user's colour, on all three channels — the pills are the only
+   * thing on a card that carries a setting, and repainting them a uniform
+   * translucent white (the obvious way to make them read on a dark scrim) would
+   * throw away the entire reason for keeping them.
+   *
+   * Instead the colour is kept and only its LIGHTNESS is raised, to a floor
+   * that clears the scrim. `oklch(from …)` keeps chroma and hue bit-exact and
+   * touches nothing already above the floor: a pale pastel comes out unchanged,
+   * a deep navy comes up to a bright cornflower that is unmistakably still the
+   * same blue. Measured over the scrim on both a white and a black poster, the
+   * worst case across pale/saturated/deep/near-black configurations is 5.2:1 —
+   * clear of AA for this text size — at about 11% mean saturation lost.
+   *
+   * The `color-mix` above it is the fallback for a build without relative
+   * colour syntax; it reaches the same floor by mixing towards the ink, which
+   * costs closer to 29% saturation. That is the right trade only when the
+   * better tool is missing, which is why it is first and overridden.
+   *
+   * The fill is the scrim's own dark with a fifth of the colour stirred in, and
+   * the outline is the colour at closer to full strength — so the hue reads at
+   * a glance from the ring even where the text is small. An inset shadow rather
+   * than a border on purpose: a real border would add 2px to the pill and break
+   * the reserved row height that keeps every card's crop line shared.
+   */
+  background: color-mix(
+    in srgb,
+    var(--wl-pill, var(--interactive-accent)) 22%,
+    rgb(var(--wl-card-scrim) / 0.62)
+  );
+  color: color-mix(
+    in srgb,
+    var(--wl-pill, var(--interactive-accent)) 50%,
+    rgb(var(--wl-card-ink))
+  );
+  color: oklch(from var(--wl-pill, var(--interactive-accent)) max(l, 0.75) c h);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--wl-pill, var(--interactive-accent)) 42%, transparent);
 }
 
 .wl-card-pills .wl-pill-text {
@@ -264,33 +444,68 @@
   flex-direction: column;
   align-items: flex-start;
   gap: var(--wl-space-1, 2px);
+  /* The one exception to the panel's `pointer-events: none`: the "New season"
+     chip carries a `title` explaining how many episodes appeared since you
+     finished the show, and a native tooltip needs a hover to fire on. The
+     action column still wins any overlap — it sits on the chrome layer. */
+  pointer-events: auto;
 }
 
-/* Over an image now rather than over the panel, so each one carries the surface
-   it needs — the same trick the Plex badge in the opposite corner uses. */
+/* These float above the caption, in the thin upper half of the ramp where the
+   scrim is doing almost nothing — so each carries its own darker chip, cut from
+   the same scrim so the card reads as one piece rather than as a caption with
+   theme-coloured stickers above it. */
 .wl-card-body .wl-airing-chip {
   max-width: 100%;
-  padding: 1px var(--wl-space-2, 4px);
+  padding: 0 var(--wl-space-2, 4px);
   border-radius: var(--wl-radius-pill, 999px);
-  background: color-mix(in srgb, var(--background-primary) 88%, transparent);
+  background: rgb(var(--wl-card-scrim) / 0.72);
+  color: rgb(var(--wl-card-ink) / 0.86);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Both multi-season chips keep their meaning — "new season" is the loud one and
+   stays green, "next up" is the quiet one — but on the scrim's terms. */
+.wl-card-body .wl-airing-chip.is-new-season {
+  color: color-mix(in srgb, var(--color-green, var(--text-accent)) 70%, rgb(var(--wl-card-ink)));
+}
+
+.wl-card-body .wl-airing-chip.is-next-up {
+  color: rgb(var(--wl-card-ink) / 0.78);
 }
 
 .wl-card-badges {
   position: absolute;
   top: var(--wl-space-2, 4px);
   left: var(--wl-space-2, 4px);
+  z-index: var(--wl-card-z-chrome, 2);
   display: flex;
   gap: var(--wl-space-2, 4px);
+}
+
+/* The badge keeps the panel's material rather than a flat plate: the top of the
+   poster is bare art now that the scrim no longer covers it. */
+.wl-card-badges .wl-plex-badge {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .wl-card-fav {
   position: absolute;
   top: var(--wl-space-2, 4px);
   right: var(--wl-space-2, 4px);
+  z-index: var(--wl-card-z-chrome, 2);
   display: inline-flex;
   color: var(--color-red, var(--text-accent));
+  /* The one piece of chrome with no surface of its own, and it sits on bare
+     poster far above the scrim. The halo is the scrim's dark for the same
+     reason the scrim is: what is behind it is artwork, not page, so a
+     theme-following halo is a coin flip on whether it separates the heart from
+     the art or blends into it. */
+  filter: drop-shadow(0 1px 2px rgb(var(--wl-card-scrim) / 0.75));
 }
 
 .wl-card-fav .svg-icon {
@@ -306,6 +521,10 @@
   position: absolute;
   top: var(--wl-space-2, 4px);
   right: var(--wl-space-2, 4px);
+  /* Above the glass, which matters most on touch: `@media (hover: none)` below
+     keeps this column permanently visible and sizes it to 32px targets, and
+     five of those reach into the panel on a normal library card. */
+  z-index: var(--wl-card-z-chrome, 2);
   display: flex;
   flex-direction: column;
   gap: var(--wl-space-1, 2px);
@@ -322,7 +541,13 @@
   padding: 0;
   border: none;
   border-radius: var(--wl-radius-s, 4px);
+  /* Left theme-following on purpose: these sit at the TOP of the card on bare
+     artwork, nowhere near the scrim, and they are app chrome rather than part
+     of the caption — a button should look like the app it belongs to. Back at
+     the 82% it has always been; the blur is the only addition. */
   background: color-mix(in srgb, var(--background-primary) 82%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   box-shadow: var(--wl-shadow-1);
   color: var(--text-muted);
   cursor: pointer;

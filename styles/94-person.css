@@ -1,0 +1,392 @@
+/* =============================================================================
+ * Person screen — biography, personal details, filmography
+ *
+ * This mounts into its own leaf rather than inside `.wl-view`, so the `--wl-*`
+ * scale declared there does not reach it. The subset this screen uses is
+ * re-declared on `.wl-person` with the same values and the same fallbacks —
+ * without it, `.wl-thumb` (shared with Upcoming) would lose its radius the
+ * moment it was rendered outside the main view.
+ *
+ * Theming policy, unchanged: zero hardcoded colours. Every colour is an Obsidian
+ * variable or a --wl-* property.
+ * ========================================================================== */
+
+.wl-person {
+  --wl-space-1: 2px;
+  --wl-space-2: 4px;
+  --wl-space-3: 8px;
+  --wl-space-4: 12px;
+  --wl-space-5: 16px;
+  --wl-space-6: 24px;
+  --wl-space-7: 32px;
+
+  --wl-radius-s: var(--radius-s, 4px);
+  --wl-radius-m: var(--radius-m, 8px);
+  --wl-radius-l: 12px;
+  --wl-radius-pill: 999px;
+
+  --wl-dur-fast: 0.12s;
+  --wl-dur-base: 0.15s;
+
+  /* The poster width the filmography shelves use. One number, so the shelf, the
+     caption clamp and the scroll snap all agree. */
+  --wl-person-poster: 116px;
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-5);
+  padding: var(--wl-space-5);
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* -----------------------------------------------------------------------------
+ * States that are not a person
+ * -------------------------------------------------------------------------- */
+
+.wl-person-message {
+  padding: var(--wl-space-6) var(--wl-space-5);
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.wl-person-message-title {
+  font-size: var(--font-ui-large);
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+  margin-bottom: var(--wl-space-2);
+}
+
+.wl-person-message-body {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  max-width: 48ch;
+  margin: 0 auto;
+  line-height: 1.5;
+}
+
+/* Two people, one name — the picker. */
+.wl-person-choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-3);
+  max-width: 480px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.wl-person-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-4);
+  width: 100%;
+  padding: var(--wl-space-3);
+  text-align: left;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-m);
+  cursor: pointer;
+  transition: background var(--wl-dur-fast) ease;
+}
+
+.wl-person-choice:hover {
+  background: var(--background-modifier-hover);
+}
+
+.wl-person-choice-photo {
+  width: 48px;
+}
+
+.wl-person-choice-body {
+  min-width: 0;
+}
+
+.wl-person-choice-name {
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+}
+
+.wl-person-choice-meta {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+/* -----------------------------------------------------------------------------
+ * Head — photo, name, actions
+ * -------------------------------------------------------------------------- */
+
+.wl-person-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--wl-space-5);
+}
+
+.wl-person-photo {
+  width: 140px;
+  border-radius: var(--wl-radius-m);
+  box-shadow: var(--shadow-s, none);
+}
+
+.wl-person-heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+  min-width: 0;
+}
+
+/* "Updated 3 w ago", the same line the title detail carries above its pills —
+   quiet, because it is provenance rather than content. */
+.wl-person-syncrow {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-person-name {
+  margin: 0;
+  font-size: var(--font-ui-large);
+  font-weight: var(--font-bold);
+  color: var(--text-normal);
+  line-height: 1.2;
+}
+
+.wl-person-known {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+
+.wl-person-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wl-space-2);
+  margin-top: var(--wl-space-2);
+}
+
+/* -----------------------------------------------------------------------------
+ * Body — fact column beside biography + filmography
+ * -------------------------------------------------------------------------- */
+
+.wl-person-body {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--wl-space-6);
+  min-width: 0;
+}
+
+.wl-person-facts {
+  flex: 0 0 200px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-4);
+}
+
+.wl-person-fact-label {
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+}
+
+.wl-person-fact-value {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.wl-person-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-5);
+}
+
+.wl-person-bio {
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+/* -----------------------------------------------------------------------------
+ * Filmography
+ * -------------------------------------------------------------------------- */
+
+.wl-person-filmography {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-3);
+}
+
+.wl-person-filmography-heading {
+  margin: 0;
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-bold);
+  color: var(--text-normal);
+}
+
+.wl-person-section-heading {
+  margin-top: var(--wl-space-3);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* A row, not a grid: a filmography is browsed sideways, and a shelf keeps the
+   page short enough that the sections above stay reachable. */
+.wl-person-shelf {
+  display: flex;
+  gap: var(--wl-space-4);
+  overflow-x: auto;
+  padding-bottom: var(--wl-space-3);
+  scroll-snap-type: x proximity;
+}
+
+.wl-person-credit {
+  flex: 0 0 var(--wl-person-poster);
+  width: var(--wl-person-poster);
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+  scroll-snap-align: start;
+  border-radius: var(--wl-radius-m);
+}
+
+.wl-person-credit.is-clickable {
+  cursor: pointer;
+}
+
+.wl-person-credit.is-clickable:hover .wl-person-credit-title {
+  color: var(--text-accent);
+}
+
+.wl-person-credit:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+/* The poster box itself is the shared `.wl-thumb`; only its width is ours. */
+.wl-person-credit-poster {
+  width: 100%;
+  border-radius: var(--wl-radius-m);
+}
+
+.wl-person-credit.is-owned .wl-person-credit-poster {
+  box-shadow: 0 0 0 2px var(--interactive-accent);
+}
+
+.wl-person-credit-badge {
+  position: absolute;
+  top: var(--wl-space-2);
+  right: var(--wl-space-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--wl-radius-pill);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.wl-person-credit-badge svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Sits on the poster so the caption below never moves when it appears. */
+.wl-person-add {
+  position: absolute;
+  left: var(--wl-space-2);
+  right: var(--wl-space-2);
+  bottom: var(--wl-space-2);
+  padding: var(--wl-space-1) var(--wl-space-2);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  line-height: 1.4;
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+  border: none;
+  border-radius: var(--wl-radius-s);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--wl-dur-base) ease;
+}
+
+/* Revealed on hover on a pointer device; always visible without one, because a
+   touch screen has no hover and an invisible button is not a button. */
+.wl-person-credit:hover .wl-person-add,
+.wl-person-add:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .wl-person-add {
+    opacity: 1;
+  }
+}
+
+.wl-person-add:hover {
+  background: var(--interactive-accent-hover);
+}
+
+.wl-person-add:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.wl-person-credit-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-1);
+  min-width: 0;
+}
+
+.wl-person-credit-title {
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+  line-height: 1.3;
+  /* Two lines, then ellipsis: every caption occupies the same height whatever
+     the title's length, so a shelf's posters all sit on one line. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 2.6em;
+}
+
+.wl-person-credit-role,
+.wl-person-credit-year {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Reserved even when empty — an undated credit must not pull its neighbours'
+     posters out of alignment. */
+  min-height: 1.2em;
+}
+
+/* -----------------------------------------------------------------------------
+ * Narrow panes
+ * -------------------------------------------------------------------------- */
+
+@media (max-width: 620px) {
+  .wl-person-body {
+    flex-direction: column;
+    gap: var(--wl-space-5);
+  }
+
+  .wl-person-facts {
+    flex: 1 1 auto;
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .wl-person-photo {
+    width: 96px;
+  }
+}

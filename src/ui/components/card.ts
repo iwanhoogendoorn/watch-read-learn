@@ -6,7 +6,7 @@
  * is why widgets feel native instead of like a cut-down second implementation.
  *
  * Three variants:
- *   - `full`    2:3 poster, gradient scrim, pills, rating, progress, hover actions
+ *   - `full`    2:3 poster, scrim caption, pills, rating, progress, hover actions
  *   - `compact` a row: thumb + title + meta + rating
  *   - `mini`    thumb + title, for shelves and dense lists
  *
@@ -135,7 +135,9 @@ function buildFullCard(parent: HTMLElement, title: TitleV4, ctx: CardCtx): HTMLE
 
   const posterWrap = card.createDiv({ cls: "wl-card-poster" });
   buildPoster(posterWrap, title, ctx);
-  posterWrap.createDiv({ cls: "wl-card-scrim" });
+  // No separate scrim layer: the caption's own background layer carries the
+  // whole gradient, and a second full-card wash on top of it was a veil over
+  // the part of the poster nothing needed to cover.
 
   if (ctx.showPlexBadge) {
     const badges = posterWrap.createDiv({ cls: "wl-card-badges" });
@@ -151,6 +153,11 @@ function buildFullCard(parent: HTMLElement, title: TitleV4, ctx: CardCtx): HTMLE
 
   if (ctx.showActions) buildActions(posterWrap, title, ctx);
 
+  // The caption is a SIBLING of the poster and the last child of the wrap, not
+  // a box drawn over a cropped poster: the whole poster is behind it and the
+  // panel's own background layer (`.wl-card-body::before`) shades what it
+  // covers instead of hiding it. Being last is what puts the scrim above the
+  // art.
   const body = posterWrap.createDiv({ cls: "wl-card-body" });
   body.createDiv({ cls: "wl-card-title", text: title.title });
 

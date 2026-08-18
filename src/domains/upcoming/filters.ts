@@ -795,8 +795,40 @@ export interface UpcomingView {
   secondarySort: UpcomingSortSpec | null;
 }
 
+/**
+ * Which of the two Upcoming layouts is drawn.
+ *
+ * `detailed` is the layout this tab has always had — a card-ish row per item
+ * with its state pills and its row actions, grouped by relative time. `compact`
+ * is the dense one: a thumb, one meta line, a big countdown, grouped by calendar
+ * month. Same rows, same filters, same sort; only the drawing differs.
+ *
+ * Deliberately NOT part of `UpcomingView`, which is what a saved view captures.
+ * A preset is a *question* ("what is due this week that is not on Plex"); how
+ * densely the answer is drawn is a preference about the reader, not the query,
+ * and applying a colleague's preset should not resize their screen.
+ */
+export type UpcomingLayout = "detailed" | "compact";
+
+export const UPCOMING_LAYOUTS: readonly UpcomingLayout[] = ["detailed", "compact"];
+
+export const UPCOMING_LAYOUT_LABELS: Record<UpcomingLayout, string> = {
+  detailed: "Detailed",
+  compact: "Compact",
+};
+
+/** The layout that shipped first stays the default; nothing changes unasked. */
+export const DEFAULT_UPCOMING_LAYOUT: UpcomingLayout = "detailed";
+
+export function normalizeUpcomingLayout(raw: unknown): UpcomingLayout {
+  return UPCOMING_LAYOUTS.includes(raw as UpcomingLayout)
+    ? (raw as UpcomingLayout)
+    : DEFAULT_UPCOMING_LAYOUT;
+}
+
 export interface UpcomingViewState extends UpcomingView {
   presets: UpcomingPreset[];
+  layout: UpcomingLayout;
 }
 
 /**
@@ -890,6 +922,7 @@ export function readUpcomingViewState(settings: Settings): UpcomingViewState {
       sort: defaultUpcomingSort(),
       secondarySort: null,
       presets: [],
+      layout: DEFAULT_UPCOMING_LAYOUT,
     };
   }
   return {
@@ -902,6 +935,9 @@ export function readUpcomingViewState(settings: Settings): UpcomingViewState {
           .map((preset, index) => normalizePreset(preset, index))
           .filter((preset): preset is UpcomingPreset => preset !== null)
       : [],
+    // Absent (every install before this shipped) means the layout the tab has
+    // always drawn — an upgrade must not silently re-lay-out the tab.
+    layout: normalizeUpcomingLayout(raw.layout),
   };
 }
 
@@ -917,7 +953,26 @@ export function writeUpcomingViewState(settings: Settings, state: UpcomingViewSt
       sort: { ...preset.sort },
       secondarySort: preset.secondarySort ? { ...preset.secondarySort } : null,
     })),
+    layout: state.layout,
   });
+}
+
+/**
+ * The layout on its own, for a caller that has a `Settings` and no view.
+ *
+ * The settings tab is exactly that caller: it wants one radio button, not the
+ * tab's whole query state. Reading and writing through the same key the tab uses
+ * is the point — one stored value, so the setting and the tab's own toggle can
+ * never disagree about which layout is on.
+ */
+export function readUpcomingLayout(settings: Settings): UpcomingLayout {
+  return readUpcomingViewState(settings).layout;
+}
+
+export function writeUpcomingLayout(settings: Settings, layout: UpcomingLayout): void {
+  const state = readUpcomingViewState(settings);
+  state.layout = layout;
+  writeUpcomingViewState(settings, state);
 }
 
 export function makeUpcomingPresetId(): string {

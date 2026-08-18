@@ -408,6 +408,20 @@ export interface Settings {
   airingTtlHours: number;
   /** Plex availability refresh TTL, hours. */
   plexTtlHours: number;
+  /**
+   * Library-wide metadata sweep TTL, hours (`services/sweep.ts`).
+   *
+   * The slowest cadence in the plugin and the only one that touches *every*
+   * title, which is why it has its own off switch: `0` (`SWEEP_TTL_DISABLED`)
+   * means "never sweep" and is passed through untouched, while any other value
+   * is floored at `SWEEP_TTL_HOURS_MIN` by the service so a mistyped setting
+   * cannot become a hot loop. `SWEEP_TTL_HOURS_DEFAULT` is weekly.
+   *
+   * The key name is fixed by `SWEEP_TTL_SETTING_KEY`; `integration.ts` still
+   * reads it through `readExtra` so a `data.json` written before this field
+   * existed keeps working.
+   */
+  metadataSweepTtlHours: number;
 
   // --- behaviour (v4) -----------------------------------------------------
   /** Generate/maintain a markdown note per title. */
@@ -417,6 +431,32 @@ export interface Settings {
   openLibraryAfterAdd: boolean;
   /** Cap for Top Cast/Directors/Studios on the dashboard. */
   dashboardTopCredits: number;
+  /**
+   * Open a title in a workspace leaf (`ui/views/title-detail.ts`) instead of the
+   * detail modal.
+   *
+   * A setting rather than a replacement: the modal is the shape people already
+   * have muscle memory for, and the leaf is the shape a show with a full cast
+   * and a season grid actually needs. Both surfaces are the *same* controls —
+   * everything under `ui/detail/` is shared — so this only chooses the frame.
+   */
+  openTitlesInFullView: boolean;
+
+  // --- local artwork cache (services/imagecache.ts) -----------------------
+  /**
+   * Keep local copies of poster art in the vault.
+   *
+   * **Off by default, and it must stay that way.** Everything else this plugin
+   * writes goes into its own plugin folder or into notes the user asked for;
+   * this one writes binary files into their vault, so it is opt-in or it is
+   * wrong.
+   */
+  cacheImagesLocally: boolean;
+  /**
+   * Vault-relative folder for those copies. Always put through
+   * `normalizeCacheFolder` before use — a typed `../../..` must not escape.
+   */
+  imageCacheFolder: string;
 
   // --- view state (v4) ----------------------------------------------------
   libraryViewMode: LibraryViewMode;
@@ -1242,6 +1282,27 @@ export interface CardContext {
   onPlayTrailer?: (title: TitleV4) => void;
   /** Shared lazy-poster loader; cards must not create their own observers. */
   posterLoader?: PosterLoader;
+  /**
+   * The read side of the optional local artwork cache
+   * (`services/imagecache.ts`), for `posterUrlFor(title, ctx.posterCache)`.
+   *
+   * Optional and absent unless the user opted in, so a card handed nothing
+   * behaves exactly as it always has: hotlink the remote URL. Never awaits and
+   * never throws — it answers out of an in-memory index or answers `""`.
+   */
+  posterCache?: PosterCacheLookup;
+}
+
+/**
+ * What a poster needs from the artwork cache, and nothing else.
+ *
+ * Declared here (rather than importing `ui/components/posters.ts`) so the frozen
+ * contract stays free of UI imports; it is structurally identical to that
+ * module's `PosterCacheLookup`, which is what makes an `ImageCache` satisfy both.
+ */
+export interface PosterCacheLookup {
+  /** Vault resource URL for a cached image, or `""`. Must not await or throw. */
+  resolve(key: { scope: string; id: string }, remoteUrl: string): string;
 }
 
 export interface PosterLoader {

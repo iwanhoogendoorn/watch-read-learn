@@ -258,8 +258,15 @@ describe("the Upcoming toolbar", () => {
       el
         .querySelectorAll(".wl-upcoming-row")
         .find((row) => (row.textContent ?? "").includes(name)) as StubEl;
+    // The *availability* actions. "Add to Calendar" wears the same class but is
+    // on every dated row regardless of where the title is, so it would drown
+    // out the thing this check is about; it has its own tests in
+    // `upcoming-gcal.test.ts`.
     const buttons = (row: StubEl): string[] =>
-      row.querySelectorAll(".wl-mini-btn").map((b) => b.textContent ?? "");
+      row
+        .querySelectorAll(".wl-mini-btn")
+        .filter((b) => !b.classes.has("wl-upcoming-gcal"))
+        .map((b) => b.textContent ?? "");
 
     const neverScanned = createTitle({
       id: "unscanned",

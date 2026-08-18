@@ -29,15 +29,83 @@ export function clearPosterFailures(): void {
 }
 
 /**
- * The poster a card should show: the user's override wins, then the API value.
+ * The remote poster for a title: the user's override wins, then the API value.
  * `""` means "render the placeholder" — never the v3 `"none"` sentinel.
+ *
+ * This is the precedence rule on its own, with no cache in it, because the
+ * cache is keyed on the URL this returns.
  */
-export function posterUrlFor(title: TitleV4): string {
+export function posterSourceUrl(title: TitleV4): string {
   const manual = title.manualPosterUrl.trim();
   if (manual && manual !== "none") return manual;
   const api = title.posterUrl.trim();
   if (api && api !== "none") return api;
   return "";
+}
+
+/**
+ * The read side of `services/imagecache.ts`, narrowed to what rendering needs.
+ *
+ * Declared here rather than imported so this module stays free of the service —
+ * a lane with its own stand-in cache can satisfy this with four lines.
+ */
+export interface PosterCacheLookup {
+  /** Vault resource URL for a cached image, or `""`. Must not await or throw. */
+  resolve(key: { scope: string; id: string }, remoteUrl: string): string;
+}
+
+/**
+ * The cache scope titles live in.
+ *
+ * Ids are only unique *within* a domain — this plugin also holds books, games
+ * and people, and a bare id from one provider can equal a bare id from another.
+ * Everything a poster hands the cache is qualified with this.
+ */
+export const POSTER_CACHE_SCOPE = "title";
+
+/**
+ * The poster a card should show.
+ *
+ * Without a cache this is exactly `posterSourceUrl` — the behaviour every
+ * existing caller already has. With one, a locally cached copy is preferred,
+ * and the precedence above is untouched by that: the cache is asked about the
+ * URL that already won, so a `manualPosterUrl` still beats the API value, it
+ * just gets served off disk.
+ *
+ * A cache that misses, misbehaves or throws falls back to the remote URL. This
+ * runs inside the paint; it is not allowed to be the reason a library is blank.
+ */
+export function posterUrlFor(title: TitleV4, cache?: PosterCacheLookup): string {
+  const source = posterSourceUrl(title);
+  if (source === "" || !cache) return source;
+  let local = "";
+  try {
+    local = cache.resolve({ scope: POSTER_CACHE_SCOPE, id: title.id }, resolvePosterUrl(source));
+  } catch {
+    local = "";
+  }
+  // A cached answer that looks like a bare vault path is discarded: the caller
+  // pipes this through `resolvePosterUrl`, which would read a leading `/` as a
+  // TMDB poster path and rewrite it into a CDN URL.
+  return local !== "" && !local.startsWith("/") ? local : source;
+}
+
+/**
+ * `(key, url)` pairs for a set of titles, ready for `ImageCache.warm()`.
+ *
+ * Titles with no poster at all are skipped, and the URL is fully resolved, so
+ * what gets cached is the same string `posterUrlFor` will later look up.
+ */
+export function posterCacheEntries(
+  titles: Iterable<TitleV4>,
+): { key: { scope: string; id: string }; url: string }[] {
+  const entries: { key: { scope: string; id: string }; url: string }[] = [];
+  for (const title of titles) {
+    const source = posterSourceUrl(title);
+    if (source === "") continue;
+    entries.push({ key: { scope: POSTER_CACHE_SCOPE, id: title.id }, url: resolvePosterUrl(source) });
+  }
+  return entries;
 }
 
 /** A bare TMDB poster path (`/abc.jpg`) becomes a full CDN URL; anything else passes through. */

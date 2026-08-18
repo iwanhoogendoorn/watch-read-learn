@@ -47,6 +47,21 @@
   grid-column: auto / span 1;
 }
 
+/* The control strip is not a section (it holds no content), so it needs its own
+   full-width rule rather than inheriting the one above. */
+.wl-tab-panel-dashboard > .wl-source-bar {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+/* The compact layout: every section is full width by construction, so the only
+   thing the grid still has to do is stack them — and closer together, because
+   "compact" that keeps the roomy gap is only a shorter page, not a denser one. */
+.wl-tab-panel-dashboard.is-compact {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--wl-space-3);
+}
+
 @media (max-width: 760px) {
   .wl-tab-panel-dashboard > .wl-section.is-half {
     grid-column: 1 / -1;
@@ -87,6 +102,68 @@
 .wl-stat-label {
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
+}
+
+/* -----------------------------------------------------------------------------
+ * The compact layout's tiles
+ *
+ * A row of bordered boxes, each `.wl-panel` + `.wl-stat` — the panel supplies
+ * the border and the stat supplies the column, so a tile is an arrangement of
+ * two components this file already owns rather than a third one.
+ *
+ * Everything here is about text that must never be clipped. The harness these
+ * are tested in has no layout engine and would happily pass a tile whose
+ * subtext ran off the edge, so the rule is structural instead of measured:
+ * nothing in a tile sets `nowrap` or an ellipsis, the track is `auto-fit` with
+ * a `minmax` floor so tiles wrap onto a second row rather than being squeezed
+ * below their floor, and long single words break instead of overflowing.
+ * -------------------------------------------------------------------------- */
+
+.wl-stat-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--wl-space-3);
+}
+
+/* By type: two tiles carrying two subtext lines each, so they need the room. */
+.wl-stat-strip.is-wide {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+/* `box-sizing` stated rather than inherited: the `minmax()` floor above is a
+   *track* width, so if the panel's padding sat outside the box the tile would
+   overflow its own column at exactly the width the floor was chosen to protect.
+   Obsidian's base stylesheet already sets this globally; saying it here means
+   the guarantee does not depend on that. */
+.wl-stat-tile {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+/* Label above value in these tiles (markup order), so the label is the smaller
+   of the two and has to stay readable at any width. */
+.wl-stat-tile .wl-stat-label,
+.wl-stat-tile .wl-stat-value {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.wl-stat-sub {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+/* The tab's own controls, right-aligned in the library-chip bar. `margin-left:
+   auto` rather than `justify-content` on the bar, so the group sits on the
+   right whether or not there are any chips to its left. */
+.wl-dash-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+  margin-left: auto;
 }
 
 /* -----------------------------------------------------------------------------
@@ -518,4 +595,163 @@
   display: flex;
   align-items: center;
   margin-bottom: calc(-1 * var(--wl-space-2));
+}
+
+/* -----------------------------------------------------------------------------
+ * Poster rails (the Dashboard's shelves)
+ *
+ * A streaming-service row: a heading and a track of the *same* `.wl-card` the
+ * Library grid paints, laid out sideways instead of wrapped. Nothing here
+ * restyles the card — `20-cards.css` owns that — this only gives each one a
+ * width so a row of them is a row rather than a squeeze.
+ *
+ * Named `.wl-rail`, not `.wl-shelf`: `.wl-shelf` above is the *wrapping grid*
+ * of compact rows behind "Continue watching", and one class means one
+ * component (`tests/styles.test.ts`).
+ *
+ * Two things this box must never do. It must not set a height — the card
+ * carries `aspect-ratio: 2 / 3`, so the row sizes itself to its tallest child
+ * and any height here would fight it. And it must not set `align-items` — the
+ * default stretch is what keeps a row of cards flush.
+ * -------------------------------------------------------------------------- */
+
+.wl-rail {
+  /* One knob for the whole row: card width follows the rail, not the grid. */
+  --wl-rail-card-width: 110px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-3);
+  min-width: 0;
+}
+
+/*
+ * The track.
+ *
+ * `overflow-y: hidden` (not `auto`) and `overscroll-behavior-x: contain` are the
+ * whole accessibility story: a wheel gesture *down* the page is never captured
+ * by this box, while a horizontal flick that reaches the end of the row stops
+ * there instead of scrolling the tab behind it. Do not collapse the two
+ * `overscroll-behavior` axes into the shorthand — `contain` on the block axis is
+ * exactly the scroll trap this avoids.
+ */
+.wl-rail-track {
+  display: flex;
+  gap: var(--wl-space-3);
+  /* Room for the scrollbar, and for the focus ring the cards draw just outside
+     themselves — without it a focused card clips against the next rail. */
+  padding: var(--wl-space-1) var(--wl-space-1) var(--wl-space-2);
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
+}
+
+/* The track is a tab stop, so it needs to show when it has focus. */
+.wl-rail-track:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: var(--wl-radius-m);
+}
+
+/* One width, set on the wrapper rather than on the card, so the rail never has
+   to know which variant the factory built. No height: the card's own
+   `aspect-ratio` resolves that, and a height here would fight it. */
+.wl-rail-item {
+  flex-shrink: 0;
+  width: var(--wl-rail-card-width);
+}
+
+.wl-rail-item > * {
+  width: 100%;
+}
+
+/*
+ * The title, in a box that reserves the space it is allowed to use.
+ *
+ * `.wl-card-mini-title` is `white-space: nowrap` + ellipsis, which is right in a
+ * dense list and wrong at 110px: it cuts every title to roughly fourteen
+ * characters on one line. Here it gets two full lines instead, and `min-height`
+ * reserves both whether or not the second is used — so a one-line title and a
+ * two-line title produce the same card height and the row stays flush. This is
+ * a context override on a component another partial owns, which is why it is a
+ * qualified selector and not a second `.wl-card-mini-title`.
+ *
+ * A name longer than two lines at this width cannot be shown in full anywhere;
+ * `renderShelfRow` puts it in the wrapper's `title` attribute, and the card's
+ * own `aria-label` already carries it for a screen reader.
+ */
+.wl-rail-track .wl-card-mini-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: normal;
+  line-height: 1.3;
+  min-height: calc(2 * 1.3em);
+  overflow: hidden;
+}
+
+/* -----------------------------------------------------------------------------
+ * "Choose visible shelves"
+ *
+ * The modal that governs the strip above, so it lives beside the strip rather
+ * than in `60-modals.css`: what a row means here is a shelf, and the shelf is
+ * this file's component.
+ *
+ * A row is a `<label>`, so the whole thing — name, description and all — is the
+ * hit target. The base `.wl-modal .wl-modal-check` centres its two children,
+ * which is right for a one-line checkbox and wrong for a two-line one; these
+ * top-align the box against the first line of text instead.
+ * -------------------------------------------------------------------------- */
+
+.wl-shelfset-modal .wl-shelfset-group {
+  margin: var(--wl-space-5) 0 var(--wl-space-2);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.wl-shelfset-modal .wl-shelfset-group:first-of-type {
+  margin-top: var(--wl-space-3);
+}
+
+.wl-shelfset-row {
+  align-items: flex-start;
+  margin: 0;
+  padding: var(--wl-space-2);
+  border-radius: var(--wl-radius-s);
+  cursor: pointer;
+  transition: background-color var(--wl-dur-fast) ease;
+}
+
+.wl-shelfset-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.wl-shelfset-row input {
+  flex: 0 0 auto;
+  /* Nudged down to sit on the name's baseline rather than above it. */
+  margin-top: 2px;
+}
+
+.wl-shelfset-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-1);
+  min-width: 0;
+}
+
+.wl-shelfset-name {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  overflow-wrap: anywhere;
+}
+
+.wl-shelfset-desc {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }

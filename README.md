@@ -3,6 +3,38 @@
 An Obsidian plugin for the things you watch, read and play — films, TV, books,
 manga and games in one library, wired into a home media stack.
 
+- **An episode you have not seen yet cannot be ticked** — a show halfway
+  through a season only lets you mark what has actually aired, and "mark season
+  watched" stops at the last broadcast episode instead of quietly completing the
+  show. It refuses only when it can point at a future date it actually holds, so
+  a title with no air data behaves exactly as before, and un-ticking is always
+  allowed — a guard that traps you in a mistake is worse than no guard.
+- **Poster-forward cards** — the artwork is the card, with the caption on a
+  blurred scrim that fades into it rather than a panel sitting on top of it.
+  The scrim stays dark in both themes because it sits over a poster, not over
+  the page.
+- **People are places you can go** — open any actor or director for their
+  biography, personal details and full filmography, and add anything from it to
+  your library in one click. What you already own is marked as owned rather than
+  offered again.
+- **A title screen with room to breathe** — the detail view opens as a real
+  workspace pane: poster, synopsis, time left and time watched, season
+  accordions, and dates with a "Today" button beside each one. The compact modal
+  is still there when you just want a quick look.
+- **Bring your history with you** — import from Trakt (including the full ZIP
+  export), Letterboxd, Simkl, IMDb and Ryot. Nothing is written until you have
+  seen what will change, and merging into a title you already have never
+  overwrites your own rating, review, notes or ticked episodes.
+- **Layouts, not opinions** — Dashboard and Upcoming each ship a second, denser
+  layout you can switch to from the toolbar, poster shelves you can turn on and
+  off one by one, and a light/dark switch that drives Obsidian's own theme
+  rather than a private one.
+- **It keeps itself current** — an optional background sweep refreshes stale
+  metadata across the whole library, skipping what cannot change (dropped
+  titles, finished films) while still re-checking finished *shows*, because that
+  is how a new season gets noticed.
+- **Posters can live in your vault** — off by default; turn it on and artwork is
+  cached locally so the library renders with no network at all.
 - **Logging what you watched, in one go** — marking something finished asks
   the three things you know at that moment: when (defaulted to today), how good,
   and what you thought. A film gets one date rather than a start and an end,
@@ -19,6 +51,9 @@ manga and games in one library, wired into a home media stack.
   already in your library is ever suggested back, and "not interested" sticks.
 - **Plex availability** — every film and show says whether it is already on your
   server, matched by GUID rather than by title.
+- **The right studio** — a show reports the network it airs on, a film reports
+  its production companies. TMDB sends both on a TV payload and the two are not
+  spellings of one field.
 - **IMDb, one click away** — when the title actually has an id. Never a search
   URL built from the name, which looks identical and is wrong often enough to
   matter; ids are backfilled from the provider, and from any IMDb link already
@@ -28,7 +63,8 @@ manga and games in one library, wired into a home media stack.
   available). Nothing is ever requested without an explicit yes.
 - **Upcoming** — one feed for the next episode, an announced season, a film's
   release, a book's publication date and a game's launch, with the same filter
-  toolbar as everywhere else and an `.ics` export.
+  toolbar as everywhere else, an `.ics` export, and a per-row link that drops the
+  thing straight into Google Calendar.
 - **Books and manga** — Open Library and Google Books lookup, public ratings,
   store links, categories, and per-book progress that follows the page you are
   on in a linked PDF. Page counts are read out of the PDF itself when neither
@@ -107,12 +143,15 @@ src/
   settings.ts    settings tab
   types.ts       FROZEN cross-module contract — read the header before editing
   constants.ts
-  data/          schema · migrate · backup · adopt · paths · review · store · episodes · notes
+  data/          schema · migrate · backup · adopt · paths · review · store · episodes ·
+                 notes · aired (has this episode happened yet — the store asks, not the grid)
   services/      http (requestUrl wrapper + ApiError taxonomy), providers,
-                 airing, availability, suggest
+                 airing, availability, suggest, sweep, imagecache, tmdb-person
   search/        query language, filters, sorting
-  domains/       reading · games · anime · lists · drafts · csv · upcoming
-  ui/            view shell, tabs, components, modals
+  domains/       reading · games · anime · lists · drafts · csv · import · shelves · upcoming
+  ui/            view shell, tabs, components, modals, theme,
+                 views/  the workspace panes (title detail, person)
+                 detail/ the controls both the pane and the modal render from
   widgets/       the code-fence renderer
 styles/          numbered partials, concatenated into build/styles.css
 tests/           vitest, no network

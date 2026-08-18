@@ -33,6 +33,13 @@ import {
 } from "./services/airing";
 import { createRequestService, type RequestService } from "./services/requests";
 import {
+  createMetadataSweep,
+  SWEEP_TTL_HOURS_DEFAULT,
+  SWEEP_TTL_SETTING_KEY,
+  type MetadataSweep,
+  type SweepResult,
+} from "./services/sweep";
+import {
   pickSeeds,
   rankSuggestions,
   seedWeightFor,
@@ -129,6 +136,14 @@ export class Integrations {
    */
   readonly anime: AnimeDomain;
 
+  /**
+   * The library-wide metadata refresh (`services/sweep.ts`).
+   *
+   * Constructed here for the same reason the airing queue is: this is the one
+   * place that holds a configured provider and the store at once.
+   */
+  readonly metadataSweep: MetadataSweep;
+
   private readonly store: WatchLogStoreApi;
   private readonly deps: IntegrationDeps;
 
@@ -195,6 +210,35 @@ export class Integrations {
         await this.refreshTitlePlex(title);
       },
     });
+
+    this.metadataSweep = createMetadataSweep({
+      store: deps.store,
+      configured: () => this.overseerr.configured() || this.tmdb.configured(),
+      // Overseerr first, TMDB as the fallback — the same order every other
+      // details call in this file uses (SPEC D4).
+      details: (tmdbId, mediaType) =>
+        this.overseerr.configured()
+          ? this.overseerr.details(tmdbId, mediaType)
+          : this.tmdb.details(tmdbId, mediaType),
+      buildPatch: metadataPatch,
+      getTtlHours: () => this.sweepTtlHours(),
+    });
+  }
+
+  /**
+   * The sweep's TTL in hours.
+   *
+   * Read through `readExtra` because `types.ts` is a frozen contract and the
+   * field is not declared on `Settings` yet; the moment it is, this becomes a
+   * plain property read and nothing else changes. A non-finite or negative
+   * value falls back to the default rather than producing a hot loop; an
+   * explicit `0` means "off" and is passed straight through.
+   */
+  private sweepTtlHours(): number {
+    const raw = readExtra<unknown>(this.store.settings, SWEEP_TTL_SETTING_KEY);
+    const value = typeof raw === "number" ? raw : Number.NaN;
+    if (!Number.isFinite(value) || value < 0) return SWEEP_TTL_HOURS_DEFAULT;
+    return value;
   }
 
   // -------------------------------------------------------------------------
@@ -1104,6 +1148,83 @@ export class Integrations {
     return `Refreshed «${title.title}».`;
   }
 
+  // -------------------------------------------------------------------------
+  // Library-wide metadata sweep
+  // -------------------------------------------------------------------------
+
+  /**
+   * Re-pull provider metadata across the library (`services/sweep.ts`).
+   *
+   * The visible half of the sweep: the concurrency guard, the progress Notice
+   * and the cancel affordance. Everything about *which* titles and *what may be
+   * written* lives in the service, where it is pure and tested.
+   *
+   * `quiet` is for the automatic runs — catch-up on load and on view open have
+   * no business putting a Notice on screen for work nobody asked for. The
+   * command passes it false and gets a live "12 of 40" counter it can click to
+   * stop.
+   *
+   * Never throws: like everything else in this file, a failure comes back as a
+   * sentence.
+   */
+  async sweepMetadata(
+    options: { force?: boolean; quiet?: boolean; limit?: number } = {},
+  ): Promise<string> {
+    if (this.busy.has("sweep")) return "A metadata sweep is already running.";
+    this.busy.add("sweep");
+
+    const quiet = options.quiet === true;
+    // `0` never auto-hides, which is what a progress Notice needs.
+    const notice = quiet ? null : new Notice("Refreshing metadata…", 0);
+    if (notice) {
+      // The Notice is the cancel button. There is nowhere else to put one for a
+      // job that runs for minutes with no modal of its own.
+      notice.noticeEl.addEventListener("click", () => this.metadataSweep.cancel());
+      notice.noticeEl.setAttr("title", "Click to stop the metadata sweep");
+    }
+
+    try {
+      const result: SweepResult = await this.metadataSweep.run({
+        ...(options.force !== undefined ? { force: options.force } : {}),
+        ...(options.limit !== undefined ? { limit: options.limit } : {}),
+        ...(notice
+          ? {
+              onProgress: (done: number, total: number, title: TitleV4): void => {
+                notice.setMessage(`Refreshing metadata — ${done + 1} of ${total}: ${title.title}`);
+              },
+            }
+          : {}),
+      });
+      if (result.refreshed > 0) {
+        this.store.logActivity({
+          action: "airing",
+          message: `Metadata refreshed for ${result.refreshed} title(s)`,
+          source: "Watchlist",
+        });
+      }
+      return result.message;
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      console.error("[wrl] metadata sweep failed", err);
+      return `Metadata sweep failed: ${detail}`;
+    } finally {
+      notice?.hide();
+      this.busy.delete("sweep");
+    }
+  }
+
+  /** Stop the in-flight sweep after the title it is on. No-op when idle. */
+  cancelMetadataSweep(): void {
+    this.metadataSweep.cancel();
+  }
+
+  /**
+   * How many titles a sweep would refresh right now. For the settings blurb.
+   */
+  metadataSweepDue(): number {
+    return this.metadataSweep.dueCount();
+  }
+
   /**
    * How many episodes a given season has upstream (SPEC §4.4).
    *
@@ -1242,6 +1363,18 @@ export class Integrations {
     } catch (err) {
       console.warn("[wrl] Plex catch-up failed", err);
     }
+
+    // LAST, and deliberately **not awaited**: the metadata sweep is the slow
+    // one — up to `SWEEP_MAX_PER_RUN` titles at one request a second — and
+    // nothing above it may wait on it. `catchUp` itself is already fired with
+    // `void` from `onLayoutReady`, so awaiting here would not block startup;
+    // what it would block is the schedule and the Plex badges being current,
+    // which are what the user actually opened the view to see.
+    //
+    // Quiet by design: a refresh nobody asked for does not get a Notice.
+    void this.sweepMetadata({ quiet: true }).catch((err: unknown) => {
+      console.warn("[wrl] metadata sweep failed", err);
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -1281,6 +1414,10 @@ export class Integrations {
 
   destroy(): void {
     this.stopPolling();
+    // A sweep can be minutes long, so unload has to be able to interrupt it —
+    // otherwise a disabled plugin carries on writing to a store nobody is
+    // watching.
+    this.metadataSweep.cancel();
     this.openViews = 0;
   }
 }

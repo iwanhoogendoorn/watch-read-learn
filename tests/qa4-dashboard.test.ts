@@ -121,6 +121,14 @@ describe("the dashboard renders without breaking", () => {
 
     const sections = sectionsOf(root);
     expect(sections.map((s) => s.name)).toEqual([
+      // The poster shelves lead the tab: "what now" before "how am I doing".
+      // Only the ones with something on them — nothing here is a favourite, so
+      // there is no Favourites row (`domains/shelves.ts`).
+      "Recently added",
+      "Recently watched",
+      "Recently released",
+      // And no status rows: those are off until the "Choose visible shelves"
+      // modal turns one on, so an untouched vault paints exactly this.
       "(overview)",
       "By type",
       // The parity source filter sits above the per-library charts (W8).

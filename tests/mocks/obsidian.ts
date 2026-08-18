@@ -11,7 +11,29 @@
 
 export class Plugin {}
 export class PluginSettingTab {}
-export class ItemView {}
+/**
+ * Enough of `ItemView` to drive a leaf's lifecycle headlessly.
+ *
+ * The three members here are the ones a view actually inherits rather than
+ * overrides: the leaf it was constructed with, and the `getState`/`setState`
+ * pair every subclass chains up to. Without them, `await super.setState(...)`
+ * throws, and the one thing worth testing about a workspace view — that a stale
+ * leaf restored from a saved layout does not explode — cannot be tested at all.
+ *
+ * `contentEl` is deliberately not created here: a test supplies its own stub
+ * host from `helpers/dom.ts`, which is the only kind that can be asserted about.
+ */
+export class ItemView {
+  constructor(public leaf: unknown = null) {}
+
+  getState(): Record<string, unknown> {
+    return {};
+  }
+
+  async setState(_state: unknown, _result: unknown): Promise<void> {
+    /* no-op */
+  }
+}
 export class Modal {
   /** Inert: enough for code that constructs and opens one, no rendering. */
   open(): void {
