@@ -10,8 +10,17 @@
  *   - `createReadingStore` — the `ReadingStoreApi` implementation;
  *   - `ReadingNoteWriter` — the per-entry note mirror;
  *   - the progress maths, for anything that needs to say how far along an entry is.
+ *   - `readingCacheEntries` — what the artwork cache must be told books
+ *     reference, so an orphan scan does not offer to delete every book cover.
  */
 export { mountReadingTab, type ReadingDeps } from "./tab";
+export {
+  clearCoverCaches,
+  readingCacheEntries,
+  COVER_CACHE_SCOPE,
+  type CoverCache,
+  type CoverRef,
+} from "./covers";
 export {
   createReadingStore,
   buildReadingEntry,

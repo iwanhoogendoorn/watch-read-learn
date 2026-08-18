@@ -34,7 +34,7 @@
  */
 import type {
   BookSuggestionHit, ApiSource, BookSearchResult, OpenLibraryClient } from "../types";
-import { defaultHttp, isApiError, queryString, type HttpFn } from "./http";
+import { ApiError, defaultHttp, isApiError, queryString, type HttpFn } from "./http";
 import { isRaw, num, optNum, str, type Raw } from "./normalize";
 import { createRateLimiter, realClock, type LimiterClock, type RateLimiter } from "./ratelimit";
 
@@ -187,14 +187,202 @@ function rawList(value: unknown): Raw[] {
   return value.filter(isRaw);
 }
 
+function numberList(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is number => typeof entry === "number" && Number.isFinite(entry));
+}
+
+/** `bio` and `description` are either a plain string or `{type, value}`. */
+function textValue(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (isRaw(value)) return str(value, "value").trim();
+  return "";
+}
+
+// ---------------------------------------------------------------------------
+// Pure: response → author
+//
+// The author endpoints are a different shape from everything above and worth
+// three notes:
+//
+//   - **Keys come back two ways.** `/search/authors.json` gives a bare
+//     `OL79034A`; `/authors/{key}.json` gives `/authors/OL79034A`. One form is
+//     stored, and `authorKeyOf` is the only thing that decides which.
+//   - **Dates are free text.** `birth_date` is `"8 October 1920"` as often as
+//     `"1920"`. Nothing here reformats them — an invented `YYYY-MM-DD` would be
+//     a fact the catalogue never stated.
+//   - **A work is a `BookSearchResult`.** Same reason a `PersonCredit` carries an
+//     `OverseerrSearchResult`: the bibliography's `+ Add` hands its hit straight
+//     to `seedFromHit` in the reading add flow, so there is one mapping from a
+//     provider record to a row, not a second one that can drift from it.
+// ---------------------------------------------------------------------------
+
+/** An off-site link Open Library holds for an author. */
+export interface AuthorLink {
+  title: string;
+  url: string;
+}
+
+/** An author, flattened out of `/authors/{key}.json`. */
+export interface OpenLibraryAuthor {
+  /** `OL79034A` — bare, never the `/authors/…` path form. */
+  key: string;
+  name: string;
+  personalName: string;
+  biography: string;
+  /** Verbatim upstream text (`"8 October 1920"`, `"1920"`, `""`). */
+  birthDate: string;
+  deathDate: string;
+  alternateNames: string[];
+  links: AuthorLink[];
+  /** Full cover-CDN URL, or `""` when Open Library holds no photo. */
+  photoUrl: string;
+  wikipedia: string;
+  /** How many works the catalogue lists, when the search said. `0` if unknown. */
+  workCount: number;
+}
+
+/** A `/search/authors.json` hit — what a picker needs to tell two apart. */
+export interface AuthorCandidate {
+  key: string;
+  name: string;
+  alternateNames: string[];
+  birthDate: string;
+  deathDate: string;
+  /** The book Open Library thinks they are known for. */
+  topWork: string;
+  workCount: number;
+}
+
+/** One `author_key`/`author_name` pair off a `search.json` doc. */
+export interface AuthorRef {
+  key: string;
+  name: string;
+}
+
+/** `OL79034A` out of either `OL79034A` or `/authors/OL79034A`. `""` if neither. */
+export function authorKeyOf(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return /(OL\d+A)$/i.exec(value.trim())?.[1]?.toUpperCase() ?? "";
+}
+
+/**
+ * `covers.openlibrary.org/a/olid/{key}-{size}.jpg?default=false`.
+ *
+ * `/a/` rather than `/b/`: author photos live on their own path. `?default=false`
+ * for the same reason every other cover URL carries it — without it a missing
+ * photo is a 200 with a 43-byte blank JPEG.
+ */
+export function openLibraryAuthorPhotoUrl(
+  key: "olid" | "id",
+  value: string,
+  size: "S" | "M" | "L" = "M",
+): string {
+  const clean = value.trim();
+  if (clean === "") return "";
+  return `${OPEN_LIBRARY_COVERS}/a/${key}/${encodeURIComponent(clean)}-${size}.jpg?default=false`;
+}
+
+export function normalizeAuthor(raw: Raw, fallbackKey: string): OpenLibraryAuthor {
+  const key = authorKeyOf(raw["key"]) || authorKeyOf(fallbackKey);
+  // `photos` is `[-1]` for an author whose photo was removed, and absent for one
+  // who never had one. Either way asking the CDN for it spends a request on a
+  // 404 we can already predict, so an empty list means no photo at all.
+  const photo = numberList(raw["photos"]).find((id) => id > 0);
+  return {
+    key,
+    name: str(raw, "name"),
+    personalName: str(raw, "personal_name", "personalName"),
+    biography: textValue(raw["bio"]),
+    birthDate: str(raw, "birth_date", "birthDate"),
+    deathDate: str(raw, "death_date", "deathDate"),
+    alternateNames: stringList(raw["alternate_names"]).map((v) => v.trim()).filter((v) => v !== ""),
+    links: rawList(raw["links"])
+      .map((link) => ({ title: str(link, "title"), url: str(link, "url") }))
+      .filter((link) => link.url !== ""),
+    photoUrl: photo === undefined ? "" : openLibraryAuthorPhotoUrl("id", String(photo)),
+    wikipedia: str(raw, "wikipedia"),
+    workCount: 0,
+  };
+}
+
+export function normalizeAuthorCandidate(raw: Raw): AuthorCandidate | undefined {
+  const key = authorKeyOf(raw["key"]);
+  const name = str(raw, "name");
+  if (key === "" || name === "") return undefined;
+  return {
+    key,
+    name,
+    alternateNames: stringList(raw["alternate_names"]).map((v) => v.trim()).filter((v) => v !== ""),
+    birthDate: str(raw, "birth_date", "birthDate"),
+    deathDate: str(raw, "death_date", "deathDate"),
+    topWork: str(raw, "top_work", "topWork"),
+    workCount: optNum(raw, "work_count") ?? 0,
+  };
+}
+
+/**
+ * One `/authors/{key}/works.json` entry.
+ *
+ * `first_publish_date` is free text ("March 1965", "1965"), so — exactly as in
+ * `normalizeBookRecord` — only a four-digit year is trusted.
+ */
+export function normalizeAuthorWork(raw: Raw, authorName: string): BookSearchResult | undefined {
+  const title = str(raw, "title").trim();
+  if (title === "") return undefined;
+  const cover = numberList(raw["covers"]).find((id) => id > 0);
+
+  const result: BookSearchResult = {
+    id: str(raw, "key"),
+    source: "openlibrary",
+    title,
+    authors: authorName.trim() === "" ? [] : [authorName.trim()],
+    coverUrl: cover === undefined ? "" : openLibraryCoverUrl("id", String(cover)),
+  };
+  const year = Number.parseInt(/(\d{4})/.exec(str(raw, "first_publish_date"))?.[1] ?? "", 10);
+  if (Number.isFinite(year) && year > 0) result.firstPublishYear = year;
+  const description = textValue(raw["description"]);
+  if (description !== "") result.description = description;
+  const subjects = stringList(raw["subjects"]);
+  if (subjects.length > 0) result.categories = subjects.slice(0, 8);
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // The client
 // ---------------------------------------------------------------------------
 
+/**
+ * The author endpoints, which `OpenLibraryClient` in `types.ts` does not declare.
+ *
+ * A second *interface* rather than a second *client*: the 3 req/s allowance is
+ * per caller, not per module, so a separate factory would mean a separate
+ * limiter and 6 req/s out of one plugin. Everything here goes through the same
+ * `getJsonAt` — same User-Agent, same queue — as search and covers.
+ */
+export interface OpenLibraryAuthorApi {
+  /** `/authors/{key}.json`. */
+  author(key: string): Promise<OpenLibraryAuthor>;
+  /** `/authors/{key}/works.json` — the bibliography, newest first. */
+  authorWorks(key: string, limit?: number): Promise<BookSearchResult[]>;
+  /** `/search/authors.json` — name search, exact-match filtering left to the caller. */
+  searchAuthors(name: string): Promise<AuthorCandidate[]>;
+  /**
+   * The author keys Open Library itself attached to one book, by title and
+   * author. The exact-identity path: an answer, not a name guess.
+   */
+  authorKeysFor(title: string, author: string): Promise<AuthorRef[]>;
+}
+
+export interface OpenLibraryClientWithAuthors extends OpenLibraryClient, OpenLibraryAuthorApi {}
+
+/** Works asked for in one go. The endpoint's own cap is 1000; a page is not one. */
+export const AUTHOR_WORKS_LIMIT = 50;
+
 export function createOpenLibraryClient(
   getConfig: () => OpenLibraryConfig,
   deps: OpenLibraryDeps = {},
-): OpenLibraryClient {
+): OpenLibraryClientWithAuthors {
   const http = deps.http ?? defaultHttp;
   const clock = deps.clock ?? realClock;
   const limiter = deps.limiter ?? createRateLimiter(OPEN_LIBRARY_GAP_MS, clock);
@@ -387,6 +575,94 @@ export function createOpenLibraryClient(
       const record = body[bibkey];
       if (!isRaw(record)) return undefined;
       return normalizeBookRecord(record, clean);
+    },
+
+    // --- authors ----------------------------------------------------------
+
+    async author(key) {
+      const clean = authorKeyOf(key);
+      if (clean === "") {
+        throw new ApiError({
+          source: OPENLIBRARY_SOURCE,
+          reason: "not-found",
+          detail: `not an Open Library author key: ${String(key)}`,
+        });
+      }
+      const body = await getJsonAt<Raw>(`${OPEN_LIBRARY_BASE}/authors/${clean}.json`);
+      if (!isRaw(body)) {
+        throw new ApiError({
+          source: OPENLIBRARY_SOURCE,
+          reason: "parse",
+          url: `${OPEN_LIBRARY_BASE}/authors/${clean}.json`,
+          detail: "expected a JSON object",
+        });
+      }
+      return normalizeAuthor(body, clean);
+    },
+
+    async authorWorks(key, limit = AUTHOR_WORKS_LIMIT) {
+      const clean = authorKeyOf(key);
+      if (clean === "") return [];
+      const url = `${OPEN_LIBRARY_BASE}/authors/${clean}/works.json${queryString({
+        limit: Math.max(1, Math.min(1000, Math.trunc(limit))),
+      })}`;
+      const body = await getJsonAt<Raw>(url);
+      if (!isRaw(body)) return [];
+      // The author's own name is not on the entries — it is the thing the
+      // endpoint was keyed by — so it is not fetched a second time here. The
+      // caller, which already holds the author, fills it in.
+      const seen = new Set<string>();
+      const out: BookSearchResult[] = [];
+      for (const entry of rawList(body["entries"])) {
+        const work = normalizeAuthorWork(entry, "");
+        if (!work) continue;
+        // Open Library lists genuinely distinct works with identical titles; the
+        // work key is the only thing that separates them, and re-issues of one
+        // work do repeat.
+        const dedupe = work.id || work.title.toLowerCase();
+        if (seen.has(dedupe)) continue;
+        seen.add(dedupe);
+        out.push(work);
+      }
+      return out;
+    },
+
+    async searchAuthors(name) {
+      const trimmed = name.trim();
+      if (trimmed === "") return [];
+      // `q` here is not free text over the whole catalogue — this endpoint
+      // searches author names and nothing else, which is what makes it the one
+      // place a bare `q` is the field-qualified query.
+      const url = `${OPEN_LIBRARY_BASE}/search/authors.json${queryString({ q: trimmed })}`;
+      const body = await getJsonAt<Raw>(url);
+      if (!isRaw(body)) return [];
+      return rawList(body["docs"])
+        .map(normalizeAuthorCandidate)
+        .filter((hit): hit is AuthorCandidate => hit !== undefined);
+    },
+
+    async authorKeysFor(title, author) {
+      const name = title.trim();
+      const by = author.trim();
+      if (name === "" || by === "") return [];
+      // `title=`/`author=`, never one pasted `q` — the same hard-won rule
+      // `subjectsFor` above is built on. Free text with punctuation in it
+      // returns nothing for books that match these fields first time.
+      const url = `${OPEN_LIBRARY_BASE}/search.json${queryString({
+        title: name,
+        author: by,
+        limit: 1,
+        fields: "author_key,author_name",
+      })}`;
+      const body = await getJsonAt<Raw>(url);
+      if (!isRaw(body)) return [];
+      const first = rawList(body["docs"])[0];
+      if (!isRaw(first)) return [];
+      const keys = stringList(first["author_key"]);
+      const names = stringList(first["author_name"]);
+      return keys
+        .map((raw, index) => ({ key: authorKeyOf(raw), name: names[index] ?? "" }))
+        .filter((ref) => ref.key !== "");
     },
 
     coverUrl: openLibraryCoverUrl,

@@ -35,19 +35,27 @@ import {
 import { ensureV3Backup, readV3Backup, type SourceState } from "./data/backup";
 import { repathAfterRename } from "./data/paths";
 import {
+  buildReadingEntry,
   createReadingStore,
+  findExistingReading,
+  readingCacheEntries,
+  ReadingDetailModal,
   ReadingNoteWriter,
   type ReadingDeps,
   type ReadingEntry,
   type ReadingStore,
 } from "./domains/reading";
+import { seedFromHit } from "./domains/reading/modals/add";
 import { openPdfPages, pdfProgressActions, recordBookPage } from "./domains/reading/bookfile";
 import { progressPatch } from "./domains/reading/progress";
 import { communityRatingPatch, fetchBookRating } from "./domains/reading/community";
 import { fillPageCountsFromFiles } from "./domains/reading/pdfpages";
 import { totalPatchFor } from "./domains/reading/progress";
 import { createGoogleBooksClient } from "./services/googlebooks";
-import { createOpenLibraryClient } from "./services/openlibrary";
+import {
+  createOpenLibraryClient,
+  type OpenLibraryClientWithAuthors,
+} from "./services/openlibrary";
 import { totalFromSeasons, withAddedSeason } from "./data/episodes";
 import { NoteWriter } from "./data/notes";
 import { WatchLogStore } from "./data/store";
@@ -82,6 +90,24 @@ import {
   registerTitleDetailView,
   type TitleDetailDeps,
 } from "./ui/views/title-detail";
+import {
+  authorOpener,
+  openAuthorView,
+  registerAuthorView,
+  type AuthorScreenDeps,
+  type AuthorTarget,
+} from "./ui/views/author";
+import {
+  openBookDetail,
+  registerBookDetailView,
+  type BookDetailDeps,
+} from "./ui/views/book-detail";
+import {
+  authorNamesOf,
+  createAuthorService,
+  type AuthorService,
+  type AuthorStoreLike,
+} from "./services/openlibrary-author";
 import { posterCacheEntries } from "./ui/components/posters";
 import { DraftsService, renderDraftsPanel } from "./domains/drafts/panel";
 import { mountGroupsExtension } from "./domains/groups/panel";
@@ -124,11 +150,12 @@ import {
   DATA_CHANGED_EVENT,
   readExtra,
   writeExtra,
+  type Book,
+  type BookSearchResult,
   type Game,
   type GamesStoreApi,
   type GoogleBooksClient,
   type IgdbClient,
-  type OpenLibraryClient,
   type AniListClient,
   type JikanClient,
   type OverseerrClient,
@@ -148,8 +175,14 @@ export interface WatchLogClients {
   overseerr?: OverseerrClient;
   plex?: PlexClient;
   tmdb?: TmdbClient;
-  /** Keyless — always present. */
-  openLibrary?: OpenLibraryClient;
+  /**
+   * Keyless — always present, and the *only* Open Library client in the plugin.
+   *
+   * Typed with the author endpoints because the author screen's service needs
+   * them and must not build a second client: a second client is a second rate
+   * limiter, and two limiters means twice the agreed 3 req/s.
+   */
+  openLibrary?: OpenLibraryClientWithAuthors;
   /** Present but unconfigured until the user sets a key. */
   googleBooks?: GoogleBooksClient;
   /** Games. Steam has no test call worth making — its errors are per-request. */
@@ -226,6 +259,23 @@ export default class WatchLogPlugin extends Plugin {
   private people: PersonService | null = null;
 
   /**
+   * The one Open Library client, built on first use rather than in `wireHooks`.
+   *
+   * It has to exist before `wireHooks` runs: the author leaf is registered at
+   * the top of `onload` (see there for why) and its service needs a client
+   * then. Memoised rather than built twice, because a second client would be a
+   * second rate limiter — see `WatchLogClients.openLibrary`.
+   */
+  private openLibraryClient: OpenLibraryClientWithAuthors | null = null;
+
+  /**
+   * The author screen's cache-and-resolve service
+   * (`services/openlibrary-author.ts`) — the reading-side sibling of `people`,
+   * and plugin-lifetime for the same reason: its cache lives in `data.json`.
+   */
+  private authors: AuthorService | null = null;
+
+  /**
    * Optional local artwork cache (`services/imagecache.ts`).
    *
    * Always constructed, so the settings tab has something to talk to and the
@@ -264,6 +314,20 @@ export default class WatchLogPlugin extends Plugin {
     // so registering here costs nothing and cannot throw.
     registerPersonView(this, this.personScreenDeps());
     registerTitleDetailView(this, () => this.titleDetailDeps());
+
+    // The reading side's two leaves, here for exactly the same reason and with
+    // the same guarantee: a book pane or an author pane left open in a previous
+    // session is restored after `onload` returns, and an unregistered type is
+    // shown as "No view of type …". Registering the book view is also what
+    // flips `isBookDetailViewRegistered()` — until it is true, the Reading tab
+    // deliberately keeps opening the modal rather than an empty leaf.
+    //
+    // Neither factory reads anything now. `bookDetailDeps()` is a thunk, and
+    // `authorScreenDeps()` returns getters for the two things that do not exist
+    // yet at this point in `onload` (the Open Library client, the artwork
+    // cache), so both bundles are assembled when a leaf actually opens.
+    registerBookDetailView(this, () => this.bookDetailDeps());
+    registerAuthorView(this, this.authorScreenDeps());
 
     const dir = this.manifest.dir;
 
@@ -994,12 +1058,31 @@ export default class WatchLogPlugin extends Plugin {
     await this.app.workspace.getLeaf("tab").openFile(file);
   }
 
+  /**
+   * The one Open Library client. Built on first ask, never twice.
+   *
+   * The config is read through a closure rather than captured, so building this
+   * before `store.load()` — which the author leaf's registration does — is safe:
+   * the user agent is looked up at request time, not now.
+   */
+  private openLibrary(): OpenLibraryClientWithAuthors {
+    this.openLibraryClient ??= createOpenLibraryClient(() => ({
+      userAgent: this.store.settings.openLibraryUserAgent,
+    }));
+    return this.openLibraryClient;
+  }
+
   /** The Reading tab's bundle. Book clients are injected, never imported by it. */
   readingDeps(): ReadingDeps {
     const deps: ReadingDeps = { app: this.app, store: this.store };
     if (this.reading) deps.reading = this.reading;
     if (this.clients.openLibrary) deps.openLibrary = this.clients.openLibrary;
     if (this.clients.googleBooks) deps.googleBooks = this.clients.googleBooks;
+    // The same cache the Library's posters use, handed to the shelves so a
+    // cover is read from the vault instead of the CDN. Without this the reading
+    // side never touches the cache at render time, which is half of "the cache
+    // ignores books" — the other half is the warm/orphan pass below.
+    if (this.imageCache) deps.imageCache = this.imageCache;
     if (this.store.settings.generateReadingNotes) {
       deps.onOpenNote = (entry, kind) => {
         void this.openReadingNote(entry, kind);
@@ -1064,9 +1147,7 @@ export default class WatchLogPlugin extends Plugin {
       // Books: Open Library needs no key at all, Google Books needs one to be
       // usable at all (its anonymous quota is zero). Both are built either way;
       // `configured()` is what decides whether the Add modal offers them.
-      openLibrary: createOpenLibraryClient(() => ({
-        userAgent: this.store.settings.openLibraryUserAgent,
-      })),
+      openLibrary: this.openLibrary(),
       googleBooks: createGoogleBooksClient(() => ({
         apiKey: this.store.settings.googleBooksApiKey,
       })),
@@ -1284,7 +1365,28 @@ export default class WatchLogPlugin extends Plugin {
   }
 
   /**
-   * Download every poster that is not already on disk.
+   * Everything in the library that references artwork — **titles and books**.
+   *
+   * One list, built in one place, because `warm()` and `findOrphans()` have to
+   * be given the *same* answer. Warming with titles only leaves every book cover
+   * on the network path; orphaning with titles only is worse, because then every
+   * cached book cover looks unreferenced and is offered for deletion. The two
+   * halves are a pair, and this is what makes them impossible to separate.
+   *
+   * The Open Library client goes in because `readingCacheEntries` attaches a
+   * per-entry fetcher with it: cover bytes count against the same 3 req/s the
+   * API does, so a warm pass over the shelves must go through the limiter rather
+   * than around it with the cache's own transport.
+   */
+  private artworkCacheEntries(): { key: { scope: string; id: string }; url: string }[] {
+    return [
+      ...posterCacheEntries(this.store.allTitles()),
+      ...readingCacheEntries(this.store.reading, this.clients.openLibrary ?? this.openLibrary()),
+    ];
+  }
+
+  /**
+   * Download every poster and cover that is not already on disk.
    *
    * User-triggered only, and it says how it went. `warm()` is bounded-concurrency
    * inside the service; a failure per image is counted, not thrown.
@@ -1297,11 +1399,11 @@ export default class WatchLogPlugin extends Plugin {
     await this.primeImageCache();
     const notice = new Notice("Downloading artwork…", 0);
     try {
-      const result = await cache.warm(posterCacheEntries(this.store.allTitles()));
+      const result = await cache.warm(this.artworkCacheEntries());
       const tail = result.failed > 0 ? `, ${result.failed} failed` : "";
       return result.downloaded === 0 && result.failed === 0
-        ? `Every poster is already cached (${result.skipped} file(s)).`
-        : `Downloaded ${result.downloaded} poster(s)${tail}. ${result.skipped} already cached.`;
+        ? `Every poster and cover is already cached (${result.skipped} file(s)).`
+        : `Downloaded ${result.downloaded} image(s)${tail}. ${result.skipped} already cached.`;
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       console.error("[wrl] artwork download failed", err);
@@ -1312,7 +1414,7 @@ export default class WatchLogPlugin extends Plugin {
   }
 
   /**
-   * Files in the cache folder that no title references any more.
+   * Files in the cache folder that nothing in the library references any more.
    *
    * Reporting only. Nothing in this plugin removes them on a timer, on load or
    * on a settings change — `purgeArtwork` is the one code path that deletes, and
@@ -1322,7 +1424,7 @@ export default class WatchLogPlugin extends Plugin {
     const cache = this.imageCache;
     if (!cache || !this.store.settings.cacheImagesLocally) return [];
     await this.primeImageCache();
-    return cache.findOrphans(posterCacheEntries(this.store.allTitles()));
+    return cache.findOrphans(this.artworkCacheEntries());
   }
 
   /** Remove exactly these paths. The service refuses anything outside the folder. */
@@ -1561,6 +1663,201 @@ export default class WatchLogPlugin extends Plugin {
         window.open(url, "_blank");
       },
     };
+  }
+
+  // -------------------------------------------------------------------------
+  // The reading side's two leaves: a book, and an author
+  // -------------------------------------------------------------------------
+
+  /**
+   * The author cache-and-resolve service. Built on first ask, kept for the
+   * plugin's life — the cache it owns lives in `data.json` under the preserved
+   * `bookAuthors` key, and a leaf that opens and closes must not drop it.
+   *
+   * The store slice is an adapter rather than `this.store` itself: the service
+   * asks for `books()`, which the plugin store spells `reading.books`. `data` is
+   * a getter so the *live* object is handed over — the service writes its cache
+   * into it, and a copy taken now would be written into and thrown away.
+   */
+  private authorService(): AuthorService {
+    if (!this.authors) {
+      const plugin = this;
+      const store: AuthorStoreLike = {
+        get data() {
+          return plugin.store.data;
+        },
+        books: () => plugin.store.reading.books,
+        save: (reason) => plugin.store.save(reason),
+      };
+      this.authors = createAuthorService({ store, client: this.openLibrary() });
+    }
+    return this.authors;
+  }
+
+  /**
+   * Everything the author screen needs, and nothing about how it renders.
+   *
+   * `onAdd` routes through the *same* pieces the Add modal uses — `seedFromHit`,
+   * `buildReadingEntry`, `store.addBook` — for the reason the person screen's
+   * bundle gives: a second add path creates rows the rest of the plugin does not
+   * recognise. The duplicate guard is the add modal's own.
+   */
+  private authorScreenDeps(): AuthorScreenDeps {
+    const plugin = this;
+    return {
+      authors: this.authorService(),
+      books: () => this.store.reading.books,
+      onOpenBook: (book) => this.openBook(book),
+      onAdd: (work) => this.addBookFromSearch(work),
+      // The Reading tab, not the Library: `author:"…"` means nothing over there.
+      onJumpToQuery: (query) => this.openLibraryWithQuery(query, "reading"),
+      onOpenUrl: (url) => {
+        window.open(url, "_blank");
+      },
+      covers: this.openLibrary(),
+      /**
+       * Read at paint time, not now: this bundle is built while `onload` is
+       * still registering leaves, before `setupImageCache()` has run — and the
+       * user can turn the cache on at any point afterwards without a reload.
+       */
+      get imageCache() {
+        return plugin.imageCache ?? undefined;
+      },
+    };
+  }
+
+  /**
+   * The book pane's bundle — built from `readingDeps()` rather than beside it,
+   * so the pane and the modal are handed the same clients, the same cache, the
+   * same note opener and the same suggestion callbacks. Two lists here would be
+   * two behaviours for one screen.
+   */
+  private bookDetailDeps(): BookDetailDeps {
+    const shared = this.readingDeps();
+    const deps: BookDetailDeps = {
+      app: this.app,
+      store: this.store,
+      // `setupReading()` has always run by the time a leaf mounts; the fallback
+      // exists so a pane can never mount against nothing.
+      reading: this.reading ?? createReadingStore(this.store),
+      onJumpToQuery: (query) => this.openLibraryWithQuery(query, "reading"),
+    };
+    if (shared.openLibrary) deps.openLibrary = shared.openLibrary;
+    if (shared.googleBooks) deps.googleBooks = shared.googleBooks;
+    if (shared.imageCache) deps.imageCache = shared.imageCache;
+    if (shared.onOpenNote) deps.onOpenNote = shared.onOpenNote;
+    if (shared.onMoreLikeThis) deps.onMoreLikeThis = shared.onMoreLikeThis;
+    if (shared.onAddSuggestion) deps.onAddSuggestion = shared.onAddSuggestion;
+    if (shared.onDismissSuggestion) deps.onDismissSuggestion = shared.onDismissSuggestion;
+    // Click opens the author, Alt-click still filters the shelf — the rule a
+    // cast name follows (`ui/detail/people.ts`), applied to the other half of
+    // the library. `renderAuthorLink` owns both bindings; this only supplies the
+    // destination, and without it the chip degrades to the filter it always was.
+    const openAuthor = authorOpener(this.app);
+    if (openAuthor) deps.onOpenAuthor = openAuthor;
+    return deps;
+  }
+
+  /**
+   * Open a book — the entry point for every surface *outside* the Reading tab
+   * (today: the author screen). The tab has its own, for the same reason the
+   * Library has one next to `openTitle`: it must re-render itself afterwards.
+   *
+   * Both obey the one rule, and it is the rule a film obeys:
+   * `openTitlesInFullView` chooses the frame. One preference the user already
+   * has an opinion about, not a second one that says the same thing about books.
+   */
+  openBook(book: Book, kind: ReadingKind = "book"): void {
+    if (this.store.settings.openTitlesInFullView) {
+      void openBookDetail(this.app, { kind, id: book.id })
+        .then((opened) => {
+          // `false` means the leaf type was never registered — fall back rather
+          // than leave the user looking at an empty pane.
+          if (!opened) this.openBookModal(book.id, kind);
+        })
+        .catch((err: unknown) => {
+          console.error("[wrl] could not open the book view", err);
+          this.openBookModal(book.id, kind);
+        });
+      return;
+    }
+    this.openBookModal(book.id, kind);
+  }
+
+  /** The book modal, with the same callbacks the pane gets. */
+  private openBookModal(id: string, kind: ReadingKind): void {
+    const reading = this.reading;
+    if (!reading) return;
+    const deps = this.bookDetailDeps();
+    const options: ConstructorParameters<typeof ReadingDetailModal>[1] = {
+      store: reading,
+      watch: this.store,
+      kind,
+      id,
+      onJumpToQuery: (query) => this.openLibraryWithQuery(query, "reading"),
+    };
+    if (deps.openLibrary) options.openLibrary = deps.openLibrary;
+    if (deps.googleBooks) options.googleBooks = deps.googleBooks;
+    if (deps.imageCache) options.imageCache = deps.imageCache;
+    if (deps.onOpenNote) options.onOpenNote = deps.onOpenNote;
+    if (deps.onOpenAuthor) options.onOpenAuthor = deps.onOpenAuthor;
+    if (deps.onMoreLikeThis) options.onMoreLikeThis = deps.onMoreLikeThis;
+    if (deps.onAddSuggestion) options.onAddSuggestion = deps.onAddSuggestion;
+    if (deps.onDismissSuggestion) options.onDismissSuggestion = deps.onDismissSuggestion;
+    new ReadingDetailModal(this.app, options).open();
+  }
+
+  /**
+   * `+ Add` on the author screen → a row on the Book shelf.
+   *
+   * Deliberately the add modal's own pieces rather than a second recipe:
+   * `seedFromHit` decides what a provider hit becomes, `buildReadingEntry`
+   * decides what a row is, and `findExistingReading` is the duplicate guard. A
+   * book already on the shelf is returned as-is, never added twice.
+   */
+  private async addBookFromSearch(work: BookSearchResult): Promise<Book | undefined> {
+    const reading = this.reading;
+    if (!reading) return undefined;
+    const existing = findExistingReading(this.store.reading, "book", work.title);
+    if (existing) return existing as Book;
+    const seed = seedFromHit(work, "book");
+    const entry = buildReadingEntry(
+      "book",
+      reading.nextId("book", seed.title),
+      seed,
+      this.store.reading,
+    ) as Book;
+    reading.addBook(entry);
+    return entry;
+  }
+
+  /** The author screen, unconditionally. Never throws out of a click handler. */
+  async openAuthor(target: AuthorTarget): Promise<void> {
+    try {
+      await openAuthorView(this.app, target);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      console.error("[wrl] could not open the author view", err);
+      new Notice(`Could not open that author — ${detail}`, 8000);
+    }
+  }
+
+  /**
+   * Every author name the shelves know, deduped and sorted.
+   *
+   * `authorNamesOf` is what defines "every": a book's author field is as often a
+   * list (`"Frank Herbert, Brian Herbert"`) as a name, and both halves of one
+   * are a person you can open.
+   */
+  private authorNames(): string[] {
+    const names = new Set<string>();
+    for (const entry of [...this.store.reading.books, ...this.store.reading.manga]) {
+      for (const name of authorNamesOf(entry)) {
+        const trimmed = name.trim();
+        if (trimmed !== "") names.add(trimmed);
+      }
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
   }
 
   /**
@@ -1888,6 +2185,19 @@ export default class WatchLogPlugin extends Plugin {
           return;
         }
         new PersonSearchModal(this, names).open();
+      },
+    });
+
+    this.addCommand({
+      id: "open-author",
+      name: "Open an author",
+      callback: () => {
+        const names = this.authorNames();
+        if (names.length === 0) {
+          new Notice("No authors recorded yet — add a book first.");
+          return;
+        }
+        new AuthorSearchModal(this, names).open();
       },
     });
 
@@ -2526,5 +2836,34 @@ class PersonSearchModal extends FuzzySuggestModal<string> {
 
   override onChooseItem(name: string): void {
     void this.plugin.openPerson({ name });
+  }
+}
+
+/**
+ * "Open an author" — the same door for the reading side.
+ *
+ * Names rather than Open Library keys, because a name is all a book stores; the
+ * author service resolves one to a key (and asks, when two authors share a
+ * name) exactly as it does when the screen is opened from a book.
+ */
+class AuthorSearchModal extends FuzzySuggestModal<string> {
+  constructor(
+    private readonly plugin: WatchLogPlugin,
+    private readonly names: string[],
+  ) {
+    super(plugin.app);
+    this.setPlaceholder("Open an author…");
+  }
+
+  override getItems(): string[] {
+    return this.names;
+  }
+
+  override getItemText(name: string): string {
+    return name;
+  }
+
+  override onChooseItem(name: string): void {
+    void this.plugin.openAuthor({ name });
   }
 }

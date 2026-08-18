@@ -55,6 +55,15 @@ export interface BookCommunityInfo {
   rated: CommunityRating | null;
   /** Subject categories from the first edition that carries any. */
   categories: string[];
+  /**
+   * The blurb, from the first edition that carries one.
+   *
+   * Omitted rather than empty when no edition has one: this is the same pass
+   * the rating and the categories come out of, and a caller that only wanted a
+   * rating must not be handed a key that says "Google has no description" when
+   * what happened is that nobody looked.
+   */
+  description?: string;
 }
 
 /** The first non-empty category list across the editions seen. */
@@ -65,10 +74,31 @@ export function pickCategories(results: readonly BookSearchResult[]): string[] {
   return [];
 }
 
+/** The first non-empty description across the editions seen. */
+export function pickDescription(results: readonly BookSearchResult[]): string {
+  for (const result of results) {
+    const text = (result.description ?? "").trim();
+    if (text !== "") return text;
+  }
+  return "";
+}
+
+/** `{rated, categories}` plus the blurb, only when there is one. */
+function communityInfo(seen: readonly BookSearchResult[]): BookCommunityInfo {
+  const info: BookCommunityInfo = {
+    rated: pickRatedResult(seen),
+    categories: pickCategories(seen),
+  };
+  const description = pickDescription(seen);
+  if (description !== "") info.description = description;
+  return info;
+}
+
 /**
  * One Google pass per book: the exact edition by ISBN first, a title+author
- * search when that edition is missing or unrated. Rating and categories come
- * from the same responses — one button, one quota hit, two fields fed.
+ * search when that edition is missing or unrated. Rating, categories and the
+ * blurb all come from the same responses — one button, one quota hit, three
+ * fields fed.
  */
 export async function fetchBookRating(
   client: GoogleBooksClient,
@@ -79,11 +109,10 @@ export async function fetchBookRating(
   if (isbn !== "") {
     const hit = await client.byIsbn(isbn);
     if (hit) seen.push(hit);
-    const rated = pickRatedResult(seen);
-    if (rated) return { rated, categories: pickCategories(seen) };
+    if (pickRatedResult(seen)) return communityInfo(seen);
   }
   seen.push(...(await client.search(communityQuery(book), 10)));
-  return { rated: pickRatedResult(seen), categories: pickCategories(seen) };
+  return communityInfo(seen);
 }
 
 /**

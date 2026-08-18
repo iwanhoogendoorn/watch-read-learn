@@ -487,8 +487,14 @@
 }
 
 /* The badge keeps the panel's material rather than a flat plate: the top of the
-   poster is bare art now that the scrim no longer covers it. */
-.wl-card-badges .wl-plex-badge {
+   poster is bare art now that the scrim no longer covers it.
+   And it takes the SCRIM rather than the theme, for the same reason the caption
+   does — printed on artwork, always visible. Theme-following left it a bright
+   white pill on a dark poster, which is the one thing on these cards that still
+   looked like a leftover from the old design. */
+.wl-card-badges .wl-plex-badge,
+.wl-card-mini-poster .wl-plex-badge {
+  background: rgb(var(--wl-card-scrim, var(--wl-scrim-rgb, 10 10 14)) / 0.72);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
@@ -708,6 +714,10 @@
   gap: var(--wl-space-1, 2px);
   padding: 1px var(--wl-space-2, 4px);
   border-radius: var(--wl-radius-pill, 999px);
+  /* Theme-following, because this badge is NOT always on artwork: the same
+     component renders in the compact card's side column, in the detail modal
+     and in the title view, all of which sit on a themed panel. The on-poster
+     contexts override it below — see `.wl-card-badges` / `.wl-card-mini-poster`. */
   background: color-mix(in srgb, var(--background-primary) 85%, transparent);
   font-size: var(--font-ui-smaller);
   white-space: nowrap;

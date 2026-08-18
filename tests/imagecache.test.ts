@@ -95,6 +95,12 @@ class FakeAdapter implements ImageCacheAdapter {
   }
 }
 
+/** Where the bytes for a final path are staged: a *hidden* sibling of it. */
+function tempPathOf(path: string): string {
+  const cut = path.lastIndexOf("/");
+  return `${path.slice(0, cut)}/.${path.slice(cut + 1)}.writing.tmp`;
+}
+
 /** The same fake with `rename` withheld, exercising the write-plus-cleanup path. */
 function adapterWithoutRename(): ImageCacheAdapter {
   const adapter = new FakeAdapter();
@@ -322,7 +328,9 @@ describe("downloading", () => {
     const path = await cache.ensure(TITLE("t1"), REMOTE);
 
     const writes = adapter.calls.filter((c) => c.op === "writeBinary").map((c) => c.path);
-    expect(writes).toEqual([`${path}.writing.tmp`]);
+    // Hidden sibling: Obsidian does not index a dot-prefixed path, so Sync
+    // never queues the file we are about to rename away.
+    expect(writes).toEqual([tempPathOf(path)]);
     expect(adapter.countOf("rename")).toBe(1);
     expect(adapter.files.has(path)).toBe(true);
     expect(adapter.strayTempFiles()).toEqual([]);
@@ -400,7 +408,7 @@ describe("failure leaves nothing behind", () => {
   it("a write that dies halfway leaves no partial file at the real path", async () => {
     const adapter = new FakeAdapter();
     const path = `Img/${cacheFileName(TITLE("t1"), REMOTE)}`;
-    adapter.failWrites.add(`${path}.writing.tmp`);
+    adapter.failWrites.add(tempPathOf(path));
     const cache = createImageCache({ adapter, http: okHttp().http, enabled: true, folder: "Img" });
 
     expect(await cache.ensure(TITLE("t1"), REMOTE)).toBe("");

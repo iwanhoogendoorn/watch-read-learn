@@ -19,6 +19,7 @@
 import { Notice, type App } from "obsidian";
 import { createOverseerrClient } from "./services/overseerr";
 import { createPlexClient, type PlexClientEx } from "./services/plex";
+import { createDetailsSource, type DetailsSource } from "./services/details";
 import { createTmdbClient } from "./services/tmdb";
 import { createAvailabilityService, type AvailabilityService } from "./services/availability";
 import {
@@ -127,6 +128,17 @@ export class Integrations {
   readonly requests: RequestService;
   readonly matcher: MatchService;
   /**
+   * The composed metadata lookup: Overseerr first, TMDB as the fallback, plus
+   * the one-field runtime top-up (`services/details.ts` explains why).
+   *
+   * Only the two paths that write `episodeDuration` use it — the manual refresh
+   * and the sweep. The identity check, the season repair and the IMDb backfill
+   * deliberately keep their own plain calls: none of them reads `runtime`, so
+   * routing them through here would buy a second request per title and nothing
+   * else.
+   */
+  private readonly details: DetailsSource;
+  /**
    * AniList + Jikan, their search service and their airing engine.
    *
    * Constructed here rather than in a lane because this is where the airing
@@ -178,6 +190,14 @@ export class Integrations {
 
     this.tmdb = createTmdbClient(() => ({ token: settings().tmdbToken }));
 
+    this.details = createDetailsSource({
+      overseerr: this.overseerr,
+      tmdb: this.tmdb,
+      // A console warning, not a Notice: the refresh itself succeeded, and the
+      // user did not ask for this call and cannot act on it failing.
+      onTopUpFailed: (err) => console.warn("[wrl] could not top up the episode runtime", err),
+    });
+
     this.availability = createAvailabilityService({
       plex: this.plex,
       getMachineId: () => settings().plexMachineId,
@@ -215,11 +235,11 @@ export class Integrations {
       store: deps.store,
       configured: () => this.overseerr.configured() || this.tmdb.configured(),
       // Overseerr first, TMDB as the fallback — the same order every other
-      // details call in this file uses (SPEC D4).
-      details: (tmdbId, mediaType) =>
-        this.overseerr.configured()
-          ? this.overseerr.details(tmdbId, mediaType)
-          : this.tmdb.details(tmdbId, mediaType),
+      // details call in this file uses (SPEC D4) — plus the runtime top-up.
+      // `refreshOne` awaits this inside its own `limiter.run`, so the top-up's
+      // extra request lands inside the sweep's one-per-second slot rather than
+      // alongside it.
+      details: this.details,
       buildPatch: metadataPatch,
       getTtlHours: () => this.sweepTtlHours(),
     });
@@ -1116,15 +1136,13 @@ export class Integrations {
     }
     const mediaType = mediaTypeForTitle(title);
 
+    if (!this.overseerr.configured() && !this.tmdb.configured()) {
+      return "No metadata provider configured.";
+    }
+
     let details: OverseerrDetails;
     try {
-      if (this.overseerr.configured()) {
-        details = await this.overseerr.details(title.tmdbId, mediaType);
-      } else if (this.tmdb.configured()) {
-        details = await this.tmdb.details(title.tmdbId, mediaType);
-      } else {
-        return "No metadata provider configured.";
-      }
+      details = await this.details(title.tmdbId, mediaType);
     } catch (err) {
       return `Could not refresh «${title.title}»: ${err instanceof Error ? err.message : String(err)}`;
     }

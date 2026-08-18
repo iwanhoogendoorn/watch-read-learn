@@ -1,0 +1,218 @@
+/* ==========================================================================
+   96 — the book detail *view*
+
+   The sibling of `95-detailview.css`, and for the same reason: a modal is a
+   stacked column in a narrow box, and a book deserves the width a workspace
+   leaf has — the cover beside the facts, the counters in a row, the numbers as
+   tiles rather than as a line of muted grey text.
+
+   Every class here is `wl-bdv-*` (book detail view) so nothing collides with
+   `90-reading.css`, which owns `.wl-reading-*`, or with `95-detailview.css`,
+   which owns `.wl-tdv-*`. Where a shared control is reused — `.wl-reading-cover`,
+   `.wl-field`, `.wl-stat-grid`, `.wl-reading-progress-row` — it is adjusted
+   through a *qualified* selector, never re-declared: one class, one component.
+
+   No literal colours. Obsidian's theme variables and `--wl-*` only.
+   ========================================================================== */
+
+.wl-bdv-host {
+  overflow-y: auto;
+}
+
+.wl-bdv {
+  display: block;
+  padding: var(--wl-space-5);
+}
+
+.wl-bdv-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-5);
+  /* A composed column rather than whatever the leaf happens to be wide — past
+     roughly this the synopsis becomes an unreadable measure and the tile row
+     strands its tiles at opposite ends of the screen. Same figure as the title
+     view, because they are the same screen in two domains. */
+  max-width: 940px;
+  margin: 0 auto;
+}
+
+/* --- head: cover beside the facts ---------------------------------------- */
+
+.wl-bdv-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--wl-space-5);
+}
+
+/* Wider than the modal's cover — this is the one screen where a cover is
+   allowed to be a cover. The aspect ratio itself stays where it is declared. */
+.wl-bdv-head .wl-reading-cover {
+  width: 180px;
+  flex: 0 0 auto;
+}
+
+.wl-bdv-headmain {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-3);
+}
+
+.wl-bdv-titlerow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-3);
+}
+
+.wl-bdv-title {
+  margin: 0;
+  color: var(--text-normal);
+  font-size: var(--font-ui-large);
+  font-weight: var(--font-bold);
+  line-height: 1.2;
+}
+
+.wl-bdv-iconactions {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+}
+
+.wl-bdv-byline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-3);
+}
+
+.wl-bdv-facts {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.wl-bdv-pills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-2);
+}
+
+.wl-bdv-overview {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: 1.6;
+  /* Flowing text, not a truncated blurb: there is room for the whole synopsis
+     here and cutting it off would be the modal's problem all over again. */
+  max-width: 70ch;
+}
+
+/* --- the one compact control row ----------------------------------------- */
+
+.wl-bdv-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--wl-space-4);
+  padding: var(--wl-space-4);
+  background: var(--background-secondary);
+  border-radius: var(--wl-radius-m);
+}
+
+.wl-bdv-judgement {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--wl-space-4);
+}
+
+/* The shared `.wl-field` stacks its label over its control; here the controls
+   sit shoulder to shoulder, so each one only takes the width it needs. */
+.wl-bdv-judgement .wl-field {
+  flex: 0 0 auto;
+  min-width: 140px;
+}
+
+.wl-bdv-judgement .wl-detail-rating {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--wl-space-1);
+}
+
+/* Beside the controls, not shoved to the far edge of the row. */
+.wl-bdv-rowbuttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-2);
+}
+
+/* --- progress, dates, the editor ----------------------------------------- */
+
+.wl-bdv-progress {
+  padding: var(--wl-space-4);
+  background: var(--background-secondary);
+  border-radius: var(--wl-radius-m);
+}
+
+.wl-bdv-dates {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--wl-space-4);
+}
+
+.wl-bdv-dates .wl-field {
+  flex: 0 0 auto;
+}
+
+/* The date input, its calendar button and "Today" read as one control. */
+.wl-bdv-dates .wl-date-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+}
+
+.wl-bdv-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-4);
+}
+
+.wl-bdv-textblock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+}
+
+.wl-bdv-textblock .wl-textarea {
+  min-height: 100px;
+}
+
+.wl-bdv-synopsis .wl-textarea {
+  min-height: 120px;
+}
+
+.wl-bdv-footer {
+  display: flex;
+  justify-content: flex-start;
+}
+
+/* --- narrow leaves and mobile -------------------------------------------- */
+
+@media (max-width: 700px) {
+  .wl-bdv {
+    padding: var(--wl-space-4);
+  }
+
+  .wl-bdv-head {
+    flex-direction: column;
+  }
+
+  .wl-bdv-head .wl-reading-cover {
+    width: 120px;
+  }
+}

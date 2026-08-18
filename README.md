@@ -13,10 +13,14 @@ manga and games in one library, wired into a home media stack.
   blurred scrim that fades into it rather than a panel sitting on top of it.
   The scrim stays dark in both themes because it sits over a poster, not over
   the page.
-- **People are places you can go** — open any actor or director for their
-  biography, personal details and full filmography, and add anything from it to
-  your library in one click. What you already own is marked as owned rather than
-  offered again.
+- **People are places you can go** — open any actor, director or **author** for
+  their biography, personal details and full filmography or bibliography, and add
+  anything from it to your library in one click. What you already own is marked
+  as owned rather than offered again. Alt-click a name to filter by them instead.
+- **A book gets the same screen a film does** — cover beside the facts, pages
+  read and pages left as tiles, the same rating-and-review control, the same
+  "Today" buttons on its dates. One binding, one set of controls, adapted rather
+  than copied, so the two can never drift apart.
 - **A title screen with room to breathe** — a title opens as a real workspace
   pane by default: poster, synopsis, time left and time watched, season
   accordions, and dates with a "Today" button beside each one. Every cast and
@@ -36,8 +40,11 @@ manga and games in one library, wired into a home media stack.
   metadata across the whole library, skipping what cannot change (dropped
   titles, finished films) while still re-checking finished *shows*, because that
   is how a new season gets noticed.
-- **Posters can live in your vault** — off by default; turn it on and artwork is
-  cached locally so the library renders with no network at all.
+- **Artwork can live in your vault** — off by default; turn it on and posters
+  *and book covers* are cached locally, so the library renders with no network at
+  all. It is also the politest option available: Open Library counts cover
+  requests against its rate limit, and a cached cover is fetched exactly once
+  ever instead of once per render.
 - **Logging what you watched, in one go** — marking something finished asks
   the three things you know at that moment: when (defaulted to today), how good,
   and what you thought. A film gets one date rather than a start and an end,

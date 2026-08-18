@@ -37,7 +37,15 @@ import {
 } from "../../types";
 import { createSearchBox } from "../../ui/components/searchbox";
 import { createPosterLoader, renderPosterPlaceholder } from "../../ui/components/posters";
-import { CoverPool, coverIsbn, loadCover, needsProxy } from "./covers";
+import {
+  CoverPool,
+  coverIsbn,
+  keepCover,
+  loadCover,
+  localCoverUrl,
+  needsProxy,
+  type CoverCache,
+} from "./covers";
 import { fetchCoverBytes } from "./coverfetch";
 import { openBookFile } from "./bookfile";
 import { formatCommunityRating } from "./community";
@@ -49,6 +57,10 @@ import { columnDisplay, columnStyleClass } from "./columns";
 import { ReadingColumnsModal } from "./modals/columns";
 import { AddReadingModal } from "./modals/add";
 import { ReadingDetailModal } from "./modals/detail";
+import {
+  isBookDetailViewRegistered,
+  openBookDetail,
+} from "../../ui/views/book-detail";
 import {
   bumpPatch,
   derivedStatus,
@@ -91,6 +103,12 @@ export interface ReadingDeps {
   reading?: ReadingStore;
   openLibrary?: OpenLibraryClient;
   googleBooks?: GoogleBooksClient;
+  /**
+   * The optional local artwork cache (`services/imagecache.ts`), the same
+   * instance the Library's posters use. Absent — the default, because the
+   * setting is off — leaves every cover on the path it takes today.
+   */
+  imageCache?: CoverCache;
   /** Open (creating if needed) the generated note. Absent when notes are off. */
   onOpenNote?: (entry: ReadingEntry, kind: ReadingKind) => void;
   /** "More like this" inside a book's detail view; absent hides the section. */
@@ -519,14 +537,38 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
     new AddReadingModal(app, options).open();
   }
 
+  /**
+   * Open a book — the one entry point every row and every button here calls.
+   *
+   * Which frame it lands in is `settings.openTitlesInFullView`, the *same*
+   * preference that decides it for a film. One switch the user already
+   * understands beats a second one that says the same thing about books, and
+   * "open detail screens as a full view" is a statement about how somebody
+   * likes to work, not about what they are looking at.
+   *
+   * The leaf is only used when `main.ts` has registered the view; otherwise —
+   * and whenever opening it throws — this falls back to the modal, which is a
+   * perfectly good screen and the one this tab has always used.
+   */
   function openDetail(entry: ReadingEntry): void {
+    if (settings.openTitlesInFullView && isBookDetailViewRegistered()) {
+      void openBookDetail(app, { kind, id: entry.id }).then((opened) => {
+        if (!opened) openDetailModal(entry);
+      }).catch((err: unknown) => {
+        console.error("[wrl] could not open the book view", err);
+        openDetailModal(entry);
+      });
+      return;
+    }
+    openDetailModal(entry);
+  }
+
+  function openDetailModal(entry: ReadingEntry): void {
     const options: ConstructorParameters<typeof ReadingDetailModal>[1] = {
       store: reading,
+      watch: store,
       kind,
       id: entry.id,
-      dateFormat: settings.dateFormat as DateFormat,
-      ratingTiers: settings.ratingSystem,
-      halfStars: settings.halfStarRatings,
       onChanged: () => render(),
       onDeleted: () => {
         buildSubTabs();
@@ -541,6 +583,7 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
     if (deps.onOpenNote) options.onOpenNote = deps.onOpenNote;
     if (deps.openLibrary) options.openLibrary = deps.openLibrary;
     if (deps.googleBooks) options.googleBooks = deps.googleBooks;
+    if (deps.imageCache) options.imageCache = deps.imageCache;
     if (deps.onMoreLikeThis) options.onMoreLikeThis = deps.onMoreLikeThis;
     if (deps.onAddSuggestion) options.onAddSuggestion = deps.onAddSuggestion;
     if (deps.onDismissSuggestion) options.onDismissSuggestion = deps.onDismissSuggestion;
@@ -735,6 +778,8 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
             client: deps.openLibrary,
             fallbackIsbn: isbn,
             fetchBytes: fetchCoverBytes,
+            cache: deps.imageCache,
+            cacheId: entry.id,
             onMissing: () => {
               img.remove();
               renderPosterPlaceholder(poster, entry.title);
@@ -742,7 +787,12 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
           }),
         );
       } else {
-        posterLoader.observe(poster, cover);
+        // Directly assignable, so it goes through the shared lazy loader like a
+        // film poster does — off the local copy when there is one, and asking
+        // the cache to make one when there is not.
+        const localCover = localCoverUrl(deps.imageCache, entry.id, cover);
+        posterLoader.observe(poster, localCover === "" ? cover : localCover);
+        if (localCover === "") keepCover(deps.imageCache, entry.id, cover);
       }
 
       const titleCell = row.createEl("td", { cls: "wl-table-title" });

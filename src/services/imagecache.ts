@@ -15,9 +15,10 @@
  *   - **It cannot break rendering.** Every method swallows its own failures and
  *     answers `""`, which every caller reads as "use the remote URL". A dead
  *     CDN, a full disk and a read-only vault all degrade to today's behaviour.
- *   - **A failed write leaves nothing behind.** Bytes land in a staging sibling
- *     and are moved into place, so a download that dies halfway can never leave
- *     a truncated JPEG at a path the index would then trust.
+ *   - **A failed write leaves nothing behind.** Bytes land in a *hidden* staging
+ *     sibling and are moved into place, so a download that dies halfway can
+ *     never leave a truncated JPEG at a path the index would then trust — and
+ *     the staging file is dot-prefixed so Obsidian Sync never sees it at all.
  *
  * Deletion is never automatic. `findOrphans()` reports what is no longer
  * referenced and `purge()` removes exactly the paths it is handed — the user
@@ -67,8 +68,39 @@ export type VaultAdapterFits = Assert<
 /** Where images go when the user has not said otherwise. */
 export const DEFAULT_IMAGE_CACHE_FOLDER = "WatchLog/images";
 
-/** Staging suffix, mirroring `data/backup.ts`. Cleaned up on success and failure. */
+/**
+ * Staging name, mirroring `data/backup.ts`. Cleaned up on success and failure.
+ *
+ * **The leading dot is not cosmetic.** Obsidian treats a dot-prefixed path as
+ * hidden — it is not a vault file, so nothing indexes it and Obsidian Sync does
+ * not queue it. Without the dot, Sync sees `poster.jpg.writing.tmp` appear, gets
+ * as far as opening it, and by then the rename has already moved it away:
+ *
+ *     Sync Error! {"errno":-2,"code":"ENOENT","syscall":"open",
+ *                  "path":".../title-the-odyssey-124gttg1yxhgr4.jpg.writing.tmp"}
+ *
+ * — one per image, so a first run over a real library is a wall of them.
+ *
+ * The staging step itself stays: it is the only thing standing between a
+ * process killed mid-write and a truncated JPEG sitting at a path that
+ * `prime()` would afterwards trust forever. A crash now leaves a hidden
+ * `.name.writing.tmp` that priming skips and `findOrphans` offers to the user.
+ */
 const TEMP_SUFFIX = ".writing.tmp";
+const TEMP_PREFIX = ".";
+
+/** Is this a staging leftover rather than a cached image? Both schemes count. */
+function isTempName(name: string): boolean {
+  return name.startsWith(TEMP_PREFIX) || name.endsWith(TEMP_SUFFIX);
+}
+
+/** The name a staging file was on its way to becoming. Tolerates either scheme. */
+function finalNameOfTemp(name: string): string {
+  const withoutPrefix = name.startsWith(TEMP_PREFIX) ? name.slice(TEMP_PREFIX.length) : name;
+  return withoutPrefix.endsWith(TEMP_SUFFIX)
+    ? withoutPrefix.slice(0, -TEMP_SUFFIX.length)
+    : withoutPrefix;
+}
 
 /**
  * Extensions we are willing to write. Anything else — including whatever a
@@ -257,14 +289,48 @@ export interface CacheEntryRef {
   key: ImageKey;
   /** The fully resolved remote URL this item would otherwise hotlink. */
   url: string;
+  /**
+   * Where else the *same picture* can be got, in the order they should be tried.
+   *
+   * A fallback, not a second image: `warm` stops at the first one that works and
+   * counts the entry once either way. Queueing them as separate entries — which
+   * is what the reading domain used to do with its Google-by-ISBN fallback —
+   * both fetches art nobody needs and reports "4 failed" on a run where the user
+   * got every cover they asked for.
+   *
+   * `findOrphans` treats all of them as referenced, because any one of them may
+   * be the file that actually landed.
+   */
+  alternates?: readonly string[];
+  /**
+   * How this entry's bytes are obtained, when the default transport is the
+   * wrong thing to use for it.
+   *
+   * The case it exists for: a warm pass over the reading shelves. Open Library
+   * counts covers against the same rate limit as its API, so those must go
+   * through `OpenLibraryClient.coverBytes` — identified, throttled — while the
+   * posters in the same batch go through the ordinary transport. Per-entry
+   * rather than per-cache, because one `ImageCache` serves every domain and a
+   * single injected fetcher would have to know about all of them.
+   *
+   * Three answers, because one entry's candidates can need different transports:
+   * bytes, `null` for "no image, try the next candidate", and `undefined` for
+   * "not mine — use the default transport". Ignored by `findOrphans`, which only
+   * needs names.
+   */
+  fetch?: (url: string) => Promise<ArrayBuffer | null | undefined>;
 }
 
 export interface WarmResult {
-  /** Newly downloaded this pass. */
+  /**
+   * Images obtained this pass — **entries, not URLs**. An entry with a fallback
+   * that succeeded on the second try counts once, here, not once here and once
+   * under `failed`.
+   */
   downloaded: number;
   /** Already on disk. */
   skipped: number;
-  /** Tried and failed; these fall back to the remote URL. */
+  /** Entries where every candidate failed; these fall back to the remote URL. */
   failed: number;
 }
 
@@ -298,6 +364,12 @@ export class ImageCache {
   private inFlight = new Map<string, Promise<string>>();
   /** Names that failed this session. Cleared by `clearFailures()`, never persisted. */
   private failures = new Set<string>();
+  /**
+   * Staging files `prime()` found — a write that was interrupted, most likely by
+   * the app closing. Reported by `findOrphans` so the user can clear them; never
+   * removed on their behalf.
+   */
+  private staleTemps = new Set<string>();
   private primed = false;
 
   constructor(options: ImageCacheOptions) {
@@ -336,6 +408,7 @@ export class ImageCache {
       if (folder !== this.folder) {
         this.folder = folder;
         this.index.clear();
+        this.staleTemps.clear();
         this.failures.clear();
         this.primed = false;
       }
@@ -368,6 +441,17 @@ export class ImageCache {
       : "";
   }
 
+  /**
+   * Where the bytes for `name` are staged before they are moved into place.
+   *
+   * A sibling of the final file — same folder, so the move is a rename rather
+   * than a copy — but hidden, so Obsidian never treats it as a vault file and
+   * Sync never tries to open the thing we are about to rename away.
+   */
+  private tempFor(name: string): string {
+    return `${this.folder}/${TEMP_PREFIX}${name}${TEMP_SUFFIX}`;
+  }
+
   /** Is this path inside the cache folder? The gate every removal passes. */
   ownsPath(path: string): boolean {
     const prefix = `${this.folder}/`;
@@ -391,21 +475,28 @@ export class ImageCache {
       return;
     }
     const found = new Set<string>();
+    const temps = new Set<string>();
     try {
       if (await this.adapter.exists(this.folder)) {
         const listed = await this.adapter.list(this.folder);
         for (const file of listed.files) {
           const name = file.slice(file.lastIndexOf("/") + 1);
-          if (name !== "" && !name.endsWith(TEMP_SUFFIX)) found.add(name);
+          if (name === "") continue;
+          // A staging file is never an image, whichever scheme wrote it. Half a
+          // JPEG that got into the index would be a permanent broken cover.
+          if (isTempName(name)) temps.add(name);
+          else found.add(name);
         }
       }
     } catch {
       // An unreadable folder means "nothing cached", which is a working state.
       this.index.clear();
+      this.staleTemps.clear();
       this.primed = false;
       return;
     }
     this.index = found;
+    this.staleTemps = temps;
     this.primed = true;
   }
 
@@ -439,7 +530,7 @@ export class ImageCache {
    * unfetchable URL, dead CDN, unwritable vault. Safe to call unconditionally
    * and safe to call concurrently: the same filename is only ever fetched once.
    */
-  async ensure(key: ImageKey, url: string): Promise<string> {
+  async ensure(key: ImageKey, url: string, fetch?: CacheEntryRef["fetch"]): Promise<string> {
     if (!this.enabled) return "";
     const remote = url.trim();
     if (!isFetchableUrl(remote)) return "";
@@ -455,7 +546,46 @@ export class ImageCache {
     const path = this.pathFor(key, remote);
     if (path === "") return "";
 
-    const job = this.download(name, path, remote);
+    const job = this.download(name, path, remote, fetch);
+    this.inFlight.set(name, job);
+    try {
+      return await job;
+    } finally {
+      this.inFlight.delete(name);
+    }
+  }
+
+  /**
+   * Keep bytes the caller has **already** fetched.
+   *
+   * The reading domain never hands this a URL to download: Open Library counts
+   * cover requests against the same 3 req/s the API gets, so those bytes arrive
+   * through `OpenLibraryClient.coverBytes` — rate-limited, identified, one
+   * request — and this stores the copy. That is the politeness win rather than a
+   * cost: a cover kept here is fetched exactly once ever instead of on every
+   * render of the shelf it sits on.
+   *
+   * Same guarantees as `ensure`: `""` on every failure, never throws, and a
+   * name that is already on disk is not written twice.
+   */
+  async store(key: ImageKey, url: string, bytes: ArrayBuffer): Promise<string> {
+    if (!this.enabled) return "";
+    const remote = url.trim();
+    if (!isFetchableUrl(remote)) return "";
+    if (bytes.byteLength === 0 || bytes.byteLength > this.maxBytes) return "";
+
+    const name = cacheFileName(key, remote);
+    if (name === "") return "";
+    if (this.index.has(name)) return `${this.folder}/${name}`;
+    if (this.failures.has(name)) return "";
+
+    const running = this.inFlight.get(name);
+    if (running) return running;
+
+    const path = this.pathFor(key, remote);
+    if (path === "") return "";
+
+    const job = this.keep(name, path, bytes);
     this.inFlight.set(name, job);
     try {
       return await job;
@@ -470,6 +600,10 @@ export class ImageCache {
    * The pass a "download missing artwork" command runs. Bounded concurrency
    * because a first run on a large library is otherwise several hundred
    * simultaneous requests to one CDN.
+   *
+   * **The counts describe images, not attempts.** One entry contributes exactly
+   * one to one of the three numbers, whichever of its candidates it took, so
+   * "downloaded 21, 4 failed" can only mean four covers the user did not get.
    */
   async warm(
     entries: Iterable<CacheEntryRef>,
@@ -478,19 +612,31 @@ export class ImageCache {
     const result: WarmResult = { downloaded: 0, skipped: 0, failed: 0 };
     if (!this.enabled) return result;
 
-    const queue: CacheEntryRef[] = [];
+    const queue: { key: ImageKey; urls: string[]; fetch: CacheEntryRef["fetch"] }[] = [];
     const seen = new Set<string>();
     for (const entry of entries) {
-      const remote = entry.url.trim();
-      if (!isFetchableUrl(remote)) continue;
-      const name = cacheFileName(entry.key, remote);
-      if (name === "" || seen.has(name)) continue;
-      seen.add(name);
-      if (this.index.has(name)) {
+      // Every URL this entry could legitimately be satisfied by, in order.
+      const urls: string[] = [];
+      const names: string[] = [];
+      for (const raw of [entry.url, ...(entry.alternates ?? [])]) {
+        const remote = raw.trim();
+        if (!isFetchableUrl(remote)) continue;
+        const name = cacheFileName(entry.key, remote);
+        if (name === "" || names.includes(name)) continue;
+        urls.push(remote);
+        names.push(name);
+      }
+      if (names.length === 0) continue;
+      // Another entry already covers this file.
+      if (names.some((name) => seen.has(name))) continue;
+      for (const name of names) seen.add(name);
+      // Any candidate already on disk means this image is had. Asking for the
+      // others would be fetching a fallback for something that never fell back.
+      if (names.some((name) => this.index.has(name))) {
         result.skipped += 1;
         continue;
       }
-      queue.push({ key: entry.key, url: remote });
+      queue.push({ key: entry.key, urls, fetch: entry.fetch });
     }
 
     const width = Math.max(1, options.concurrency ?? DEFAULT_CONCURRENCY);
@@ -500,8 +646,12 @@ export class ImageCache {
         const entry = queue[next];
         next += 1;
         if (!entry) return;
-        const path = await this.ensure(entry.key, entry.url);
-        if (path === "") result.failed += 1;
+        let got = "";
+        for (const url of entry.urls) {
+          got = await this.ensure(entry.key, url, entry.fetch);
+          if (got !== "") break;
+        }
+        if (got === "") result.failed += 1;
         else result.downloaded += 1;
       }
     };
@@ -513,8 +663,12 @@ export class ImageCache {
    * Fetch, stage, move. Never throws, never leaves a partial file, and only
    * touches the index once the bytes are at their final path.
    */
-  private async download(name: string, path: string, url: string): Promise<string> {
-    const temp = `${path}${TEMP_SUFFIX}`;
+  private async download(
+    name: string,
+    path: string,
+    url: string,
+    fetch?: CacheEntryRef["fetch"],
+  ): Promise<string> {
     try {
       // A previous session may have written this before the index was primed.
       // Cheaper than a download and, crucially, not a network call.
@@ -523,24 +677,51 @@ export class ImageCache {
         return path;
       }
 
-      const bytes = await this.fetch(url);
+      // An entry's own fetcher may answer `undefined` for "not mine" — a book's
+      // Google fallback in a batch whose Open Library half needs the client.
+      const own = fetch ? await fetch(url) : undefined;
+      const bytes = own === undefined ? await this.fetch(url) : own;
       if (!bytes || bytes.byteLength === 0) throw new Error("empty image body");
       if (bytes.byteLength > this.maxBytes) {
         throw new Error(`image is ${bytes.byteLength} bytes, over the ${this.maxBytes} limit`);
       }
 
-      await this.ensureFolder();
-      await this.adapter.writeBinary(temp, bytes);
-      await this.moveIntoPlace(temp, path, bytes);
-      this.index.add(name);
-      return path;
+      return await this.persist(name, path, bytes);
     } catch (err) {
       // Remember the miss so a broken URL is not re-fetched on every warm pass,
       // and make sure nothing half-written survives.
       this.failures.add(name);
-      await this.removeQuietly(temp);
+      await this.removeQuietly(this.tempFor(name));
       return "";
     }
+  }
+
+  /** `download` without the download: the write half, for bytes we were handed. */
+  private async keep(name: string, path: string, bytes: ArrayBuffer): Promise<string> {
+    try {
+      if (await this.adapter.exists(path)) {
+        this.index.add(name);
+        return path;
+      }
+      return await this.persist(name, path, bytes);
+    } catch {
+      this.failures.add(name);
+      await this.removeQuietly(this.tempFor(name));
+      return "";
+    }
+  }
+
+  /**
+   * Stage, move, index — the write both paths share. Throws on failure so the
+   * caller does the cleanup in one place.
+   */
+  private async persist(name: string, path: string, bytes: ArrayBuffer): Promise<string> {
+    const temp = this.tempFor(name);
+    await this.ensureFolder();
+    await this.adapter.writeBinary(temp, bytes);
+    await this.moveIntoPlace(temp, path, bytes);
+    this.index.add(name);
+    return path;
   }
 
   /**
@@ -603,16 +784,34 @@ export class ImageCache {
    *
    * Requires a primed index — an unprimed one knows about no files, so the
    * honest answer is an empty list rather than a guess.
+   *
+   * **`live` must cover every domain that caches art.** A caller that passes
+   * only its titles will be told every book cover is unreferenced and will
+   * offer to delete all of them — combine `posterCacheEntries` with
+   * `readingCacheEntries` rather than picking one.
+   *
+   * Staging leftovers from an interrupted write are listed too: they are files
+   * this plugin made and nothing will ever read, and this is the one route by
+   * which anything here is removed — a user pressing the button.
    */
   findOrphans(live: Iterable<CacheEntryRef>): string[] {
     const referenced = new Set<string>();
     for (const entry of live) {
-      const name = cacheFileName(entry.key, entry.url.trim());
-      if (name !== "") referenced.add(name);
+      // Every candidate, not just the primary: the file on disk may be the
+      // fallback that was taken when the primary had no image.
+      for (const raw of [entry.url, ...(entry.alternates ?? [])]) {
+        const name = cacheFileName(entry.key, raw.trim());
+        if (name !== "") referenced.add(name);
+      }
     }
     const orphans: string[] = [];
     for (const name of this.index) {
       if (!referenced.has(name)) orphans.push(`${this.folder}/${name}`);
+    }
+    for (const name of this.staleTemps) {
+      // Not one that is being written right now: that download would then fail
+      // for no reason. `inFlight` is keyed on the final name.
+      if (!this.inFlight.has(finalNameOfTemp(name))) orphans.push(`${this.folder}/${name}`);
     }
     return orphans.sort();
   }
@@ -633,7 +832,9 @@ export class ImageCache {
       }
       try {
         if (await this.adapter.exists(path)) await this.adapter.remove(path);
-        this.index.delete(path.slice(path.lastIndexOf("/") + 1));
+        const name = path.slice(path.lastIndexOf("/") + 1);
+        this.index.delete(name);
+        this.staleTemps.delete(name);
         result.removed.push(path);
       } catch (err) {
         result.failed.push({ path, error: message(err) });

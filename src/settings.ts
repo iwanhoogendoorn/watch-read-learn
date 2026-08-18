@@ -397,13 +397,15 @@ export class WatchLogSettingTab extends PluginSettingTab {
       );
 
     this.addHelp(
-      new Setting(behaviour.content).setName("Open titles in a full tab").addToggle((toggle) =>
-        toggle.setValue(settings.openTitlesInFullView).onChange((value) => {
-          settings.openTitlesInFullView = value;
-          this.save();
-        }),
-      ),
-      "On, and it is the default: a title opens as a real tab — poster beside the facts, cast and directors on one line, and the four numbers you actually read. Off puts it back in the modal, which is fine for a film but wraps a show's full cast onto five rows of chips and pushes Progress below the fold, because a modal is narrower than the poster deserves. Every control is the same one — the two surfaces share their fields, their rating/review binding, their watched flows and their cast links — so this only chooses the frame. Whatever you set here sticks: the default is applied to an existing library once and never again. The command palette can open a tab either way.",
+      new Setting(behaviour.content)
+        .setName("Open titles and books in a full tab")
+        .addToggle((toggle) =>
+          toggle.setValue(settings.openTitlesInFullView).onChange((value) => {
+            settings.openTitlesInFullView = value;
+            this.save();
+          }),
+        ),
+      "On, and it is the default: a title opens as a real tab — poster beside the facts, cast and directors on one line, and the four numbers you actually read. Off puts it back in the modal, which is fine for a film but wraps a show's full cast onto five rows of chips and pushes Progress below the fold, because a modal is narrower than the poster deserves. Every control is the same one — the two surfaces share their fields, their rating/review binding, their watched flows and their cast links — so this only chooses the frame. A book follows the same switch: cover beside the facts, the progress counter you actually came to move, and the modal still there when this is off. One preference, because “how do detail screens open” is a statement about how you like to work, not about what you are looking at. Whatever you set here sticks: the default is applied to an existing library once and never again. The command palette can open a tab either way.",
     );
 
     this.addHelp(

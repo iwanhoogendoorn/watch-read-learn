@@ -120,6 +120,7 @@ describe("stylesheet partials", () => {
       ".wl-thumb",
       ".wl-fallback-poster",
       ".wl-add-result-poster",
+      ".wl-author-work-poster", // a book cover in an author's bibliography
       ".wl-detail-poster",
       ".wl-surprise-poster", // the "Surprise me" roll's poster
       ".wl-widget-domain-cover", // reading/games rows in a code block

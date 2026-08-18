@@ -1,0 +1,414 @@
+/* =============================================================================
+ * Author screen — biography, personal details, bibliography
+ *
+ * The reading-side sibling of `94-person.css`, and it inherits that file's two
+ * structural facts. It mounts into its own leaf rather than inside `.wl-view`,
+ * so the `--wl-*` scale declared there does not reach it: the subset this screen
+ * uses is re-declared on `.wl-author` with the same values and the same
+ * fallbacks. And every class here is its own — one class means one component, so
+ * nothing is borrowed from the person screen's namespace even where the two
+ * screens look alike.
+ *
+ * Covers are the shared `.wl-poster` (not `.wl-thumb`): that is the box the rest
+ * of the reading side draws book covers in, and it is what `loadCover`'s
+ * `.wl-poster-img.is-loaded` fade is written against.
+ *
+ * Theming policy, unchanged: zero hardcoded colours. Every colour is an Obsidian
+ * variable or a --wl-* property.
+ * ========================================================================== */
+
+.wl-author {
+  --wl-space-1: 2px;
+  --wl-space-2: 4px;
+  --wl-space-3: 8px;
+  --wl-space-4: 12px;
+  --wl-space-5: 16px;
+  --wl-space-6: 24px;
+
+  --wl-radius-s: var(--radius-s, 4px);
+  --wl-radius-m: var(--radius-m, 8px);
+  --wl-radius-pill: 999px;
+
+  --wl-dur-fast: 0.12s;
+  --wl-dur-base: 0.15s;
+
+  /* The cover width the bibliography grid is built on. One number, so the
+     track size, the caption clamp and the tile width all agree. */
+  --wl-author-cover: 116px;
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-5);
+  padding: var(--wl-space-5);
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* -----------------------------------------------------------------------------
+ * States that are not an author
+ * -------------------------------------------------------------------------- */
+
+.wl-author-message {
+  padding: var(--wl-space-6) var(--wl-space-5);
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.wl-author-message-title {
+  font-size: var(--font-ui-large);
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+  margin-bottom: var(--wl-space-2);
+}
+
+.wl-author-message-body {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  max-width: 48ch;
+  margin: 0 auto;
+  line-height: 1.5;
+}
+
+/* Two authors, one name — the picker. No portraits: Open Library's author
+   search does not return one, and fetching a photo per candidate would spend
+   the rate limit on decoration. What separates them is the text. */
+.wl-author-choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-3);
+  max-width: 480px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.wl-author-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-4);
+  width: 100%;
+  padding: var(--wl-space-3);
+  text-align: left;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-m);
+  cursor: pointer;
+  transition: background var(--wl-dur-fast) ease;
+}
+
+.wl-author-choice:hover {
+  background: var(--background-modifier-hover);
+}
+
+.wl-author-choice-photo {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 54px;
+  border-radius: var(--wl-radius-s);
+}
+
+.wl-author-choice-body {
+  min-width: 0;
+}
+
+.wl-author-choice-name {
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+}
+
+.wl-author-choice-meta {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+/* -----------------------------------------------------------------------------
+ * Head — portrait, name, actions
+ * -------------------------------------------------------------------------- */
+
+.wl-author-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--wl-space-5);
+}
+
+/* `.wl-poster` is `width: 100%; height: 100%` and expects a sized box, so the
+   size is what this class is for. Both numbers are literal rather than a ratio:
+   the box never changes width, and `tests/styles.test.ts` keeps `aspect-ratio`
+   to the boxes that genuinely need to compute a height from one. */
+.wl-author-photo {
+  flex: 0 0 140px;
+  width: 140px;
+  height: 187px;
+  border-radius: var(--wl-radius-m);
+  box-shadow: var(--shadow-s, none);
+}
+
+.wl-author-heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+  min-width: 0;
+}
+
+.wl-author-name {
+  margin: 0;
+  font-size: var(--font-ui-large);
+  font-weight: var(--font-bold);
+  color: var(--text-normal);
+  line-height: 1.2;
+}
+
+.wl-author-life {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+
+/* "Updated 3 w ago" — provenance rather than content, so it stays quiet. */
+.wl-author-syncrow {
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
+.wl-author-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wl-space-2);
+  margin-top: var(--wl-space-2);
+}
+
+/* -----------------------------------------------------------------------------
+ * Body — fact column beside biography + bibliography
+ * -------------------------------------------------------------------------- */
+
+.wl-author-body {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--wl-space-6);
+  min-width: 0;
+}
+
+.wl-author-facts {
+  flex: 0 0 200px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-4);
+}
+
+.wl-author-fact-label {
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+}
+
+.wl-author-fact-value {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.wl-author-link {
+  display: block;
+  padding: 0;
+  font-size: var(--font-ui-small);
+  color: var(--text-accent);
+  background: none;
+  border: none;
+  box-shadow: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wl-author-link:hover {
+  color: var(--text-accent-hover);
+  text-decoration: underline;
+}
+
+.wl-author-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-5);
+}
+
+.wl-author-bio {
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+/* -----------------------------------------------------------------------------
+ * Bibliography
+ * -------------------------------------------------------------------------- */
+
+.wl-author-bibliography {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-3);
+}
+
+.wl-author-bibliography-heading {
+  margin: 0;
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-bold);
+  color: var(--text-normal);
+}
+
+/* A wrapping grid rather than the person screen's sideways shelf: a filmography
+   is split into departments of a dozen, a bibliography is one list of fifty, and
+   fifty covers behind a horizontal scrollbar is a list nobody reaches the end
+   of. */
+.wl-author-shelf {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--wl-author-cover), 1fr));
+  gap: var(--wl-space-4);
+}
+
+.wl-author-work {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+  min-width: 0;
+  border-radius: var(--wl-radius-m);
+}
+
+.wl-author-work.is-clickable {
+  cursor: pointer;
+}
+
+.wl-author-work.is-clickable:hover .wl-author-work-title {
+  color: var(--text-accent);
+}
+
+.wl-author-work:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.wl-author-work-poster {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--wl-radius-m);
+}
+
+.wl-author-work.is-owned .wl-author-work-poster {
+  box-shadow: 0 0 0 2px var(--interactive-accent);
+}
+
+.wl-author-work-badge {
+  position: absolute;
+  top: var(--wl-space-2);
+  right: var(--wl-space-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--wl-radius-pill);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.wl-author-work-badge svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Sits on the cover so the caption below never moves when it appears. */
+.wl-author-add {
+  position: absolute;
+  left: var(--wl-space-2);
+  right: var(--wl-space-2);
+  bottom: var(--wl-space-2);
+  padding: var(--wl-space-1) var(--wl-space-2);
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  line-height: 1.4;
+  color: var(--text-on-accent);
+  background: var(--interactive-accent);
+  border: none;
+  border-radius: var(--wl-radius-s);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--wl-dur-base) ease;
+}
+
+/* Revealed on hover on a pointer device; always visible without one, because a
+   touch screen has no hover and an invisible button is not a button. */
+.wl-author-work:hover .wl-author-add,
+.wl-author-add:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .wl-author-add {
+    opacity: 1;
+  }
+}
+
+.wl-author-add:hover {
+  background: var(--interactive-accent-hover);
+}
+
+.wl-author-add:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.wl-author-work-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-1);
+  min-width: 0;
+}
+
+.wl-author-work-title {
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+  line-height: 1.3;
+  /* Two lines, then ellipsis: every caption occupies the same height whatever
+     the title's length, so a row's covers all sit on one line. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 2.6em;
+}
+
+.wl-author-work-year {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Reserved even when empty — a work Open Library has no date for must not
+     pull its neighbours' covers out of alignment. */
+  min-height: 1.2em;
+}
+
+/* -----------------------------------------------------------------------------
+ * Narrow panes
+ * -------------------------------------------------------------------------- */
+
+@media (max-width: 620px) {
+  .wl-author-body {
+    flex-direction: column;
+    gap: var(--wl-space-5);
+  }
+
+  .wl-author-facts {
+    flex: 1 1 auto;
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .wl-author-photo {
+    flex-basis: 96px;
+    width: 96px;
+    height: 128px;
+  }
+}

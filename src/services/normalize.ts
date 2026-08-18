@@ -313,17 +313,89 @@ export function studioNames(raw: Raw, mediaType?: MediaType): string[] {
 }
 
 /**
+ * Ceiling for a runtime read off a *single* episode, in minutes.
+ *
+ * Not a guess at how long an episode "should" be — a 62-minute finale and a
+ * 3-minute anime short are both real, and rejecting either would trade a wrong
+ * number for a missing one. It exists to catch the one error class a single
+ * sample cannot survive: a value that is not minutes at all. Seconds reported as
+ * minutes (2700 for a 45-minute episode), or a whole season's runtime attached
+ * to its last episode, both land far above this; no televised episode does.
+ * Four hours is deliberately generous, because the cost of rejecting a real
+ * value here is a `0`, and the cost of accepting a bogus one is a plausible
+ * number that silently corrupts every time statistic in the plugin.
+ */
+export const EPISODE_RUNTIME_MAX_MINUTES = 240;
+
+/**
+ * Minutes per episode off one `*_episode_to_air` stub, or `undefined`.
+ *
+ * `undefined` — not `0` — for every rejection, because the caller has more
+ * candidates to try and needs to tell "this one said nothing usable" from "this
+ * one said zero".
+ *
+ * Season 0 is rejected outright. TMDB files recaps, OVAs and feature-length
+ * compilations there, so a special's runtime is not evidence about a regular
+ * episode; `normalizeSeasons` drops season 0 for the same reason. A stub with no
+ * season number at all is *not* rejected — absence is not evidence of a special.
+ */
+function episodeStubRuntime(value: unknown): number | undefined {
+  if (!isRaw(value)) return undefined;
+  if (optNum(value, "seasonNumber", "season_number") === 0) return undefined;
+  const runtime = optNum(value, "runtime");
+  if (runtime === undefined || runtime <= 0 || runtime > EPISODE_RUNTIME_MAX_MINUTES) {
+    return undefined;
+  }
+  return runtime;
+}
+
+/**
+ * Candidate single episodes, in falling order of how much they are worth.
+ *
+ * An episode that has aired is a fact; one that has not is a plan, and TMDB
+ * revises `next_episode_to_air.runtime` right up until broadcast. Both spellings
+ * of *last* therefore come before either spelling of *next*.
+ *
+ * Read one key at a time, falling through on anything unusable, rather than
+ * taking the first key that is merely *present*: TMDB sends both stubs on a TV
+ * payload, and `last_episode_to_air` is routinely an object whose `runtime` is
+ * `null` on a show that has not premiered. A first-present lookup would stop
+ * there and never reach `next` — the exact bug `studioNames` above documents.
+ */
+const EPISODE_RUNTIME_FALLBACK_KEYS = [
+  "lastEpisodeToAir",
+  "last_episode_to_air",
+  "nextEpisodeToAir",
+  "next_episode_to_air",
+] as const;
+
+/**
  * Minutes per episode for TV: the **modal** value of `episodeRunTime`.
  *
  * TMDB reports a list because a show can mix formats; the most common entry is
  * the one that makes "time remaining" honest for a binge-watcher.
+ *
+ * That list is empty for a great many modern series — every one of *The Agency*,
+ * *Reacher*, *The Day of the Jackal* and *Last Seen* ships `episode_run_time:
+ * []` — which used to mean every time statistic on those titles read zero. When
+ * the list says nothing, one aired episode's own `runtime` is the next best
+ * evidence and is nearly always there. A real list still wins: several episodes
+ * agreeing beats a single sample, so this only ever runs when there is no list
+ * to consult. When there is neither, `0` remains the honest answer — a plausible
+ * invented default would corrupt every time statistic instead of omitting it.
  */
 export function episodeRuntime(raw: Raw): number {
   const list = firstDefined(raw, ["episodeRunTime", "episode_run_time"]);
   const values = Array.isArray(list)
     ? list.filter((v): v is number => typeof v === "number" && Number.isFinite(v) && v > 0)
     : [];
-  if (values.length === 0) return 0;
+  if (values.length === 0) {
+    for (const key of EPISODE_RUNTIME_FALLBACK_KEYS) {
+      const runtime = episodeStubRuntime(raw[key]);
+      if (runtime !== undefined) return runtime;
+    }
+    return 0;
+  }
   const counts = new Map<number, number>();
   for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
   let best = values[0] ?? 0;
