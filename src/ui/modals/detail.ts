@@ -11,10 +11,13 @@
  *   - free-text fields commit on a 600 ms debounce, so the store is not asked to
  *     write on every keystroke.
  *
- * Chips (genre, cast, director, studio, tag) are links: clicking one hands a
- * scoped query back to the Library and closes the modal — foodspot's
- * `pendingQuery` handoff, which is what makes every chip in the app functional
- * rather than decorative.
+ * Chips (genre, cast, director, studio, tag) are links, and what a click on one
+ * does is `ui/detail/people.ts`'s single answer rather than this file's: a cast
+ * or director name opens that person, anything else hands a scoped query back to
+ * the Library and closes the modal — foodspot's `pendingQuery` handoff, which is
+ * what makes every chip in the app functional rather than decorative. Alt-click
+ * is the query in both cases, so nothing that used to be one click has become
+ * unreachable.
  */
 import { Modal, Notice, setIcon, type App } from "obsidian";
 import {
@@ -66,6 +69,7 @@ import {
   renderRatingField,
   renderReviewField,
 } from "../detail/judgement";
+import { bindCreditLink, personOpener, type PersonOpener } from "../detail/people";
 import {
   markEpisodesPatch,
   plexEpisodeKeys,
@@ -107,6 +111,13 @@ export interface DetailModalOptions {
   titleId: string;
   /** Chip → filtered Library. The modal closes itself before handing over. */
   onJumpToQuery?: (query: string) => void;
+  /**
+   * Cast/director chip → the person screen.
+   *
+   * Optional because the modal derives it from its own `app` when it is absent,
+   * which is what keeps this wiring out of `main.ts`. A test passes its own.
+   */
+  onOpenPerson?: (name: string) => void;
   onPlayTrailer?: (title: TitleV4) => void;
   onRequest?: (title: TitleV4) => void;
   onOpenNote?: (title: TitleV4) => void;
@@ -479,47 +490,54 @@ export class DetailModal extends Modal implements DetailSurface {
       host.createDiv({ cls: "wl-detail-overview", text: title.overview });
     }
 
-    this.chipSection(host, "Genres", title.genres ?? [], (value) =>
-      this.jump(`genre:"${value}"`),
-    );
-    this.chipSection(host, "Cast", [...title.cast, ...title.manualCast], (value) =>
-      this.jump(`cast:"${value}"`),
-    );
-    this.chipSection(
-      host,
-      "Director",
-      [...title.director, ...title.manualDirector],
-      (value) => this.jump(`director:"${value}"`),
-    );
-    this.chipSection(host, "Studio", [...title.studio, ...title.manualStudio], (value) =>
-      this.jump(`studio:"${value}"`),
-    );
-    this.chipSection(host, "Tags", title.tags, (value) => this.jump(`tag:"${value}"`));
+    this.chipSection(host, "Genres", title.genres ?? [], "genre");
+    this.chipSection(host, "Cast", [...title.cast, ...title.manualCast], "cast");
+    this.chipSection(host, "Director", [...title.director, ...title.manualDirector], "director");
+    this.chipSection(host, "Studio", [...title.studio, ...title.manualStudio], "studio");
+    this.chipSection(host, "Tags", title.tags, "tag");
   }
 
+  /** The person opener, or `undefined` when there is nowhere to open one. */
+  private personOpen(): PersonOpener | undefined {
+    const open = this.options.onOpenPerson ?? personOpener(this.app);
+    if (!open) return undefined;
+    // Same discipline as `jump`: the modal gets out of the way first, or the
+    // leaf it just opened lands behind it.
+    return (name: string) => {
+      this.close();
+      open(name);
+    };
+  }
+
+  /**
+   * One labelled row of chips.
+   *
+   * The chips carry no behaviour of their own: `bindCreditLink` decides that a
+   * cast name opens the person and a studio only ever filters, so the modal and
+   * the workspace view cannot drift apart on it — the same reason every control
+   * in here comes from `ui/detail/`.
+   */
   private chipSection(
     host: HTMLElement,
     label: string,
     values: readonly string[],
-    onClick: (value: string) => void,
+    field: string,
   ): void {
     const list = [...new Set(values.filter((v) => v.trim() !== ""))];
     if (list.length === 0) return;
     const section = host.createDiv({ cls: "wl-detail-chipsection" });
     section.createSpan({ cls: "wl-field-label", text: label });
     const row = section.createDiv({ cls: "wl-chips" });
+    const openPerson = this.personOpen();
+    const onFilter = this.options.onJumpToQuery ? (query: string) => this.jump(query) : undefined;
     for (const value of list) {
       const chip = row.createSpan({ cls: "wl-chip is-clickable", text: value });
-      chip.setAttribute("role", "button");
-      chip.setAttribute("tabindex", "0");
-      chip.setAttribute("title", `Show every title with ${label.toLowerCase()} “${value}”`);
-      const fire = (event: Event): void => {
-        event.preventDefault();
-        onClick(value);
-      };
-      chip.addEventListener("click", fire);
-      chip.addEventListener("keydown", (event: KeyboardEvent) => {
-        if (event.key === "Enter" || event.key === " ") fire(event);
+      bindCreditLink(chip, {
+        name: value,
+        field,
+        noun: label.toLowerCase(),
+        ...(openPerson ? { openPerson } : {}),
+        ...(onFilter ? { onFilter } : {}),
       });
     }
   }

@@ -1,7 +1,8 @@
 /**
  * Live smoke test for the Upcoming pipeline (QA2 report 1 evidence).
  *
- *   node scripts/smoke-upcoming.mjs [--data /path/to/data.json] [--expect "Dexter"]
+ *   node scripts/smoke-upcoming.mjs --vault /path/to/Vault [--expect "Dexter"]
+ *   WATCHLOG_VAULT=/path/to/Vault node scripts/smoke-upcoming.mjs
  *
  * It runs the plugin's OWN code — `services/match.ts`, `services/airing.ts` and
  * `ui/tabs/upcoming.ts` are bundled by esbuild and imported here, with
@@ -25,6 +26,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { resolveDataPath } from "./vault-data.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -41,11 +43,11 @@ function flag(name, fallback) {
   return value ?? fallback;
 }
 
-const DATA_PATH = flag(
-  "data",
-  process.env.WATCHLOG_DATA ??
-    "/Users/iwanhoogendoorn/Documents/IWAN-REMOTE-VAULT/.obsidian/plugins/watch-read-learn/data.json",
-);
+const DATA_PATH = resolveDataPath({
+  script: "scripts/smoke-upcoming.mjs",
+  data: flag("data", ""),
+  vault: flag("vault", ""),
+});
 /** A substring of the title that MUST produce an announced-season row. */
 const EXPECT = flag("expect", "Dexter");
 

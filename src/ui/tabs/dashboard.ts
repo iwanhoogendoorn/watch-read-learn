@@ -38,7 +38,7 @@ import {
 import { bookStats, mangaStats } from "../../domains/reading/stats";
 import { buildShelves } from "../../domains/shelves";
 import { openShelfSettings } from "../modals/shelfsettings";
-import { openPersonView } from "../views/person";
+import { bindCreditLink, personOpener } from "../detail/people";
 import { renderShelfRow } from "../components/shelf";
 import { derivedStatus, progressLabel, readingProgress } from "../../domains/reading/progress";
 import { daysUntil, toDateString } from "../../services/airing";
@@ -570,14 +570,15 @@ function renderColumns(parent: HTMLElement, buckets: readonly CountBucket[]): vo
 
 interface CreditListOptions {
   /**
-   * Overrides the `queryField` handoff for this list.
+   * Opens the person behind a name.
    *
    * The Library search is the right destination for a studio — there is no
    * studio screen — but it is the *wrong* one for a person: `cast:"Nolan"` can
    * only ever show you what you already own, which is the exact limitation the
-   * person view was built to lift. So the compact layout hands its two people
-   * lists an `onPick` that opens that view instead, and everything else keeps
-   * the search.
+   * person view was built to lift. So both layouts hand their two people lists
+   * an `onPick`, and `bindCreditLink` is what makes it the primary click while
+   * keeping the search on Alt-click; a studio list passes none and is refused
+   * one anyway, because `isPersonField` is the gate rather than the caller.
    */
   onPick?: (label: string) => void;
   /**
@@ -610,17 +611,24 @@ function renderCreditList(
     return;
   }
   const list = card.createDiv({ cls: "wl-credit-list" });
+  const onFilter =
+    deps.onJumpToQuery && queryField ? (query: string) => deps.onJumpToQuery?.(query) : undefined;
+  const openPerson = options.onPick;
+  const clickable = queryField !== null && (onFilter !== undefined || openPerson !== undefined);
   for (const bucket of buckets) {
     const row = list.createDiv({ cls: "wl-credit-row" });
-    const jump = deps.onJumpToQuery && queryField ? () => deps.onJumpToQuery?.(`${queryField}:"${bucket.label}"`) : null;
-    const act = options.onPick ? () => options.onPick?.(bucket.label) : jump;
-    if (act) {
+    if (clickable && queryField) {
       const chip = row.createEl("button", {
         cls: "wl-chip is-clickable",
         text: bucket.label,
         attr: { type: "button" },
       });
-      chip.addEventListener("click", act);
+      bindCreditLink(chip, {
+        name: bucket.label,
+        field: queryField,
+        ...(openPerson ? { openPerson } : {}),
+        ...(onFilter ? { onFilter } : {}),
+      });
     } else {
       row.createSpan({ cls: "wl-chip", text: bucket.label });
     }
@@ -995,9 +1003,9 @@ function renderCompactDashboard(
 
     // A person is a place, not a filter — but only if there is an `app` to open
     // a leaf in. Without one (a headless host, or a test) the lists fall back
-    // to the Library-search handoff every other credit chip already uses.
-    const app = deps.app;
-    const onPick = app ? (name: string): void => void openPersonView(app, { name }) : undefined;
+    // to the Library-search handoff every other credit chip already uses. With
+    // one, the search is still there on Alt-click.
+    const onPick = personOpener(deps.app);
     renderCreditList(grid, "Top cast", model.topCast, deps, "cast", { onPick });
     renderCreditList(grid, "Top directors", model.topDirectors, deps, "director", { onPick });
     // A studio is not a person; it keeps the search.
@@ -1461,8 +1469,12 @@ export function mountDashboardTab(host: HTMLElement, deps: TabDeps): TabControll
       }
       sectionHeader(s, "Top credits", `top ${limit}`);
       const grid = s.createDiv({ cls: "wl-credit-grid" });
-      renderCreditList(grid, "Cast", model.topCast, deps, "cast");
-      renderCreditList(grid, "Directors", model.topDirectors, deps, "director");
+      // The same rule the compact layout holds: a name opens the person, and
+      // Alt-click keeps the Library search this list used to be limited to.
+      const onPick = personOpener(deps.app);
+      renderCreditList(grid, "Cast", model.topCast, deps, "cast", { onPick });
+      renderCreditList(grid, "Directors", model.topDirectors, deps, "director", { onPick });
+      // A studio is not a person; it keeps the search.
       renderCreditList(grid, "Studios", model.topStudios, deps, "studio");
     });
 

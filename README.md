@@ -17,18 +17,21 @@ manga and games in one library, wired into a home media stack.
   biography, personal details and full filmography, and add anything from it to
   your library in one click. What you already own is marked as owned rather than
   offered again.
-- **A title screen with room to breathe** — the detail view opens as a real
-  workspace pane: poster, synopsis, time left and time watched, season
-  accordions, and dates with a "Today" button beside each one. The compact modal
-  is still there when you just want a quick look.
+- **A title screen with room to breathe** — a title opens as a real workspace
+  pane by default: poster, synopsis, time left and time watched, season
+  accordions, and dates with a "Today" button beside each one. Every cast and
+  director name on it is a link to that person; Alt-click one to filter the
+  library by them instead. The compact modal is one toggle away in settings when
+  you just want a quick look.
 - **Bring your history with you** — import from Trakt (including the full ZIP
   export), Letterboxd, Simkl, IMDb and Ryot. Nothing is written until you have
   seen what will change, and merging into a title you already have never
   overwrites your own rating, review, notes or ticked episodes.
-- **Layouts, not opinions** — Dashboard and Upcoming each ship a second, denser
-  layout you can switch to from the toolbar, poster shelves you can turn on and
-  off one by one, and a light/dark switch that drives Obsidian's own theme
-  rather than a private one.
+- **Layouts, not opinions** — Upcoming opens as a month-grouped list with the
+  countdown, the availability pill and the Plex/request/calendar actions all on
+  one line; the roomier layout is one button away. The Dashboard has the same
+  pair, poster shelves you can turn on and off one by one, and a light/dark
+  switch that drives Obsidian's own theme rather than a private one.
 - **It keeps itself current** — an optional background sweep refreshes stale
   metadata across the whole library, skipping what cannot change (dropped
   titles, finished films) while still re-checking finished *shows*, because that
@@ -133,6 +136,17 @@ npm run build     # tsc --noEmit + esbuild -> build/{main.js,styles.css,manifest
 npm test          # vitest, no network
 npm run dev       # esbuild watch
 node scripts/deploy.mjs "/path/to/Vault"
+```
+
+The smoke and preview harnesses read one real vault's `data.json`, and none of
+them guesses where that is — pass `--vault "/path/to/Vault"` (or `--data` for
+the file itself), or set `WATCHLOG_VAULT`/`WATCHLOG_DATA` once. Without it they
+print what to set and exit non-zero.
+
+```
+WATCHLOG_VAULT="/path/to/Vault" npm run smoke:dashboard   # also :domains :reading :games :upcoming
+WATCHLOG_VAULT="/path/to/Vault" node scripts/preview-cards.mjs       # writes an HTML preview
+WATCHLOG_VAULT="/path/to/Vault" node scripts/preview-dashboard.mjs
 ```
 
 ## Layout

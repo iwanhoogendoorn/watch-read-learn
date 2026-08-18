@@ -47,6 +47,7 @@ import {
   availabilityOfTitle,
   buildUpcomingFacetSections,
   clearUpcomingFilters,
+  effectiveUpcomingLayout,
   excludedForUpcoming,
   fromUpcomingPreset,
   hasArrived,
@@ -597,6 +598,179 @@ export function requestPill(title: TitleV4): StatePill | null {
   return { text: "Requested", tone: "warn" };
 }
 
+// ---------------------------------------------------------------------------
+// What a row is entitled to — ONE decision, drawn at two densities
+// ---------------------------------------------------------------------------
+
+/**
+ * A pill with the tooltip that explains it, where one is warranted.
+ *
+ * `StatePill` on its own could not carry the "Queued for download" hover text,
+ * and that text is not decoration: the pill states the *answer* and the tooltip
+ * keeps Overseerr's own word, where it explains rather than competes.
+ */
+export interface UpcomingRowPill extends StatePill {
+  tooltip?: string;
+}
+
+export type UpcomingActionId = "add-season" | "open-plex" | "request" | "acknowledge";
+
+/**
+ * One row action, described rather than drawn.
+ *
+ * It carries both a `label` (the detailed layout's word) and an `icon` (the
+ * compact layout's glyph) so that the *decision* to offer the action is made
+ * once and the *presentation* stays each layout's own business. `ariaLabel` is
+ * the full sentence and is used at both densities — it is the only thing a
+ * screen-reader user gets from the icon button, so it must not be the short
+ * word.
+ */
+export interface UpcomingRowAction {
+  id: UpcomingActionId;
+  label: string;
+  ariaLabel: string;
+  /** Lucide name. */
+  icon: string;
+  run: () => void;
+}
+
+export interface UpcomingRowAffordances {
+  pills: UpcomingRowPill[];
+  actions: UpcomingRowAction[];
+}
+
+/** Just the hooks an affordance can call — a renderer need not hand over the lot. */
+export type AffordanceDeps = Pick<
+  TabDeps,
+  "onAddSeason" | "onOpenInPlex" | "onRequest" | "onAcknowledge"
+>;
+
+/**
+ * Which pills and which actions this row has earned.
+ *
+ * **The single source of truth for both layouts.** The detailed rows and the
+ * compact rows differ in how densely they draw this answer and in nothing else;
+ * the moment "does this row get a Request button?" is decided in two places,
+ * the two places drift, and this codebase has already paid for that lesson once
+ * — the rating binding kept a second divergent copy and the same bug was
+ * reported four separate times.
+ *
+ * Two rules encoded here rather than left to a caller:
+ *
+ *   - **one availability pill**, in the same words as the Availability facet. A
+ *     row used to be able to say "Not on Plex" and "Processing" side by side —
+ *     both true, together nonsense: the first is why you might act and the
+ *     second is why you should not. A *request* pill survives alongside only in
+ *     the not-on-Plex branch, where it is the reason nothing is coming.
+ *   - **an action appears only when a host wired its hook.** A button that
+ *     cannot do anything is worse than no button, so `deps` is consulted here
+ *     and not in the renderers.
+ *
+ * Nothing in here calls anything. `run` is a closure the renderer binds to a
+ * click; in particular the Request action only ever re-enters `deps.onRequest`,
+ * which is where the composition root's explicit confirmation lives.
+ */
+export function upcomingRowAffordances(
+  entry: UpcomingEntry,
+  deps: AffordanceDeps,
+): UpcomingRowAffordances {
+  const { title } = entry;
+  const pills: UpcomingRowPill[] = [];
+  const actions: UpcomingRowAction[] = [];
+
+  // An announced season the tracker does not have yet: the action that matters
+  // is "add it", not "request it" — you cannot tick episodes that do not exist.
+  if (
+    entry.kind === "season" &&
+    entry.tracked !== true &&
+    deps.onAddSeason &&
+    entry.seasonNumber !== undefined
+  ) {
+    const seasonNumber = entry.seasonNumber;
+    actions.push({
+      id: "add-season",
+      label: `Add season ${seasonNumber}`,
+      ariaLabel: `Add season ${seasonNumber} of ${title.title} to your tracker`,
+      icon: "plus",
+      run: () => deps.onAddSeason?.(title, seasonNumber),
+    });
+  }
+
+  const availability = availabilityOfTitle(title);
+  const request = requestPill(title);
+  if (availability === "plex") {
+    // Partial keeps its precision — "12/22 eps" says more than "On Plex", and it
+    // is the one pill that doubles as a progress reading.
+    const plex = plexPill(title);
+    if (plex) pills.push(plex);
+  } else if (availability === "queued") {
+    pills.push({
+      text: "Queued for download",
+      tone: "warn",
+      tooltip: request
+        ? `Radarr/Sonarr has this — Overseerr says “${request.text}”`
+        : "Radarr/Sonarr has this; it is not on Plex yet",
+    });
+  } else {
+    pills.push({ text: "Not on Plex", tone: "muted" });
+    // Declined, failed — the reason nothing is coming.
+    if (request) pills.push(request);
+  }
+
+  if (availability === "plex" && deps.onOpenInPlex) {
+    actions.push({
+      id: "open-plex",
+      label: "Open in Plex",
+      ariaLabel: `Open ${title.title} in Plex`,
+      icon: "play",
+      run: () => deps.onOpenInPlex?.(title),
+    });
+  }
+  // Not on Plex and nothing on the way — including a title nobody could scan,
+  // and one whose earlier request was declined or failed. Asking again is the
+  // whole point of the button.
+  if (availability === "not-plex" && deps.onRequest) {
+    actions.push({
+      id: "request",
+      label: "Request",
+      ariaLabel: `Request ${title.title}`,
+      icon: "download",
+      run: () => deps.onRequest?.(title),
+    });
+  }
+  // A released film that is not on Plex and was never requested would otherwise
+  // sit in "due" until the past window closed over it. This is the way out, and
+  // it clears exactly this row (QA1 B4).
+  if (isDue(entry) && deps.onAcknowledge) {
+    actions.push({
+      id: "acknowledge",
+      label: "Got it",
+      ariaLabel: `Clear ${title.title} — ${entry.label.toLowerCase()} — from what needs attention`,
+      icon: "check",
+      run: () => deps.onAcknowledge?.(title, entry),
+    });
+  }
+
+  return { pills, actions };
+}
+
+/**
+ * The same answer for a row of any library.
+ *
+ * A book has no Plex state, no Overseerr request and no season to adopt, so it
+ * gets nothing — an empty list rather than an empty pill. That is the honest
+ * result and it is why the compact renderer can loop over this unconditionally:
+ * a row with no affordances draws no container at all.
+ */
+export function unifiedRowAffordances(
+  row: UnifiedRow,
+  deps: AffordanceDeps,
+): UpcomingRowAffordances {
+  return row.entry.source === "watchlist"
+    ? upcomingRowAffordances(row.entry.value, deps)
+    : { pills: [], actions: [] };
+}
+
 /** `12 of 33 · 4 left` style progress sentence, or `""` for a single-episode title. */
 export function progressSentence(title: TitleV4): string {
   if (title.totalEpisodes <= 1) return "";
@@ -892,6 +1066,11 @@ export function mountUpcomingTab(host: HTMLElement, deps: TabDeps): TabControlle
   const view = readUpcomingViewState(settings);
   let refreshing = false;
 
+  // `view.layout` is the reader's *choice* and stays `null` until they make one;
+  // this is what is actually drawn. Keeping them apart is what lets the default
+  // change without rewriting anybody's decision — see `effectiveUpcomingLayout`.
+  let layout: UpcomingLayout = effectiveUpcomingLayout(view.layout);
+
   function persist(reason: string): void {
     writeUpcomingViewState(settings, view);
     deps.store.save(reason);
@@ -1042,17 +1221,21 @@ export function mountUpcomingTab(host: HTMLElement, deps: TabDeps): TabControlle
     attr: { type: "button" },
   });
   layoutButton.addEventListener("click", () => {
-    view.layout = view.layout === "compact" ? "detailed" : "compact";
+    layout = layout === "compact" ? "detailed" : "compact";
+    // Pressing it IS the decision, and this is the only place that records one.
+    // Every other `persist` round-trips whatever is already there, so merely
+    // searching or filtering never turns the default into a stored preference.
+    view.layout = layout;
     persist("upcoming-layout");
     syncLayoutButton();
     render();
   });
 
   function syncLayoutButton(): void {
-    const next: UpcomingLayout = view.layout === "compact" ? "detailed" : "compact";
+    const next: UpcomingLayout = layout === "compact" ? "detailed" : "compact";
     const label = `Switch to the ${UPCOMING_LAYOUT_LABELS[next].toLowerCase()} layout`;
-    layoutButton.dataset.layout = view.layout;
-    layoutButton.toggleClass("is-compact", view.layout === "compact");
+    layoutButton.dataset.layout = layout;
+    layoutButton.toggleClass("is-compact", layout === "compact");
     layoutButton.setAttr("aria-label", label);
     layoutButton.setAttr("title", label);
     // `setIcon` appends; without the empty the two icons would stack up, one
@@ -1060,7 +1243,7 @@ export function mountUpcomingTab(host: HTMLElement, deps: TabDeps): TabControlle
     layoutButton.empty();
     // Long-standing Lucide names on purpose: `rows-3` is a recent rename of a
     // deprecated icon and renders as nothing on an older Obsidian.
-    setIcon(layoutButton, view.layout === "compact" ? "list" : "layout-list");
+    setIcon(layoutButton, layout === "compact" ? "list" : "layout-list");
   }
   syncLayoutButton();
 
@@ -1208,7 +1391,7 @@ export function mountUpcomingTab(host: HTMLElement, deps: TabDeps): TabControlle
     // separate "recently released" block would leave a heading that lies about
     // what is under it. The detailed layout keeps the split, which is the whole
     // reason the two are offered rather than one being replaced.
-    if (view.layout === "compact") {
+    if (layout === "compact") {
       renderCompact(results);
       return;
     }
@@ -1398,78 +1581,34 @@ export function renderUpcomingRow(parent: HTMLElement, entry: UpcomingEntry, dep
 
   const states = row.createDiv({ cls: "wl-upcoming-states" });
 
-  // An announced season the tracker does not have yet: the action that matters
-  // is "add it", not "request it" — you cannot tick episodes that do not exist.
-  if (
-    entry.kind === "season" &&
-    entry.tracked !== true &&
-    deps.onAddSeason &&
-    entry.seasonNumber !== undefined
-  ) {
-    const seasonNumber = entry.seasonNumber;
+  // What this row gets is decided in exactly one place, shared with the compact
+  // layout. This renderer only draws the answer — worded buttons, because at
+  // this density there is room for the word.
+  const { pills, actions } = upcomingRowAffordances(entry, deps);
+
+  // "Add season" leads, ahead of the pills: it is the row's headline offer, not
+  // a footnote to its availability. Every other action follows them.
+  for (const action of actions) {
+    if (action.id !== "add-season") continue;
     const add = states.createEl("button", {
       cls: "wl-mini-btn is-primary",
-      text: `Add season ${seasonNumber}`,
-      attr: { type: "button", "aria-label": `Add season ${seasonNumber} of ${title.title} to your tracker` },
+      text: action.label,
+      attr: { type: "button", "aria-label": action.ariaLabel },
     });
     add.addEventListener("click", (evt) => {
       evt.stopPropagation();
-      deps.onAddSeason?.(title, seasonNumber);
+      action.run();
     });
   }
 
-  /**
-   * **One** state pill, in the same words as the Availability facet.
-   *
-   * A row used to be able to say "Not on Plex" and "Processing" side by side —
-   * both true, together nonsense: the first is why you might act and the second
-   * is why you should not. So the row states the answer ("Queued for download")
-   * and keeps Overseerr's own word in the tooltip, where it explains rather than
-   * competes. Only a *negative* request state survives as a second pill, because
-   * "Declined" is news the availability word cannot carry.
-   */
-  const availability = availabilityOfTitle(title);
-  const request = requestPill(title);
-  if (availability === "plex") {
-    // Partial keeps its precision — "12/22 eps" says more than "On Plex".
-    const plex = plexPill(title);
-    if (plex) renderPill(states, plex);
-  } else if (availability === "queued") {
-    const pill = renderPill(states, { text: "Queued for download", tone: "warn" });
-    pill.setAttr(
-      "title",
-      request
-        ? `Radarr/Sonarr has this — Overseerr says “${request.text}”`
-        : "Radarr/Sonarr has this; it is not on Plex yet",
-    );
-  } else {
-    renderPill(states, { text: "Not on Plex", tone: "muted" });
-    // Declined, failed — the reason nothing is coming.
-    if (request) renderPill(states, request);
+  for (const pill of pills) {
+    const el = renderPill(states, pill);
+    if (pill.tooltip) el.setAttr("title", pill.tooltip);
   }
 
-  if (availability === "plex" && deps.onOpenInPlex) {
-    miniButton(states, "Open in Plex", `Open ${title.title} in Plex`, () =>
-      deps.onOpenInPlex?.(title),
-    );
-  }
-  // Not on Plex and nothing on the way — including a title nobody could scan,
-  // and one whose earlier request was declined or failed. Asking again is the
-  // whole point of the button.
-  if (availability === "not-plex" && deps.onRequest) {
-    miniButton(states, "Request", `Request ${title.title}`, () => deps.onRequest?.(title));
-  }
-
-  // A released film that is not on Plex and was never requested would otherwise
-  // sit in "due" until the past window closed over it. This is the way out, and
-  // it clears exactly this row (QA1 B4).
-  if (isDue(entry) && deps.onAcknowledge) {
-    miniButton(
-      states,
-      "Got it",
-      `Clear ${title.title} — ${entry.label.toLowerCase()} — from what needs attention`,
-      () => deps.onAcknowledge?.(title, entry),
-    );
+  for (const action of actions) {
+    if (action.id === "add-season") continue;
+    miniButton(states, action.label, action.ariaLabel, action.run);
   }
 
   if (deps.onOpenTitle) {
@@ -1550,15 +1689,22 @@ function renderRowThumb(parent: HTMLElement, row: UnifiedRow, deps: TabDeps, cls
  *
  * Reading left to right: a small cover, the title, a meta line that says what
  * kind of thing this is and what specifically is arriving, and then, hard right,
- * the countdown as a number you can scan down the column. The calendar actions
- * are icons rather than the detailed layout's worded buttons, because at this
- * density a word is the widest thing in the row.
+ * the countdown, the availability pill and the actions.
  *
- * What it deliberately does NOT do is fake the detailed layout's affordances.
- * There is no "Add season", no request button and no "Got it" here: those are
- * watchlist-only, and a list that grew and shrank its right-hand edge depending
- * on which library a row came from would lose the one thing this layout is for.
- * The detailed layout is one click away and has all of them.
+ * **Same affordances as the detailed layout, drawn smaller.** They come from
+ * `unifiedRowAffordances`, which is the one place that decides them; this
+ * renderer chooses only how to draw them, and it chooses icons where the
+ * detailed layout uses words, because at this density a word is the widest
+ * thing in the row. Each icon carries the detailed layout's full sentence as
+ * its `aria-label`, so nothing is lost to a screen reader by the shortening.
+ *
+ * The right-hand cluster is `flex: 0 0 auto` and the body is the only thing
+ * that flexes, so a row with a long title ellipsises the title rather than
+ * wrapping or dropping an action — the density survives a narrow pane.
+ *
+ * A row from another library gets no pills and no buttons, because a book has
+ * no Plex state and no request to make. An empty affordance list draws no
+ * container at all rather than an empty pill or a dead button.
  */
 export function renderCompactRow(
   parent: HTMLElement,
@@ -1596,7 +1742,37 @@ export function renderCompactRow(
     countdownEl.createSpan({ cls: "wl-upcoming-countdown-unit", text: countdown.unit });
   }
 
+  // The same pills the detailed row shows, from the same function. Rendered
+  // only when there are any, so a book keeps its clean right-hand edge.
+  const { pills, actions: rowActions } = unifiedRowAffordances(row, deps);
+  if (pills.length > 0) {
+    const states = el.createDiv({ cls: "wl-upcoming-compact-states" });
+    for (const pill of pills) {
+      const pillEl = renderPill(states, pill);
+      if (pill.tooltip) pillEl.setAttr("title", pill.tooltip);
+    }
+  }
+
   const actions = el.createDiv({ cls: "wl-upcoming-compact-actions" });
+
+  // `data-action` rather than a class per verb: the id is already the shared
+  // vocabulary both layouts speak, so there is nothing to keep in step.
+  for (const action of rowActions) {
+    const button = actions.createEl("button", {
+      cls: "wl-icon-btn wl-upcoming-compact-action",
+      attr: {
+        type: "button",
+        "aria-label": action.ariaLabel,
+        title: action.ariaLabel,
+        "data-action": action.id,
+      },
+    });
+    setIcon(button, action.icon);
+    button.addEventListener("click", (evt: MouseEvent) => {
+      evt.stopPropagation();
+      action.run();
+    });
+  }
 
   const gcalUrl = googleCalendarUrl(row);
   if (gcalUrl !== null) {

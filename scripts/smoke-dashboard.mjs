@@ -1,7 +1,8 @@
 /**
  * "The dashboard looks broken" — a headless reproduction (QA4).
  *
- *   node scripts/smoke-dashboard.mjs [--data /path/to/data.json]
+ *   node scripts/smoke-dashboard.mjs --vault /path/to/Vault
+ *   WATCHLOG_VAULT=/path/to/Vault node scripts/smoke-dashboard.mjs
  *
  * Mounts the real Dashboard tab over the real vault's `data.json` (migrated
  * in-memory) and reports the triad that covers what "looks broken" can mean:
@@ -31,6 +32,7 @@ import { readdirSync, readFileSync } from "node:fs";
 // The style audit is shared with `smoke-domains.mjs`; three scripts asking the
 // same question should ask it once (W8-integration).
 import { auditStyles as sharedAuditStyles } from "./smoke-shared.mjs";
+import { resolveDataPath } from "./vault-data.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -70,11 +72,11 @@ const EXPECTED_SECTIONS = [
 /** Sections that only appear when the relevant library has something in it. */
 const OPTIONAL_SECTIONS = ["Libraries"];
 
-const DATA_PATH = flag(
-  "data",
-  process.env.WATCHLOG_DATA ??
-    "/Users/iwanhoogendoorn/Documents/IWAN-REMOTE-VAULT/.obsidian/plugins/watch-read-learn/data.json",
-);
+const DATA_PATH = resolveDataPath({
+  script: "scripts/smoke-dashboard.mjs",
+  data: flag("data", ""),
+  vault: flag("vault", ""),
+});
 
 // ---------------------------------------------------------------------------
 // Bundle the tab, its model, and the DOM stub the tests use

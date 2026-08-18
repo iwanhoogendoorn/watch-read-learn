@@ -7,6 +7,7 @@
  */
 import {
   SCHEMA_VERSION,
+  writeExtra,
   type Book,
   type DraftsState,
   type FilterState,
@@ -92,8 +93,19 @@ export function createFilterState(): FilterState {
   };
 }
 
+/**
+ * Marker for the one-shot full-view default flip (`data/migrate.ts`).
+ *
+ * Undeclared on `Settings` because `types.ts` is a frozen contract, so it is
+ * read and written through `readExtra`/`writeExtra` — the same escape hatch
+ * `activeTab` and the dashboard layout use. `true` means "this install has
+ * already been given the new default"; from then on `openTitlesInFullView` is
+ * whatever the user last said and is never second-guessed again.
+ */
+export const FULL_VIEW_DEFAULT_MARKER = "fullViewDefaultApplied";
+
 export function createDefaultSettings(): Settings {
-  return {
+  const settings: Settings = {
     types: DEFAULT_TYPES.map((t) => ({ ...t })),
     statuses: DEFAULT_STATUSES.map((t) => ({ ...t })),
     priorities: DEFAULT_PRIORITIES.map((t) => ({ ...t })),
@@ -130,9 +142,12 @@ export function createDefaultSettings(): Settings {
     showUpcomingStatusBar: true,
     openLibraryAfterAdd: true,
     dashboardTopCredits: 5,
-    // The modal stays the default surface: it is what every existing user's
-    // muscle memory expects, and the leaf is the thing they opt into.
-    openTitlesInFullView: false,
+    // The full tab is the default surface. It is the one that fits a show with
+    // a full cast and a season grid, and it is where a cast name is a link to
+    // the person rather than a chip that can only filter. The modal stays one
+    // toggle away; `FULL_VIEW_DEFAULT_MARKER` is how an existing install gets
+    // moved across exactly once without ever overruling a later choice.
+    openTitlesInFullView: true,
 
     // Off, because turning it on writes binary files into the user's vault.
     cacheImagesLocally: false,
@@ -170,6 +185,13 @@ export function createDefaultSettings(): Settings {
     generateReadingNotes: true,
     generateGameNotes: true,
   };
+
+  // A fresh install already ships the full view on, so the one-shot flip has
+  // nothing to do here — stamp its marker anyway. Without it, a user who turns
+  // the full view *off* on their first day would be overruled by the flip on
+  // the next load, which is the one thing the marker exists to prevent.
+  writeExtra(settings, FULL_VIEW_DEFAULT_MARKER, true);
+  return settings;
 }
 
 // ---------------------------------------------------------------------------

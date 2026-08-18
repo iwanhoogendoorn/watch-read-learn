@@ -5,7 +5,8 @@
  * the built stylesheet, and write ONE self-contained file with light and dark
  * side by side. A layout question is answered by looking.
  *
- *   node scripts/preview-dashboard.mjs [--data /path/to/data.json] [--out /tmp/x.html]
+ *   node scripts/preview-dashboard.mjs --vault /path/to/Vault [--out /tmp/x.html]
+ *   WATCHLOG_VAULT=/path/to/Vault node scripts/preview-dashboard.mjs
  *
  * It is a **preview**, not a test. Read it with your eyes.
  *
@@ -17,6 +18,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { resolveDataPath } from "./vault-data.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const argv = process.argv.slice(2);
@@ -26,11 +28,11 @@ function flag(name, fallback) {
   return argv[i + 1] ?? fallback;
 }
 
-const DATA_PATH = flag(
-  "data",
-  process.env.WATCHLOG_DATA ??
-    "/Users/iwanhoogendoorn/Documents/IWAN-REMOTE-VAULT/.obsidian/plugins/watchlog-v4/data.json",
-);
+const DATA_PATH = resolveDataPath({
+  script: "scripts/preview-dashboard.mjs",
+  data: flag("data", ""),
+  vault: flag("vault", ""),
+});
 const OUT = flag("out", join(tmpdir(), "watchlog-dashboard-preview.html"));
 
 // Same shim as smoke-dashboard, except setIcon leaves a marker the preview CSS

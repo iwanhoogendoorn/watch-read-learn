@@ -2,7 +2,8 @@
  * Render the real poster cards to a real browser, so a layout question can be
  * answered by looking rather than by guessing.
  *
- *   node scripts/preview-cards.mjs [--data /path/to/data.json] [--out /tmp/x.html]
+ *   node scripts/preview-cards.mjs --vault /path/to/Vault [--out /tmp/x.html]
+ *   WATCHLOG_VAULT=/path/to/Vault node scripts/preview-cards.mjs
  *
  * Nothing in this repo has a layout engine — that is stated in three places and
  * it is why `styles.test.ts` can only assert rules, never boxes. This closes
@@ -21,6 +22,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
+import { resolveDataPath } from "./vault-data.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -33,11 +35,11 @@ function flag(name, fallback) {
   return value ?? fallback;
 }
 
-const DATA_PATH = flag(
-  "data",
-  process.env.WATCHLOG_DATA ??
-    "/Users/iwanhoogendoorn/Documents/IWAN-REMOTE-VAULT/.obsidian/plugins/watchlog-v4/data.json",
-);
+const DATA_PATH = resolveDataPath({
+  script: "scripts/preview-cards.mjs",
+  data: flag("data", ""),
+  vault: flag("vault", ""),
+});
 const OUT = flag("out", join(tmpdir(), "watchlog-cards.html"));
 
 const escape = (value) =>

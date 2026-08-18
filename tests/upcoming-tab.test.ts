@@ -19,6 +19,7 @@ import {
 import { mountUpcomingTab } from "../src/ui/tabs/upcoming";
 import {
   readUpcomingViewState,
+  writeUpcomingLayout,
   writeUpcomingViewState,
 } from "../src/domains/upcoming/filters";
 import { createHost, installDomGlobals, StubEl } from "./helpers/dom";
@@ -56,6 +57,20 @@ afterEach(() => {
 
 /** Fixed "now": Monday 3 August 2026, local time. */
 const NOW = new Date(2026, 7, 3, 14, 30);
+
+/**
+ * Pin these mounts to the **detailed** layout.
+ *
+ * Everything in this file checks the detailed layout's own structure — its
+ * relative-time buckets, its separate "Recently released" section, its worded
+ * row actions. Compact is what the tab opens as now, so these say which layout
+ * they mean rather than leaning on a default that has already moved once. The
+ * compact layout's own rendering is `upcoming-compact.test.ts`.
+ */
+function detailed(settings: Settings): Settings {
+  writeUpcomingLayout(settings, "detailed");
+  return settings;
+}
 
 function reading(overrides: Partial<ReadingData> = {}): ReadingData {
   return {
@@ -133,7 +148,7 @@ function mount(
     titles,
     reading(options.books ? { books: [BOOK] } : {}),
     { ...createGamesData(), games: options.games ? [GAME] : [] },
-    options.settings ?? createDefaultSettings(),
+    detailed(options.settings ?? createDefaultSettings()),
   );
   const controller = mountUpcomingTab(host as unknown as HTMLElement, {
     store,
@@ -285,7 +300,12 @@ describe("the Upcoming toolbar", () => {
     });
     const host = createHost(900);
     const controller = mountUpcomingTab(host as unknown as HTMLElement, {
-      store: storeOf([SEVERANCE, neverScanned, queued]),
+      store: storeOf(
+        [SEVERANCE, neverScanned, queued],
+        reading(),
+        { ...createGamesData(), settings: createGamesSettings() },
+        detailed(createDefaultSettings()),
+      ),
       now: () => NOW,
       onRequest: () => undefined,
       onOpenInPlex: () => undefined,

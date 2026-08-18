@@ -1,7 +1,8 @@
 /**
  * Headless mounts of the Reading and Games tabs (W8-integration).
  *
- *   node scripts/smoke-domains.mjs [--data /path/to/data.json] [--only reading]
+ *   node scripts/smoke-domains.mjs --vault /path/to/Vault [--only reading]
+ *   WATCHLOG_VAULT=/path/to/Vault node scripts/smoke-domains.mjs
  *
  * Both tabs are mounted twice: once over a fixture with entries in every state
  * the tab has a branch for, and once over the **real vault's** `data.json` —
@@ -26,6 +27,7 @@ import {
   reportCaughtErrors,
   reportStyleCollisions,
 } from "./smoke-shared.mjs";
+import { resolveDataPath } from "./vault-data.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -38,11 +40,11 @@ function flag(name, fallback) {
   return value ?? fallback;
 }
 
-const DATA_PATH = flag(
-  "data",
-  process.env.WATCHLOG_DATA ??
-    "/Users/iwanhoogendoorn/Documents/IWAN-REMOTE-VAULT/.obsidian/plugins/watch-read-learn/data.json",
-);
+const DATA_PATH = resolveDataPath({
+  script: "scripts/smoke-domains.mjs",
+  data: flag("data", ""),
+  vault: flag("vault", ""),
+});
 const ONLY = flag("only", "");
 
 const ENTRY = `

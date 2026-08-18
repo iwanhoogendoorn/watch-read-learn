@@ -25,6 +25,8 @@ import {
 import {
   READING_STATUSES,
   SCHEMA_VERSION,
+  readExtra,
+  writeExtra,
   type CustomColumn,
   type FilterState,
   type Group,
@@ -49,6 +51,7 @@ import {
   DEFAULT_REVIEWS,
   DEFAULT_STATUSES,
   DEFAULT_TYPES,
+  FULL_VIEW_DEFAULT_MARKER,
   createDefaultData,
   createDefaultSettings,
   createDraftsState,
@@ -519,6 +522,27 @@ function migrateSettings(raw: Rec, note: (m: string) => void): Settings {
   );
   s.dashboardTopCredits = num(s.dashboardTopCredits, defaults.dashboardTopCredits);
   s.openTitlesInFullView = bool(s.openTitlesInFullView, defaults.openTitlesInFullView);
+
+  // --- the full-view default, moved across exactly once --------------------
+  //
+  // 1.25.0 shipped `openTitlesInFullView: false` and wrote it into every
+  // `data.json` that loaded it, so raising the default alone would be invisible
+  // to everybody who already has the plugin: the line above would keep reading
+  // their stored `false` forever. This flips that stored `false` to the new
+  // default **once** and leaves `FULL_VIEW_DEFAULT_MARKER` behind.
+  //
+  // The marker, not the version number, is the guard — `migrate()` runs on
+  // every load, not only on a version bump (`data/store.ts`), so "already at
+  // v4" proves nothing about whether this has run. Once the marker is on disk,
+  // `openTitlesInFullView` is the user's own answer and this block never
+  // touches it again, including when that answer is `false`.
+  if (readExtra<unknown>(s, FULL_VIEW_DEFAULT_MARKER) !== true) {
+    if (!s.openTitlesInFullView) {
+      s.openTitlesInFullView = true;
+      note("titles now open in a full tab by default; the modal is one toggle away in settings");
+    }
+    writeExtra(s, FULL_VIEW_DEFAULT_MARKER, true);
+  }
 
   // Artwork cache. Both keys default to "off, in the default folder" for a file
   // that predates them, which is exactly the behaviour that file already had.

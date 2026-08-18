@@ -136,7 +136,7 @@ interface MountResult {
 function mount(
   titles: TitleV4[],
   settings: Settings = createDefaultSettings(),
-  options: { withApp?: boolean } = {},
+  options: { withApp?: boolean; onJumpToQuery?: (query: string) => void } = {},
 ): MountResult {
   const saves: string[] = [];
   const opened: { name?: string }[] = [];
@@ -170,7 +170,7 @@ function mount(
       buildTitleCard(parent, t, ctx);
     },
     onOpenTitle: () => undefined,
-    onJumpToQuery: () => undefined,
+    onJumpToQuery: options.onJumpToQuery ?? (() => undefined),
     now: () => NOW,
   };
 
@@ -439,6 +439,70 @@ describe("the compact layout", () => {
     expect(chip?.tag).toBe("button");
     chip?.fire("click");
     expect(result.opened).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Credit chips, in whichever layout you are looking at
+//
+// The two layouts used to disagree: compact opened the person, rich could only
+// run a `cast:"…"` search — same list, same names, different meaning depending
+// on a preference. Both now go through `bindCreditLink`, so the primary click
+// is the person and the search is a modifier away in either one.
+// ---------------------------------------------------------------------------
+
+describe("the ranked credit lists", () => {
+  /** The chip at the top of the list under `heading`, in whatever layout. */
+  function topChip(root: StubEl, heading: string): StubEl | undefined {
+    const card = root
+      .querySelectorAll(".wl-credit-card")
+      .find((el) => el.querySelectorAll(".wl-credit-heading")[0]?.textContent === heading);
+    return card?.querySelectorAll(".wl-chip")[0];
+  }
+
+  it("opens the person from the rich layout too, not only the compact one", () => {
+    const { root, opened } = mount(library());
+    const chip = topChip(root, "Cast");
+    expect(chip?.textContent).toBe("Tom Holland");
+    chip?.fire("click", {});
+    expect(opened).toEqual([{ name: "Tom Holland" }]);
+
+    topChip(root, "Directors")?.fire("click", {});
+    expect(opened).toHaveLength(2);
+  });
+
+  it("keeps the Library search on Alt-click in the rich layout", () => {
+    const jumped: string[] = [];
+    const { root, opened } = mount(library(), createDefaultSettings(), {
+      onJumpToQuery: (query) => jumped.push(query),
+    });
+    topChip(root, "Cast")?.fire("click", { altKey: true });
+    expect(jumped).toEqual(['cast:"Tom Holland"']);
+    expect(opened).toHaveLength(0);
+  });
+
+  it("keeps the Library search on Alt-click in the compact layout", () => {
+    const jumped: string[] = [];
+    const result = mount(library(), createDefaultSettings(), {
+      onJumpToQuery: (query) => jumped.push(query),
+    });
+    tools(result.root)[0]?.fire("click");
+    topChip(result.root, "Top cast")?.fire("click", { altKey: true });
+    expect(jumped).toEqual(['cast:"Tom Holland"']);
+    expect(result.opened).toHaveLength(0);
+  });
+
+  it("never turns a studio into a person, in either layout", () => {
+    const { root, opened } = mount(library());
+    topChip(root, "Studios")?.fire("click", {});
+    expect(opened).toHaveLength(0);
+  });
+
+  it("leaves a bucket list with nowhere to go as a plain label", () => {
+    const result = mount(library(), createDefaultSettings(), { withApp: false });
+    tools(result.root)[0]?.fire("click");
+    // "By year" has no query field at all: it is counts, not chips.
+    expect(topChip(result.root, "By year")?.tag).toBe("span");
   });
 });
 

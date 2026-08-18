@@ -49,6 +49,7 @@ async function open(over: Partial<TitleV4> = {}) {
 
   const host = createHost(1200);
   const jumped: string[] = [];
+  const people: string[] = [];
   const pane: TitleDetailController = mountTitleDetail(
     host as unknown as HTMLElement,
     "t",
@@ -56,13 +57,17 @@ async function open(over: Partial<TitleV4> = {}) {
       app: {} as never,
       store: store as never,
       onJumpToQuery: (query) => jumped.push(query),
+      // Injected rather than derived from `app`: the real view falls back to
+      // `personOpener(deps.app)`, which needs a workspace this harness has not
+      // got. What is under test is which of the two destinations a click picks.
+      onOpenPerson: (name) => people.push(name),
       onOpenNote: () => undefined,
       onRefreshMetadata: () => undefined,
       now: () => new Date("2026-08-18T10:00:00.000Z"),
     },
   );
 
-  return { store, title, pane, jumped, el: host as unknown as StubEl };
+  return { store, title, pane, jumped, people, el: host as unknown as StubEl };
 }
 
 /** A show with three seasons of four, `watched` of them ticked from the start. */
@@ -186,12 +191,38 @@ describe("the cast line", () => {
     expect(row?.querySelectorAll(".wl-chip").length).toBe(0);
   });
 
-  it("hands a scoped query back to the Library when a name is clicked", async () => {
-    const { el, jumped } = await open({ cast: ["Keith David"] });
-    el.querySelectorAll(".wl-tdv-inline-link")[0]?.fire("click", {
+  it("opens the person when a name is clicked, and filters on Alt-click", async () => {
+    const { el, jumped, people } = await open({ cast: ["Keith David"] });
+    const link = el.querySelectorAll(".wl-tdv-inline-link")[0];
+
+    link?.fire("click", { preventDefault: () => undefined });
+    expect(people).toEqual(["Keith David"]);
+    expect(jumped).toEqual([]);
+
+    // The old behaviour is a modifier away, not gone — `cast:"…"` is still the
+    // only thing that answers "what of theirs do I already own?".
+    link?.fire("click", { preventDefault: () => undefined, altKey: true });
+    expect(jumped).toEqual(['cast:"Keith David"']);
+    expect(people).toEqual(["Keith David"]);
+  });
+
+  it("keeps a genre on the Library search — a genre is not a person", async () => {
+    const { el, jumped, people } = await open({ genres: ["Horror"] });
+    const row = el
+      .querySelectorAll(".wl-tdv-inline")
+      .find((node) => node.textContent.startsWith("Genres:"));
+    row?.querySelectorAll(".wl-tdv-inline-link")[0]?.fire("click", {
       preventDefault: () => undefined,
     });
-    expect(jumped).toEqual(['cast:"Keith David"']);
+    expect(jumped).toEqual(['genre:"Horror"']);
+    expect(people).toEqual([]);
+  });
+
+  it("keeps a studio chip on the Library search too", async () => {
+    const { el, jumped, people } = await open({ studio: ["Universal"] });
+    el.querySelectorAll(".wl-chip")[0]?.fire("click", { preventDefault: () => undefined });
+    expect(jumped).toEqual(['studio:"Universal"']);
+    expect(people).toEqual([]);
   });
 
   it("draws no cast section at all when there are no names", async () => {

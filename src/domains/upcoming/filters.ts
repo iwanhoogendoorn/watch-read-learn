@@ -817,18 +817,53 @@ export const UPCOMING_LAYOUT_LABELS: Record<UpcomingLayout, string> = {
   compact: "Compact",
 };
 
-/** The layout that shipped first stays the default; nothing changes unasked. */
-export const DEFAULT_UPCOMING_LAYOUT: UpcomingLayout = "detailed";
+/**
+ * What the tab draws when the reader has never said.
+ *
+ * `compact` — the dense one — because it is the answer to the question the tab
+ * asks ("what is coming, and when"), and the detailed layout's second and third
+ * lines are the same facts spread over three times the height. The toggle is
+ * one click away and it is remembered, so this is a starting point rather than
+ * a verdict.
+ */
+export const DEFAULT_UPCOMING_LAYOUT: UpcomingLayout = "compact";
+
+/**
+ * The stored layout as a **choice**: the value the reader picked, or `null`
+ * while they never picked one.
+ *
+ * The distinction is the whole point, and it is what makes changing the default
+ * above safe. A default is what someone gets who has not decided; a stored
+ * value is a decision. Folding the two together — reading `undefined` as
+ * "detailed" and writing that back on the next unrelated save — is how a
+ * default change silently becomes an override: every reader would carry a
+ * decision they never made, and no future default could ever reach them.
+ *
+ * So `null` here means "not decided", it round-trips as `null`, and only the
+ * toggle turns it into a layout. A value already on disk from before this split
+ * is honoured as a choice — it cannot be told apart from one now, and honouring
+ * it is the reading that cannot overrule anybody.
+ */
+export function normalizeUpcomingLayoutChoice(raw: unknown): UpcomingLayout | null {
+  return UPCOMING_LAYOUTS.includes(raw as UpcomingLayout) ? (raw as UpcomingLayout) : null;
+}
+
+/** The choice if there is one, the default otherwise. What actually gets drawn. */
+export function effectiveUpcomingLayout(choice: UpcomingLayout | null): UpcomingLayout {
+  return choice ?? DEFAULT_UPCOMING_LAYOUT;
+}
 
 export function normalizeUpcomingLayout(raw: unknown): UpcomingLayout {
-  return UPCOMING_LAYOUTS.includes(raw as UpcomingLayout)
-    ? (raw as UpcomingLayout)
-    : DEFAULT_UPCOMING_LAYOUT;
+  return effectiveUpcomingLayout(normalizeUpcomingLayoutChoice(raw));
 }
 
 export interface UpcomingViewState extends UpcomingView {
   presets: UpcomingPreset[];
-  layout: UpcomingLayout;
+  /**
+   * The reader's explicit layout choice, or `null` while they have made none.
+   * Read `effectiveUpcomingLayout(state.layout)` for what to draw.
+   */
+  layout: UpcomingLayout | null;
 }
 
 /**
@@ -922,7 +957,8 @@ export function readUpcomingViewState(settings: Settings): UpcomingViewState {
       sort: defaultUpcomingSort(),
       secondarySort: null,
       presets: [],
-      layout: DEFAULT_UPCOMING_LAYOUT,
+      // No stored view at all: nothing has been chosen, so the default stands.
+      layout: null,
     };
   }
   return {
@@ -935,9 +971,9 @@ export function readUpcomingViewState(settings: Settings): UpcomingViewState {
           .map((preset, index) => normalizePreset(preset, index))
           .filter((preset): preset is UpcomingPreset => preset !== null)
       : [],
-    // Absent (every install before this shipped) means the layout the tab has
-    // always drawn — an upgrade must not silently re-lay-out the tab.
-    layout: normalizeUpcomingLayout(raw.layout),
+    // Absent, or unreadable, means undecided — not "detailed". See
+    // `normalizeUpcomingLayoutChoice`.
+    layout: normalizeUpcomingLayoutChoice(raw.layout),
   };
 }
 
@@ -966,6 +1002,11 @@ export function writeUpcomingViewState(settings: Settings, state: UpcomingViewSt
  * never disagree about which layout is on.
  */
 export function readUpcomingLayout(settings: Settings): UpcomingLayout {
+  return effectiveUpcomingLayout(readUpcomingViewState(settings).layout);
+}
+
+/** The stored choice itself — `null` when the reader has never picked one. */
+export function readUpcomingLayoutChoice(settings: Settings): UpcomingLayout | null {
   return readUpcomingViewState(settings).layout;
 }
 

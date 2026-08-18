@@ -403,7 +403,7 @@ export class WatchLogSettingTab extends PluginSettingTab {
           this.save();
         }),
       ),
-      "The modal is fine for a film. A show with a full cast and a season grid wraps its chips onto five rows and pushes Progress below the fold, because a modal is narrower than the poster deserves. On, a title opens as a real tab instead: poster beside the facts, cast on one line, and the four numbers you actually read. Every control is the same one — the two surfaces share their fields, their rating/review binding and their watched flows — so this only chooses the frame. The command palette can open a tab either way.",
+      "On, and it is the default: a title opens as a real tab — poster beside the facts, cast and directors on one line, and the four numbers you actually read. Off puts it back in the modal, which is fine for a film but wraps a show's full cast onto five rows of chips and pushes Progress below the fold, because a modal is narrower than the poster deserves. Every control is the same one — the two surfaces share their fields, their rating/review binding, their watched flows and their cast links — so this only chooses the frame. Whatever you set here sticks: the default is applied to an existing library once and never again. The command palette can open a tab either way.",
     );
 
     this.addHelp(

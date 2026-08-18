@@ -10,7 +10,9 @@
  * So the assertions below are mostly negative: after loading a file that has
  * none of the new keys, every old key must still be there, byte for byte, and
  * the new ones must land on the values that reproduce the old behaviour —
- * artwork cache off, titles in the modal, sweep on its documented cadence.
+ * artwork cache off, sweep on its documented cadence. The one deliberate
+ * exception is `openTitlesInFullView`, which is *moved* rather than preserved;
+ * `full-view-default.test.ts` owns the once-and-only-once rule behind that.
  *
  * The second block proves the two views are registered under the ids Obsidian
  * writes into a saved workspace layout, that registering is lazy, and that a
@@ -153,8 +155,8 @@ describe("an existing data.json with none of the new keys", () => {
     expect(settings.imageCacheFolder).toBe(DEFAULT_IMAGE_CACHE_FOLDER);
   });
 
-  it("defaults titles to the modal, which is what this file already did", () => {
-    expect(settings.openTitlesInFullView).toBe(false);
+  it("moves a file that never had the key onto the full-tab default", () => {
+    expect(settings.openTitlesInFullView).toBe(true);
   });
 
   it("defaults the metadata sweep to its documented cadence, not to off", () => {
@@ -230,8 +232,8 @@ describe("defaults for a brand-new install", () => {
     expect(normalizeCacheFolder(defaults.imageCacheFolder)).toBe(defaults.imageCacheFolder);
   });
 
-  it("ships titles in the modal", () => {
-    expect(defaults.openTitlesInFullView).toBe(false);
+  it("ships titles in a full tab", () => {
+    expect(defaults.openTitlesInFullView).toBe(true);
   });
 });
 
@@ -248,7 +250,7 @@ describe("the store's own load path", () => {
 
     expect(store.settings.cacheImagesLocally).toBe(false);
     expect(store.settings.imageCacheFolder).toBe(DEFAULT_IMAGE_CACHE_FOLDER);
-    expect(store.settings.openTitlesInFullView).toBe(false);
+    expect(store.settings.openTitlesInFullView).toBe(true);
     expect(store.settings.metadataSweepTtlHours).toBe(SWEEP_TTL_HOURS_DEFAULT);
     // And the user's own values are still there afterwards.
     expect(store.settings.rootFolder).toBe("Media/Watching");

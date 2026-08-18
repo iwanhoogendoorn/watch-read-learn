@@ -674,6 +674,21 @@
   color: var(--text-muted);
 }
 
+/* The availability pill(s), between the countdown and the actions.
+ *
+ * `flex: 0 0 auto` and `nowrap` on purpose: the right-hand cluster states facts
+ * whose whole value is being scannable down the column, so it keeps its width
+ * and the BODY gives way — the title and the meta line already ellipsise. That
+ * is what holds a row to one line as the pane narrows, rather than a wrap that
+ * would double the row height and undo the layout. */
+.wl-upcoming-compact-states {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--wl-space-1);
+  white-space: nowrap;
+}
+
 .wl-upcoming-compact-actions {
   display: flex;
   flex: 0 0 auto;
@@ -699,6 +714,14 @@
   /* The date is the one meta item the month heading and the countdown already
      answer between them, so it is the first thing to go when space is short. */
   .wl-upcoming-compact-meta .wl-upcoming-date {
+    display: none;
+  }
+
+  /* The second pill is only ever a request state sitting beside "Not on Plex" —
+     "Declined", "Request failed". Real news, but the availability word is the
+     one that has to survive at every width, and squeezing both would eat the
+     title instead. The detailed layout is one click away and prints both. */
+  .wl-upcoming-compact-states .wl-pill:not(:first-child) {
     display: none;
   }
 }

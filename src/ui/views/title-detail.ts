@@ -58,6 +58,11 @@ import {
   renderRatingField,
   renderReviewField,
 } from "../detail/judgement";
+import {
+  bindCreditLink,
+  personOpener,
+  type PersonOpener,
+} from "../detail/people";
 import { renderDetailPoster } from "../detail/poster";
 import {
   markEpisodesPatch,
@@ -93,6 +98,13 @@ export interface TitleDetailDeps {
   store: WatchLogStoreApi;
   /** Chip → filtered Library, exactly as the modal's chips do. */
   onJumpToQuery?: (query: string) => void;
+  /**
+   * Cast/director name → the person screen.
+   *
+   * Optional because it is derived from `app` when it is absent, which is what
+   * keeps this out of `main.ts`. A test passes its own and observes it.
+   */
+  onOpenPerson?: (name: string) => void;
   onOpenNote?: (title: TitleV4) => void;
   onOpenInPlex?: (title: TitleV4) => void;
   onRefreshMetadata?: (title: TitleV4) => void;
@@ -256,6 +268,17 @@ class TitleDetailPane implements TitleDetailController, DetailSurface {
     this.deps.onJumpToQuery?.(query);
   }
 
+  /** The person opener, or `undefined` when there is nowhere to open one. */
+  private personOpen(): PersonOpener | undefined {
+    return this.deps.onOpenPerson ?? personOpener(this.deps.app);
+  }
+
+  /** The filter half of a credit link, or `undefined` when nothing listens. */
+  private filterFn(): ((query: string) => void) | undefined {
+    if (!this.deps.onJumpToQuery) return undefined;
+    return (query: string) => this.jump(query);
+  }
+
   private fieldValue(key: string): string {
     return this.fieldValues.get(key) ?? "";
   }
@@ -323,7 +346,7 @@ class TitleDetailPane implements TitleDetailController, DetailSurface {
     if (studios.length > 0) {
       const row = main.createDiv({ cls: "wl-tdv-chiprow" });
       for (const studio of studios) {
-        this.linkChip(row, studio, "studio", `studio:"${studio}"`);
+        this.linkChip(row, studio, "studio", "studio");
       }
     }
 
@@ -462,6 +485,14 @@ class TitleDetailPane implements TitleDetailController, DetailSurface {
     if (section.childElementCount === 0) section.remove();
   }
 
+  /**
+   * One `Label: a, b, c` line of links.
+   *
+   * What a link *does* is `bindCreditLink`'s, not this method's: a cast name
+   * opens the person and Alt-click filters, a genre only ever filters, and the
+   * decision between those is the shared module's single `isPersonField` gate
+   * rather than a condition written here and again in the modal.
+   */
   private inlineList(
     host: HTMLElement,
     label: string,
@@ -471,35 +502,32 @@ class TitleDetailPane implements TitleDetailController, DetailSurface {
     if (values.length === 0) return;
     const row = host.createDiv({ cls: "wl-tdv-inline" });
     row.createSpan({ cls: "wl-tdv-inline-label", text: `${label}:` });
+    const openPerson = this.personOpen();
+    const onFilter = this.filterFn();
     values.forEach((value, index) => {
       const link = row.createSpan({ cls: "wl-tdv-inline-link", text: value });
-      link.setAttribute("role", "button");
-      link.setAttribute("tabindex", "0");
-      link.setAttribute("title", `Show every title with ${label.toLowerCase()} “${value}”`);
-      const fire = (event: Event): void => {
-        event.preventDefault();
-        this.jump(`${field}:"${value}"`);
-      };
-      link.addEventListener("click", fire);
-      link.addEventListener("keydown", (event: KeyboardEvent) => {
-        if (event.key === "Enter" || event.key === " ") fire(event);
+      bindCreditLink(link, {
+        name: value,
+        field,
+        noun: label.toLowerCase(),
+        ...(openPerson ? { openPerson } : {}),
+        ...(onFilter ? { onFilter } : {}),
       });
       if (index < values.length - 1) row.createSpan({ cls: "wl-tdv-inline-sep", text: ", " });
     });
   }
 
-  private linkChip(host: HTMLElement, text: string, label: string, query: string): void {
-    const chip = host.createSpan({ cls: "wl-chip is-clickable", text });
-    chip.setAttribute("role", "button");
-    chip.setAttribute("tabindex", "0");
-    chip.setAttribute("title", `Show every title with ${label} “${text}”`);
-    const fire = (event: Event): void => {
-      event.preventDefault();
-      this.jump(query);
-    };
-    chip.addEventListener("click", fire);
-    chip.addEventListener("keydown", (event: KeyboardEvent) => {
-      if (event.key === "Enter" || event.key === " ") fire(event);
+  /** A studio chip. Never a person — `bindCreditLink` refuses to make it one. */
+  private linkChip(host: HTMLElement, text: string, label: string, field: string): void {
+    const onFilter = this.filterFn();
+    // `is-clickable` only when it actually is: a chip that looks like a button
+    // and does nothing is worse than a plain label.
+    const chip = host.createSpan({ cls: onFilter ? "wl-chip is-clickable" : "wl-chip", text });
+    bindCreditLink(chip, {
+      name: text,
+      field,
+      noun: label,
+      ...(onFilter ? { onFilter } : {}),
     });
   }
 
