@@ -33,92 +33,29 @@
 
 /* -----------------------------------------------------------------------------
  * The cover card
+ *
+ * There is almost nothing here, and that is the point. A game card is
+ * `buildPosterCard` — `.wl-card`, `.wl-card-poster`, `.wl-card-body` and the
+ * rest — declared once in `20-cards.css` and worn identically by the Library's
+ * titles, the Reading tab's books and this tab's games. The frame, the scrim,
+ * the pill row, the hover column, the filmstrip, the focus ring, the hover and
+ * touch media queries: all of it comes from there.
+ *
+ * What is left below is the two things a game caption has that a title's and a
+ * book's do not — its two numbers, and the badge that says you do not own it
+ * yet — and none of it re-declares a class `20-cards.css` owns.
  * -------------------------------------------------------------------------- */
 
-.wl-game-card {
-  position: relative;
-  display: block;
-  width: 100%;
-  height: 100%;
-  min-height: 90px;
-  border-radius: var(--wl-radius-m, 8px);
-  overflow: hidden;
-  background: var(--background-secondary);
-  box-shadow: var(--wl-shadow-1);
-  transition:
-    transform var(--wl-dur-base, 0.15s) ease,
-    box-shadow var(--wl-dur-base, 0.15s) ease;
-}
-
-.wl-game-card.is-clickable {
-  cursor: pointer;
-}
-
-.wl-game-card:focus-visible {
-  outline: 2px solid var(--interactive-accent);
-  outline-offset: 2px;
-}
-
-.wl-game-card-cover {
-  position: absolute;
-  inset: 0;
-}
-
-.wl-game-card-scrim {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: linear-gradient(
-    to top,
-    var(--background-primary) 0%,
-    color-mix(in srgb, var(--background-primary) 72%, transparent) 44%,
-    transparent 74%
-  );
-}
-
-.wl-game-card-body {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--wl-space-2, 4px);
-  padding: var(--wl-space-3, 8px);
-}
-
-.wl-game-card-title {
-  color: var(--text-normal);
-  font-size: var(--font-ui-small);
-  font-weight: var(--font-semibold);
-  line-height: 1.25;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.wl-game-card-meta {
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-}
-
-.wl-game-card-pills,
-.wl-game-card-stats {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--wl-space-2, 4px);
-}
-
-/* Playtime and achievements are the two numbers a games card exists to show. */
+/* Playtime and achievements are the two numbers a games card exists to show.
+   They live on the shared `.wl-card-meta` line, so they take their colour and
+   their size from it rather than setting either: on a card that means the
+   scrim's ink, in a compact row the theme's muted text. Tabular figures because
+   `49 / 49` sitting under `12 / 49` in a grid should line up. */
 .wl-game-playtime,
 .wl-game-achievements {
   display: inline-flex;
   align-items: center;
   gap: var(--wl-space-1, 2px);
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
   font-variant-numeric: tabular-nums;
 }
 
@@ -131,32 +68,23 @@
   height: 12px;
 }
 
-.wl-game-progress {
-  position: relative;
-  height: 3px;
-  border-radius: var(--wl-radius-pill, 999px);
-  background: var(--background-modifier-border);
-  overflow: hidden;
-}
-
-.wl-game-progress-fill {
-  height: 100%;
-  border-radius: inherit;
-  background: var(--interactive-accent);
-}
-
+/* The one corner badge a game has: this is on your wishlist.
+   It rides in the shared `.wl-card-badges` slot, so the card positions it and
+   all it brings is its own surface — cut from the SCRIM rather than the theme,
+   for the same reason the Plex badge is when it sits there: the top of a poster
+   is bare artwork, and artwork does not change when the theme does. */
 .wl-game-badge {
-  position: absolute;
-  top: var(--wl-space-2, 4px);
-  left: var(--wl-space-2, 4px);
   display: inline-flex;
   align-items: center;
   gap: var(--wl-space-1, 2px);
   padding: 1px var(--wl-space-2, 4px);
   border-radius: var(--wl-radius-pill, 999px);
-  background: color-mix(in srgb, var(--background-primary) 82%, transparent);
-  color: var(--text-muted);
+  background: rgb(var(--wl-card-scrim, var(--wl-scrim-rgb, 10 10 14)) / 0.72);
+  color: rgb(var(--wl-card-ink, var(--wl-scrim-ink-rgb, 255 255 255)) / 0.86);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   font-size: var(--font-ui-smaller);
+  white-space: nowrap;
 }
 
 .wl-game-badge-icon {
@@ -172,140 +100,27 @@
   line-height: 1;
 }
 
-.wl-game-fav {
-  position: absolute;
-  top: var(--wl-space-2, 4px);
-  right: var(--wl-space-2, 4px);
-  display: inline-flex;
-  color: var(--color-red, var(--text-accent));
-}
-
-.wl-game-fav .svg-icon {
-  width: 14px;
-  height: 14px;
-}
-
 /* -----------------------------------------------------------------------------
- * Hover actions — revealed on hover, always visible on touch
+ * Detail modal
  * -------------------------------------------------------------------------- */
 
-.wl-game-actions {
-  position: absolute;
-  top: var(--wl-space-2, 4px);
-  right: var(--wl-space-2, 4px);
+/* The modal's own pill row and credits line. They were `.wl-game-card-*` back
+   when the card had furniture of its own; the card has none now, and a class
+   named for a card that does not use it is the sort of thing the next edit gets
+   wrong. Deliberately NOT the card's `.wl-card-pills` / `.wl-card-meta`: those
+   are one clipped line on a dark scrim, and this row holds every platform a
+   game runs on, on a themed panel, and must wrap. */
+.wl-game-detail-pills {
   display: flex;
-  flex-direction: column;
-  gap: var(--wl-space-1, 2px);
-  opacity: 0;
-  transition: opacity var(--wl-dur-fast, 0.12s) ease;
-}
-
-.wl-game-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: none;
-  border-radius: var(--wl-radius-s, 4px);
-  background: color-mix(in srgb, var(--background-primary) 82%, transparent);
-  box-shadow: var(--wl-shadow-1);
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.wl-game-action:hover {
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
-}
-
-.wl-game-action .svg-icon {
-  width: 14px;
-  height: 14px;
-}
-
-@media (hover: hover) {
-  .wl-game-card:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--wl-shadow-2);
-  }
-
-  .wl-game-card:hover .wl-game-actions,
-  .wl-game-card:focus-within .wl-game-actions {
-    opacity: 1;
-  }
-}
-
-@media (hover: none) {
-  .wl-game-actions {
-    opacity: 1;
-  }
-
-  .wl-game-action {
-    width: 32px;
-    height: 32px;
-  }
-}
-
-/* -----------------------------------------------------------------------------
- * Compact row
- * -------------------------------------------------------------------------- */
-
-.wl-game-row {
-  display: flex;
-  align-items: center;
-  gap: var(--wl-space-3, 8px);
-  padding: var(--wl-space-2, 4px);
-  border-radius: var(--wl-radius-m, 8px);
-  transition: background-color var(--wl-dur-fast, 0.12s) ease;
-}
-
-.wl-game-row.is-clickable {
-  cursor: pointer;
-}
-
-.wl-game-row:hover {
-  background: var(--background-modifier-hover);
-}
-
-.wl-game-row-cover {
-  /* An explicit box rather than a ratio: covers vary (IGDB is 3:4, a pasted
-     URL can be anything) and the cover is object-fit cover anyway. */
-  flex: 0 0 auto;
-  width: 40px;
-  height: 56px;
-  border-radius: var(--wl-radius-s, 4px);
-  overflow: hidden;
-}
-
-.wl-game-row-body {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--wl-space-1, 2px);
-}
-
-.wl-game-row-title {
-  color: var(--text-normal);
-  font-size: var(--font-ui-small);
-  font-weight: var(--font-semibold);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.wl-game-row-side {
-  flex: 0 0 auto;
-  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--wl-space-2, 4px);
 }
 
-/* -----------------------------------------------------------------------------
- * Detail modal
- * -------------------------------------------------------------------------- */
+.wl-game-detail-credits {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
 
 .wl-game-detail-head {
   display: flex;

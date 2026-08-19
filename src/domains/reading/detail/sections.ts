@@ -50,8 +50,18 @@ import {
   googleBooksUrl,
   type RatableBook,
 } from "../community";
-import { coverIsbn, loadCover, type CoverCache, type CoverHandle } from "../covers";
+import {
+  MANUAL_COVER_KEY,
+  coverIsbn,
+  coverSource,
+  coverSourceUrl,
+  loadCover,
+  manualCoverUrl,
+  type CoverCache,
+  type CoverHandle,
+} from "../covers";
 import { fetchCoverBytes } from "../coverfetch";
+import { pickCoverFile, saveManualCover } from "../manualcover";
 import { readPdfPageCount } from "../pdfpages";
 import {
   bumpPatch,
@@ -208,10 +218,11 @@ export function readingYear(entry: ReadingEntry): number | null {
 // ---------------------------------------------------------------------------
 
 /**
- * The cover, through the same loader as the table: Open Library via the polite
- * client, a Google-by-ISBN fallback when upstream has no image, placeholder
- * last. Returns the handle so the surface can release the object URL — a
- * surface that drops it pins one blob per repaint.
+ * The cover, through the same loader as the table: the user's own picture when
+ * they set one, else Open Library via the polite client, a Google-by-ISBN
+ * fallback when upstream has no image, placeholder last. Returns the handle so
+ * the surface can release the object URL — a surface that drops it pins one
+ * blob per repaint.
  */
 export function renderReadingCover(
   host: HTMLElement,
@@ -221,16 +232,22 @@ export function renderReadingCover(
   const poster = host.createDiv({ cls: "wl-poster" });
   poster.dataset.posterSeed = entry.title;
 
-  const cover = (entry.coverUrl ?? "").trim();
+  const source = coverSource(entry, context.imageCache);
   const isbn = coverIsbn(entry);
-  if ((cover === "" || cover === "none") && isbn === "") {
+  if (source.url === "" && isbn === "") {
     renderPosterPlaceholder(poster, entry.title);
     return null;
   }
 
   const img = poster.createEl("img", { cls: "wl-poster-img is-loaded" });
   img.setAttribute("alt", "");
-  return loadCover(img, cover === "none" ? "" : cover, {
+  // A file in the vault is already a resource URL: nothing to fetch, no object
+  // URL to revoke, so there is no handle to return.
+  if (source.direct) {
+    img.src = source.url;
+    return null;
+  }
+  return loadCover(img, source.url, {
     client: context.openLibrary,
     fallbackIsbn: isbn,
     fetchBytes: fetchCoverBytes,
@@ -859,11 +876,20 @@ export function renderReadingDates(
  * `publisher` is a preserved extra key (`extras.ts`) — no provider this plugin
  * talks to reports one, so it is the user's own note about the edition on the
  * shelf, and it is only ever shown when they have filled it in.
+ *
+ * **Cover URL writes the user's override, not the catalogue's field.** Typing
+ * in it is a decision, and a decision that a later refresh could overwrite is
+ * not one — so it lands on `manualCoverUrl` and `coverUrl` keeps saying
+ * whatever Open Library said. That is what makes "put it back" a one-field
+ * write instead of a re-fetch, and it is the same precedence a title's
+ * `manualPosterUrl` has had all along. The field *shows* the effective cover,
+ * so a book that has never been touched still reads as it always did.
  */
 export function renderFactFields(
   host: HTMLElement,
   entry: ReadingEntry,
   surface: ReadingSurface,
+  context: ReadingDetailContext = {},
 ): HTMLElement {
   const grid = host.createDiv({ cls: "wl-field-grid" });
 
@@ -877,8 +903,8 @@ export function renderFactFields(
   readingTextField(grid, "Publisher", readingExtra(entry, "publisher"), (value) =>
     surface.patch(extraPatch("publisher", value.trim()), "reading-publisher"),
   );
-  readingTextField(grid, "Cover URL", entry.coverUrl ?? "", (value) =>
-    surface.patch({ coverUrl: value.trim() }, "reading-cover"),
+  readingTextField(grid, "Cover URL", coverSourceUrl(entry), (value) =>
+    surface.patch(extraPatch(MANUAL_COVER_KEY, value.trim()), "reading-cover-manual"),
   );
   readingTextField(grid, "Link", entry.externalLink ?? "", (value) =>
     surface.patch({ externalLink: value.trim() }, "reading-link"),
@@ -889,7 +915,79 @@ export function renderFactFields(
     );
   }
 
+  renderCoverActions(host, entry, surface, context);
+
   return grid;
+}
+
+/**
+ * The two things the Cover URL field cannot do on its own: take a picture off
+ * the user's disk, and give the catalogue its say back.
+ *
+ * Drawn under the fact grid on both surfaces, because it is one control and
+ * neither surface is allowed a copy of it.
+ *
+ * The file goes into the artwork cache folder under the cache's own naming, so
+ * it is indexed like every other image there, purgeable through the same
+ * button, and — because `readingCacheEntries` reports its path —  never
+ * mistaken for an orphan. Removing the cover deliberately does **not** delete
+ * that file: nothing in this plugin deletes an image except the user pressing
+ * the purge button, and this is not the place to make an exception.
+ */
+export function renderCoverActions(
+  host: HTMLElement,
+  entry: ReadingEntry,
+  surface: ReadingSurface,
+  context: ReadingDetailContext,
+): HTMLElement {
+  const row = host.createDiv({ cls: "wl-cover-actions" });
+  const manual = manualCoverUrl(entry);
+
+  const setManual = (value: string, reason: string): void =>
+    surface.patch(extraPatch(MANUAL_COVER_KEY, value), reason);
+
+  const choose = row.createEl("button", {
+    cls: "wl-btn",
+    text: "Choose image…",
+    attr: {
+      type: "button",
+      title: "Use a picture from this device as the cover",
+    },
+  });
+  choose.addEventListener("click", () => {
+    pickCoverFile((bytes) => {
+      void saveManualCover(context.imageCache, entry.id, bytes).then((result) => {
+        if ("error" in result) {
+          new Notice(result.error);
+          return;
+        }
+        setManual(result.path, "reading-cover-file");
+        new Notice("Cover set.");
+      });
+    });
+  });
+
+  if (manual !== "") {
+    const revert = row.createEl("button", {
+      cls: "wl-btn",
+      text: "Use catalogue cover",
+      attr: {
+        type: "button",
+        title: "Forget the cover set by hand and go back to what the catalogues offer",
+      },
+    });
+    revert.addEventListener("click", () => setManual("", "reading-cover-cleared"));
+  }
+
+  row.createDiv({
+    cls: "wl-reading-hint",
+    text:
+      manual === ""
+        ? "No cover anywhere? Paste a link above, or pick a picture — it is copied into the artwork folder."
+        : "This cover was set by hand, so refreshing the book's details leaves it alone.",
+  });
+
+  return row;
 }
 
 /** The synopsis. Editable, and filled in by the Google pass when it is blank. */

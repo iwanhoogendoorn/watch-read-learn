@@ -49,6 +49,7 @@ import { renderPosterPlaceholder } from "../../ui/components/posters";
 import { createStars } from "../../ui/components/stars";
 import {
   coverIsbn,
+  coverSource,
   keepCover,
   loadCover,
   localCoverUrl,
@@ -97,15 +98,19 @@ export function renderReadingCover(
   deps: ReadingCoverDeps,
 ): CoverHandle | null {
   poster.dataset.posterSeed = entry.title;
-  const cover = (entry.coverUrl ?? "").trim();
+  // The user's own picture when they set one, else the catalogue's — and a
+  // hand-set *file* arrives already resolved to a vault resource URL, which is
+  // directly assignable and needs no fetch of any kind.
+  const source = coverSource(entry, deps.imageCache);
+  const cover = source.url;
   const isbn = coverIsbn(entry);
 
-  if ((cover === "" || cover === "none") && isbn === "") {
+  if (cover === "" && isbn === "") {
     renderPosterPlaceholder(poster, entry.title);
     return null;
   }
 
-  if (cover === "" || cover === "none" || needsProxy(cover)) {
+  if (!source.direct && (cover === "" || needsProxy(cover))) {
     // Open Library covers go through the client: same User-Agent, same limiter
     // as the API, because covers share its allowance and an unidentified caller
     // gets a third of it (W8 review P1-5). The shared lazy loader cannot help
@@ -116,7 +121,7 @@ export function renderReadingCover(
     const img = poster.createEl("img", { cls: "wl-poster-img" });
     img.setAttribute("alt", "");
     img.setAttribute("decoding", "async");
-    return loadCover(img, cover === "none" ? "" : cover, {
+    return loadCover(img, cover, {
       client: deps.openLibrary,
       fallbackIsbn: isbn,
       fetchBytes: deps.fetchBytes,
@@ -132,10 +137,10 @@ export function renderReadingCover(
   // Directly assignable, so it goes through the shared lazy loader like a film
   // poster does — off the local copy when there is one, and asking the cache to
   // make one when there is not.
-  const local = localCoverUrl(deps.imageCache, entry.id, cover);
+  const local = source.direct ? cover : localCoverUrl(deps.imageCache, entry.id, cover);
   if (deps.posterLoader) deps.posterLoader.observe(poster, local === "" ? cover : local);
   else renderPosterPlaceholder(poster, entry.title);
-  if (local === "") keepCover(deps.imageCache, entry.id, cover);
+  if (!source.direct && local === "") keepCover(deps.imageCache, entry.id, cover);
   return null;
 }
 

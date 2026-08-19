@@ -114,7 +114,7 @@ const SILKSONG = createGame({
 describe("the Games tab", () => {
   it("renders a card per game, with the two numbers a games library is for", () => {
     const { el } = mount([HADES, SILKSONG]);
-    const cards = el.querySelectorAll(".wl-game-card");
+    const cards = el.querySelectorAll(".wl-card");
     expect(cards).toHaveLength(2);
 
     const text = el.textContent ?? "";
@@ -143,7 +143,7 @@ describe("the Games tab", () => {
   it("filters live through the cross-tab query handoff", () => {
     const { el, controller } = mount([HADES, SILKSONG]);
     controller.applyQuery("wishlist:yes");
-    expect(el.querySelectorAll(".wl-game-card")).toHaveLength(1);
+    expect(el.querySelectorAll(".wl-card")).toHaveLength(1);
     expect(el.textContent).toContain("Silksong");
     expect(el.textContent).not.toContain("Hades");
   });
@@ -205,5 +205,227 @@ describe("the Games tab", () => {
     expect(host.children).toHaveLength(1);
     controller.destroy();
     expect(host.children).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The card itself
+// ---------------------------------------------------------------------------
+
+/**
+ * A game card is the Library's card.
+ *
+ * The Games tab used to draw its own: its own frame, its own scrim, its own
+ * caption furniture in a `.wl-game-*` namespace that predated the dark-scrim
+ * rework and therefore stopped matching the day that landed. Same grid, same
+ * cell size, visibly different component. It renders into `buildPosterCard`
+ * now, so there is one set of classes and no second stylesheet to forget.
+ *
+ * The stub has no layout engine, so nothing below is a screenshot. What it does
+ * check is the thing a restyle actually breaks: which element carries which
+ * class, what the caption is allowed to say, and that every affordance the card
+ * had before is still on it.
+ */
+const DOOM = createGame({
+  id: "doom",
+  title: "DOOM",
+  type: "Shooter",
+  status: "Playing",
+  releaseDate: "2016-05-13",
+  platforms: ["Windows PC", "PS4", "Switch"],
+  playtimeMinutes: 4210,
+  achievementsEarned: 12,
+  achievementsTotal: 49,
+  rating: 4,
+  favorite: true,
+  storeUrl: "https://store.steampowered.com/app/379720",
+});
+
+/** No cover, no playtime, no achievements, no rating, no genre, no year. */
+const BARE = createGame({ id: "bare", title: "Untitled" });
+
+function cardFor(el: StubEl, title: string): StubEl {
+  return el.querySelectorAll(".wl-card").find((c) => c.textContent?.includes(title)) as StubEl;
+}
+
+describe("a game card is the Library's card", () => {
+  it("wears the same classes, which are declared once in 20-cards.css", () => {
+    const { el } = mount([DOOM]);
+    const card = cardFor(el, "DOOM");
+
+    for (const cls of [
+      ".wl-card-poster",
+      ".wl-poster",
+      ".wl-card-body",
+      ".wl-card-title",
+      ".wl-card-pills",
+      ".wl-card-meta",
+      ".wl-card-actions",
+      ".wl-card-fav",
+    ]) {
+      expect(card.querySelectorAll(cls).length, `a game card is missing ${cls}`).toBe(1);
+    }
+    // And none of the furniture it used to build for itself.
+    for (const cls of [".wl-game-card-body", ".wl-game-progress", ".wl-game-fav", ".wl-game-actions"]) {
+      expect(card.querySelectorAll(cls).length, `${cls} is a leftover`).toBe(0);
+    }
+    expect(card.getAttribute("role")).toBe("button");
+    expect(card.getAttribute("tabindex")).toBe("0");
+    expect(card.getAttribute("aria-label")).toBe("DOOM — open details");
+    expect(card.dataset.gameId).toBe("doom");
+  });
+
+  it("puts the caption rows in the same order a title card does", () => {
+    const { el } = mount([DOOM]);
+    const body = cardFor(el, "DOOM").querySelector(".wl-card-body") as StubEl;
+    const rows = body.children.map((child) => child.className.split(" ")[0]);
+    expect(rows.slice(0, 3)).toEqual(["wl-card-title", "wl-card-pills", "wl-card-meta"]);
+  });
+
+  it("paints the caption last, so the scrim sits over the artwork", () => {
+    const { el } = mount([DOOM]);
+    const wrap = cardFor(el, "DOOM").querySelector(".wl-card-poster") as StubEl;
+    const last = wrap.children[wrap.children.length - 1] as StubEl;
+    expect(last.className.split(" ")).toContain("wl-card-body");
+  });
+
+  it("says what a game has, and nothing a game does not", () => {
+    const { el } = mount([DOOM]);
+    const card = cardFor(el, "DOOM");
+
+    expect(card.querySelector(".wl-card-title")?.textContent).toBe("DOOM");
+    // Genre first (it is the short, pinned one), status second.
+    expect(card.querySelectorAll(".wl-pill").map((p) => p.textContent)).toEqual([
+      "Shooter",
+      "Playing",
+    ]);
+    // The genre is NOT repeated in the meta line — the pill above already says it.
+    const meta = card.querySelector(".wl-card-meta") as StubEl;
+    expect(meta.textContent).toContain("2016");
+    expect(meta.textContent).toContain("70 h");
+    expect(meta.textContent).toContain("12 / 49");
+    expect(meta.textContent).not.toContain("Shooter");
+    // The two numbers keep their icons, on the meta line rather than a row of
+    // their own — a row of their own is what made this caption a different
+    // height from every other caption in the plugin.
+    expect(meta.querySelectorAll(".wl-game-playtime")).toHaveLength(1);
+    expect(meta.querySelectorAll(".wl-game-achievements")).toHaveLength(1);
+
+    expect(card.querySelectorAll(".wl-stars")).toHaveLength(1);
+    expect(card.querySelectorAll(".wl-progress")).toHaveLength(1);
+    // No episode counter, no Plex badge, no airing chip: a game has none of them.
+    expect(card.querySelectorAll(".wl-plex-badge")).toHaveLength(0);
+    expect(card.querySelectorAll(".wl-card-airing")).toHaveLength(0);
+    expect(card.textContent).not.toContain("eps");
+  });
+
+  it("spends the meta line on the platform only when there are no numbers to print", () => {
+    // A wishlisted game has nothing played and nothing earned, so the line has
+    // room for what it does have. A played one does not, and the achievements —
+    // the number the card is most often for — must not be pushed off the end.
+    const { el } = mount([
+      createGame({ id: "hk", title: "Hollow Knight", releaseDate: "2017-02-24", platforms: ["Switch"] }),
+      DOOM,
+    ]);
+    expect(cardFor(el, "Hollow Knight").querySelector(".wl-card-meta")?.textContent).toContain(
+      "Switch",
+    );
+    expect(cardFor(el, "DOOM").querySelector(".wl-card-meta")?.textContent).not.toContain("Windows");
+  });
+
+  it("puts the wishlist badge in the shared badge slot, and nowhere when it is not wishlisted", () => {
+    const { el } = mount([SILKSONG, DOOM]);
+    const wanted = cardFor(el, "Silksong");
+    const badges = wanted.querySelector(".wl-card-badges") as StubEl;
+    expect(badges.querySelectorAll(".wl-game-badge")).toHaveLength(1);
+    expect(badges.textContent).toContain("Wishlist");
+    expect(wanted.hasClass("is-wishlist")).toBe(true);
+
+    // An empty badge is worse than no badge: the shell removes the row.
+    expect(cardFor(el, "DOOM").querySelectorAll(".wl-card-badges")).toHaveLength(0);
+    expect(cardFor(el, "DOOM").hasClass("is-wishlist")).toBe(false);
+  });
+
+  it("keeps every affordance the card had before the restyle", () => {
+    const { el } = mount([DOOM]);
+    const card = cardFor(el, "DOOM");
+
+    // Click and keyboard open the detail modal.
+    expect(card.listeners.get("click") ?? []).toHaveLength(1);
+    expect(card.listeners.get("keydown") ?? []).toHaveLength(1);
+    // Right-clicking the artwork opens the same ⋮ menu the button does.
+    const poster = card.querySelector(".wl-card-poster") as StubEl;
+    expect(poster.listeners.get("contextmenu") ?? []).toHaveLength(1);
+
+    const actions = card.querySelector(".wl-card-actions") as StubEl;
+    expect(actions.children.map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Remove from favourites",
+      "Open the store page for DOOM",
+      "More actions for DOOM",
+    ]);
+    expect(actions.children.every((b) => b.hasClass("wl-card-action"))).toBe(true);
+    expect(actions.children[2]?.hasClass("wl-card-menu")).toBe(true);
+    // The heart corner is drawn because the game is a favourite.
+    expect(card.hasClass("is-favorite")).toBe(true);
+  });
+
+  it("offers the store button only when there is somewhere to go", () => {
+    const { el } = mount([createGame({ id: "no-store", title: "No Store" })]);
+    const actions = cardFor(el, "No Store").querySelector(".wl-card-actions") as StubEl;
+    expect(actions.children.map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Mark as favourite",
+      "More actions for No Store",
+    ]);
+  });
+
+  it("toggles the favourite from the card without opening anything", () => {
+    const { el } = mount([DOOM]);
+    const heart = cardFor(el, "DOOM").querySelector(".wl-card-actions")?.children[0] as StubEl;
+    let stopped = false;
+    let defaulted = false;
+    heart.fire("click", {
+      preventDefault: () => {
+        defaulted = true;
+      },
+      stopPropagation: () => {
+        stopped = true;
+      },
+    });
+    // A card action must never *also* open the detail modal, which is what the
+    // shared `cardActionButton` guarantees by swallowing the event.
+    expect(stopped).toBe(true);
+    expect(defaulted).toBe(true);
+    expect(cardFor(el, "DOOM").querySelector(".wl-card-actions")?.children[0]?.getAttribute(
+      "aria-label",
+    )).toBe("Mark as favourite");
+  });
+});
+
+describe("a game with nothing in it", () => {
+  it("renders cleanly — no empty pill, no NaN, no zero bar", () => {
+    const { el } = mount([BARE]);
+    const card = cardFor(el, "Untitled");
+
+    expect(card).toBeDefined();
+    expect(card.textContent).not.toContain("NaN");
+    expect(card.textContent).not.toContain("undefined");
+    // One pill: the status every game has. Nothing invents a blank genre chip.
+    expect(card.querySelectorAll(".wl-pill").map((p) => p.textContent)).toEqual(["Not started"]);
+    // The meta row is present and empty — present because every caption row
+    // holds its height, empty because there is genuinely nothing to say.
+    expect(card.querySelectorAll(".wl-card-meta")).toHaveLength(1);
+    expect(card.querySelector(".wl-card-meta")?.textContent).toBe("");
+    expect(card.querySelectorAll(".wl-game-playtime")).toHaveLength(0);
+    expect(card.querySelectorAll(".wl-game-achievements")).toHaveLength(0);
+    // Absence reads as absence: the gap the stars would fill, not five hollow
+    // stars, and no bar at all rather than one pinned at zero.
+    expect(card.querySelectorAll(".wl-stars")).toHaveLength(0);
+    expect(card.querySelectorAll(".wl-card-rating-empty")).toHaveLength(1);
+    expect(card.querySelectorAll(".wl-progress")).toHaveLength(0);
+    // No cover: a placeholder, never a broken image.
+    expect(card.querySelectorAll(".wl-poster-img")).toHaveLength(0);
+    expect(card.querySelectorAll(".wl-poster.is-placeholder")).toHaveLength(1);
+    // And no corner badge, because it is not wishlisted.
+    expect(card.querySelectorAll(".wl-card-badges")).toHaveLength(0);
   });
 });

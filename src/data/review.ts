@@ -130,3 +130,66 @@ export function syncedReviewPatch(
   const rating = ratingForReview(review, reviews);
   return rating > 0 ? { review, rating } : { review };
 }
+
+// ---------------------------------------------------------------------------
+// Reconciling the wreckage the broken sync left behind
+// ---------------------------------------------------------------------------
+
+/** One half-judged title, and the patch that completes it. */
+export interface ReconcileEntry {
+  id: string;
+  title: string;
+  patch: { rating: number } | { review: string };
+  /** `The Agency — 5★ gains "Marvelous"`, for the confirm dialog. */
+  describe: string;
+}
+
+/**
+ * Titles where exactly one half of the judgement exists, and the other half
+ * that the binding implies.
+ *
+ * Between 1.19 and 1.22 the rating↔review sync was broken in three different
+ * ways, and every title judged in that window came out lopsided: five stars
+ * with no review, or "Awesome" over zero stars. The mapping that would have
+ * kept them together is `reviewForRating`/`ratingForReview` — the same two
+ * functions, not a re-derivation — so completing them now writes exactly what
+ * the sync would have written at the time.
+ *
+ * Deliberately NOT automatic: a review is the user's own words about a thing
+ * they watched, and even a derived one gets shown for a yes before it is
+ * stored. Titles where the two halves are both present are never touched, even
+ * when they disagree — disagreement between two things the user typed is a
+ * judgement, not a defect.
+ */
+export function reconcileJudgements(
+  titles: readonly { id: string; title: string; rating: number; review: string }[],
+  reviews: readonly { name: string }[],
+  tiers = 5,
+): ReconcileEntry[] {
+  const out: ReconcileEntry[] = [];
+  for (const t of titles) {
+    const hasRating = t.rating > 0;
+    const hasReview = t.review.trim() !== "";
+    if (hasRating === hasReview) continue;
+    if (hasRating) {
+      const review = reviewForRating(t.rating, reviews, tiers);
+      if (review === "") continue;
+      out.push({
+        id: t.id,
+        title: t.title,
+        patch: { review },
+        describe: `${t.title} — ${t.rating}★ gains “${review}”`,
+      });
+    } else {
+      const rating = ratingForReview(t.review, reviews, tiers);
+      if (rating <= 0) continue; // A label not in the configured list implies nothing.
+      out.push({
+        id: t.id,
+        title: t.title,
+        patch: { rating },
+        describe: `${t.title} — “${t.review}” gains ${rating}★`,
+      });
+    }
+  }
+  return out;
+}

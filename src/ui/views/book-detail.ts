@@ -385,7 +385,7 @@ class BookDetailPane implements BookDetailController, ReadingSurface {
     renderReadingDates(host, entry, this, context, "wl-bdv-daterow");
 
     const section = host.createDiv({ cls: "wl-bdv-editor" });
-    renderFactFields(section, entry, this);
+    renderFactFields(section, entry, this, context);
     const extras = section.createDiv({ cls: "wl-field-grid" });
     renderCategoriesField(extras, entry, this);
     renderFileField(extras, entry, this, this.app);

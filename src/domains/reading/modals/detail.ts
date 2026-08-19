@@ -151,7 +151,7 @@ export class ReadingDetailModal extends Modal implements ReadingSurface {
     renderProgressSection(contentEl, entry, this);
     renderReadingDates(contentEl, entry, this, context);
     const fields = contentEl.createDiv({ cls: "wl-reading-detail-section" });
-    renderFactFields(fields, entry, this);
+    renderFactFields(fields, entry, this, context);
     const extras = fields.createDiv({ cls: "wl-field-grid" });
     renderCategoriesField(extras, entry, this);
     renderFileField(extras, entry, this, this.app);

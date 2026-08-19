@@ -21,6 +21,7 @@
 import { TFile, TFolder, normalizePath, type App } from "obsidian";
 import { sanitizeFileName, splitFrontmatter } from "../../data/notes";
 import type { ReadingData, ReadingKind, Settings } from "../../types";
+import { coverSourceUrl } from "./covers";
 import { derivedStatus, isBook, readingProgress, volumeCounter, type ReadingEntry } from "./progress";
 
 export const NOTES_HEADING = "## Notes";
@@ -120,7 +121,11 @@ export function buildReadingFrontmatter(
   lines.push(yamlLine("dateAdded", entry.dateAdded));
   lines.push(yamlLine("dateModified", entry.dateModified));
   if (entry.releaseDate) lines.push(yamlLine("releaseDate", entry.releaseDate));
-  if (entry.coverUrl) lines.push(yamlLine("cover", entry.coverUrl));
+  // The cover the book actually shows, which is the hand-set one when there is
+  // one — a note that quotes the catalogue URL for a book displaying the user's
+  // own picture is a note describing a different book.
+  const cover = coverSourceUrl(entry);
+  if (cover) lines.push(yamlLine("cover", cover));
   if (entry.filePath) lines.push(yamlLine("file", `[[${entry.filePath}]]`));
   if (entry.externalLink) lines.push(yamlLine("externalLink", entry.externalLink));
   if (entry.favorite) lines.push(yamlLine("favorite", true));

@@ -150,7 +150,7 @@ export class GameDetailModal extends Modal {
     const body = head.createDiv({ cls: "wl-game-detail-headbody" });
     body.createEl("h3", { cls: "wl-modal-title", text: game.title });
 
-    const pills = body.createDiv({ cls: "wl-game-card-pills" });
+    const pills = body.createDiv({ cls: "wl-game-detail-pills" });
     const gameSettings = this.store.games.settings;
     if (game.type) {
       const pill = renderPill(pills, {
@@ -175,7 +175,7 @@ export class GameDetailModal extends Modal {
 
     const credits = [game.developer, game.publisher].filter((value) => value.trim() !== "");
     if (credits.length > 0) {
-      body.createDiv({ cls: "wl-game-card-meta", text: [...new Set(credits)].join(" · ") });
+      body.createDiv({ cls: "wl-game-detail-credits", text: [...new Set(credits)].join(" · ") });
     }
 
     createStars(body, {

@@ -86,7 +86,15 @@ manga and games in one library, wired into a home media stack.
   catalogue knows them, and book suggestions come from Open Library's subjects
   and authors — the closest thing books have to a recommendation graph.
 - **Games** — IGDB metadata and optional Steam import, with playtime and
-  achievements.
+  achievements — on the same poster card as everything else, carrying only what
+  a game has.
+- **A cover of your own** — when neither catalogue has one, set a book's cover
+  from a URL or a file on disk. A cover you chose is never overwritten by a
+  refresh and never offered for deletion as an orphan.
+- **One command to finish old half-judgements** — titles the old sync bug left
+  with stars but no review (or the reverse) can be completed in one confirmed
+  step, using the same mapping the live binding uses. Titles with both halves
+  present are never touched, even when they disagree.
 - **Anime as a first-class type** — routed to AniList/Jikan instead of TMDB, so
   per-cour seasons and exact airing times are right.
 - **Notes and code blocks** — a note per title, and a `watchlog` fence that

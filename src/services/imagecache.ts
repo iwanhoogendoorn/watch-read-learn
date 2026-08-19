@@ -303,6 +303,20 @@ export interface CacheEntryRef {
    */
   alternates?: readonly string[];
   /**
+   * Files in this folder the entry references **directly**, by path.
+   *
+   * For everything downloaded, the filename is a pure function of `(key, url)`
+   * and `findOrphans` recomputes it — there is nothing to store. A cover the
+   * user set from their own disk has no URL to recompute from: the file is the
+   * original, and the entry knows it only by the path it was written to.
+   *
+   * `findOrphans` treats these as referenced. Without that, the one picture in
+   * the folder the user chose deliberately would be the first thing the
+   * "remove unreferenced artwork" button offered to delete. `warm` ignores
+   * them — there is nothing to fetch.
+   */
+  paths?: readonly string[];
+  /**
    * How this entry's bytes are obtained, when the default transport is the
    * wrong thing to use for it.
    *
@@ -595,6 +609,69 @@ export class ImageCache {
   }
 
   /**
+   * Keep an image the **user** handed over — a cover they picked off their own
+   * disk because no catalogue has one.
+   *
+   * Three things separate this from `store()`, and all three are the point:
+   *
+   *   - **It ignores the on/off setting.** Everything else here is a cache: a
+   *     convenience whose absence costs a round trip. This file is the only
+   *     copy of a picture that exists nowhere else, written because the user
+   *     asked for it in as many words. Refusing because a *caching* preference
+   *     is off would be a bug, not a policy.
+   *   - **There is no URL.** `seed` is not fetched and never will be; it exists
+   *     only so `cacheFileName` can name the file, so a hand-set cover is
+   *     indexed, listed and purgeable exactly like a downloaded one instead of
+   *     needing a folder convention of its own.
+   *   - **The caller keeps the path.** It goes on the book, and that is what
+   *     `CacheEntryRef.paths` hands back to `findOrphans` so this file is never
+   *     mistaken for rubbish.
+   *
+   * Same failure discipline as everything else: `""` on any failure, never
+   * throws, staging file cleaned up. Size is capped by the same `maxBytes`.
+   */
+  async adopt(key: ImageKey, seed: string, bytes: ArrayBuffer): Promise<string> {
+    if (bytes.byteLength === 0 || bytes.byteLength > this.maxBytes) return "";
+    const name = cacheFileName(key, seed.trim());
+    if (name === "") return "";
+    const path = this.pathFor(key, seed.trim());
+    if (path === "") return "";
+    try {
+      return await this.persist(name, path, bytes);
+    } catch {
+      await this.removeQuietly(this.tempFor(name));
+      return "";
+    }
+  }
+
+  /**
+   * The `<img src>` for a file in this folder, named by path.
+   *
+   * Not `resolve()`: that answers `""` while the cache is switched off, which
+   * is right for a cached copy of something remote and wrong for the only copy
+   * of a picture the user chose. A path outside the folder is refused rather
+   * than resolved, so this can never be talked into exposing the rest of the
+   * vault as an image.
+   */
+  resourcePath(path: string): string {
+    if (!this.ownsPath(path)) return "";
+    // Once the folder has been listed we know exactly what is in it, so a file
+    // that has since been deleted in Finder answers `""` and the caller falls
+    // back to whatever else it has — a broken `<img>` is worse than a
+    // placeholder. Unprimed, which is the state while artwork caching is off,
+    // nothing has listed the folder: the path the user's own action wrote is
+    // then the best answer there is, and refusing it would be a guess.
+    const name = path.slice(path.lastIndexOf("/") + 1);
+    if (this.primed && !this.index.has(name)) return "";
+    try {
+      const url = this.adapter.getResourcePath(path);
+      return isUsableResourceUrl(url) ? url : "";
+    } catch {
+      return "";
+    }
+  }
+
+  /**
    * Cache a batch, a few at a time.
    *
    * The pass a "download missing artwork" command runs. Bounded concurrency
@@ -802,6 +879,11 @@ export class ImageCache {
       for (const raw of [entry.url, ...(entry.alternates ?? [])]) {
         const name = cacheFileName(entry.key, raw.trim());
         if (name !== "") referenced.add(name);
+      }
+      // Files named by path rather than by URL — a cover the user set by hand.
+      for (const raw of entry.paths ?? []) {
+        const path = raw.trim();
+        if (this.ownsPath(path)) referenced.add(path.slice(path.lastIndexOf("/") + 1));
       }
     }
     const orphans: string[] = [];

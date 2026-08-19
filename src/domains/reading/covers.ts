@@ -35,11 +35,131 @@
  * synchronously and told about bytes we already paid for.
  */
 import { OPEN_LIBRARY_COVERS } from "../../services/openlibrary";
-import type { OpenLibraryClient } from "../../types";
+import { readExtra, type OpenLibraryClient } from "../../types";
 
 /** Does this URL need the polite path? */
 export function needsProxy(url: string): boolean {
   return url.startsWith(OPEN_LIBRARY_COVERS);
+}
+
+// ---------------------------------------------------------------------------
+// The cover the user set by hand
+//
+// Some books have no cover anywhere. Open Library has never heard of them and
+// Google answers its grey "image not available" PNG, which the magic-byte check
+// below correctly refuses — so the shelf draws a placeholder and there is
+// nothing the catalogues can do about it. The answer is the user's own picture,
+// and it has to be *durable*: a value that a later refresh, sweep or re-add
+// could overwrite is not an answer, it is a delay.
+//
+// So it lives beside `coverUrl` rather than in it, exactly the way
+// `manualPosterUrl` lives beside `posterUrl` on a title (`types.ts`), and it
+// wins the same way. `coverUrl` stays whatever the catalogue said, which is
+// what makes "use the catalogue cover again" a one-field write rather than a
+// re-fetch.
+//
+// It is a **preserved extra key**, not a declared field: `types.ts` is frozen,
+// and the runtime preservation contract in its header means a key nothing
+// declares round-trips through `data.json` untouched — the same mechanism
+// `review`, `description`, `publisher` and `notes` already ride on
+// (`detail/extras.ts`).
+// ---------------------------------------------------------------------------
+
+/** The preserved key a hand-set cover lives under. The one spelling of it. */
+export const MANUAL_COVER_KEY = "manualCoverUrl";
+
+/**
+ * The cover the user set by hand: a remote URL, a vault path, or `""`.
+ *
+ * `"none"` is v3's "no picture" sentinel and reads as unset here, the same way
+ * `posterSourceUrl` treats it.
+ */
+export function manualCoverUrl(entry: object): string {
+  const raw = readExtra<unknown>(entry, MANUAL_COVER_KEY);
+  const value = typeof raw === "string" ? raw.trim() : "";
+  return value === "none" ? "" : value;
+}
+
+/**
+ * Is this a file in the vault rather than something to fetch?
+ *
+ * Anything with a scheme (`https:`, `data:`, `app:`, `C:`) is not, and neither
+ * is an absolute or protocol-relative path — a leading `/` is the one shape
+ * `resolvePosterUrl` would misread as a TMDB poster path. What is left is a
+ * vault-relative path, which is what a manual file cover is stored as.
+ */
+export function isVaultCoverPath(url: string): boolean {
+  const value = url.trim();
+  if (value === "") return false;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return false;
+  return !value.startsWith("/");
+}
+
+/**
+ * The cover this entry *means*, before any cache is consulted: the hand-set one
+ * when there is one, otherwise the catalogue's. `""` for "there isn't one".
+ *
+ * The precedence rule on its own, with nothing else in it — `posterSourceUrl`'s
+ * counterpart, and the function every surface that has to name a book's cover
+ * should call instead of reading `coverUrl`.
+ */
+export function coverSourceUrl(entry: CoverRef): string {
+  const manual = manualCoverUrl(entry);
+  if (manual !== "") return manual;
+  const cover = (entry.coverUrl ?? "").trim();
+  return cover === "none" ? "" : cover;
+}
+
+/** How a cover should be drawn. */
+export interface CoverSource {
+  /** What to load. `""` means there is nothing but the ISBN fallback left. */
+  url: string;
+  /**
+   * True when `url` is already a vault resource URL — paint it, fetch nothing,
+   * revoke nothing. Only ever set for a hand-set file cover.
+   */
+  direct: boolean;
+}
+
+/**
+ * The cover to draw, cache included.
+ *
+ * A hand-set *file* is resolved through the vault adapter here, which is the
+ * only place that translation happens: a bare vault path in an `<img src>` is a
+ * broken image, and `file://` is not available to a plugin.
+ *
+ * **A hand-set file whose file has gone falls through to the catalogue** rather
+ * than blanking the cover. That is the same rule the rest of this module lives
+ * by — a miss anywhere in the chain is a reason to try the next thing, never a
+ * reason to draw nothing.
+ */
+export function coverSource(entry: CoverRef, cache?: CoverCache | undefined): CoverSource {
+  const manual = manualCoverUrl(entry);
+  if (manual !== "" && !isVaultCoverPath(manual)) return { url: manual, direct: false };
+  if (manual !== "") {
+    const resolved = vaultCoverUrl(cache, manual);
+    if (resolved !== "") return { url: resolved, direct: true };
+  }
+  const cover = (entry.coverUrl ?? "").trim();
+  return { url: cover === "none" ? "" : cover, direct: false };
+}
+
+/**
+ * The `<img src>` for a file the artwork cache holds, or `""`.
+ *
+ * Deliberately **not** `resolve()`: that answers `""` when the user has the
+ * cache switched off, and a cover they picked off their own disk is not a cache
+ * entry whose existence depends on a setting. It is their file, in a folder
+ * this plugin owns, and it renders either way.
+ */
+export function vaultCoverUrl(cache: CoverCache | undefined, path: string): string {
+  if (!cache?.resourcePath || !isVaultCoverPath(path)) return "";
+  try {
+    const url = cache.resourcePath(path);
+    return typeof url === "string" && url !== "" && !url.startsWith("/") ? url : "";
+  } catch {
+    return "";
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -111,6 +231,17 @@ export interface CoverCache {
   ensure?(key: { scope: string; id: string }, remoteUrl: string): Promise<string>;
   /** Keep bytes we already have — no second request. */
   store?(key: { scope: string; id: string }, remoteUrl: string, bytes: ArrayBuffer): Promise<string>;
+  /**
+   * Write an image the *user* handed over, and answer its vault path.
+   *
+   * Unlike `store`, this ignores the on/off setting: see `vaultCoverUrl`. The
+   * `seed` is not a URL to fetch — it is the string the filename is derived
+   * from, so that a hand-set cover is named and indexed like every other file
+   * in the folder rather than inventing a second convention.
+   */
+  adopt?(key: { scope: string; id: string }, seed: string, bytes: ArrayBuffer): Promise<string>;
+  /** Vault resource URL for a file in the cache folder. Ignores the setting. */
+  resourcePath?(path: string): string;
 }
 
 /**
@@ -203,6 +334,18 @@ export type CoverFetcher = (url: string) => Promise<ArrayBuffer | null | undefin
  * still fetched a second image nobody would look at, and then reported a
  * failure for it: six books produced ten entries and four phantom failures.
  *
+ * **A hand-set cover replaces the catalogue's, here too.** A pasted URL becomes
+ * the entry's one candidate, so a warm pass keeps the picture the user actually
+ * sees rather than the one they rejected. A hand-set *file* is already in the
+ * folder, so it has nothing to fetch and is listed by `path` instead — which is
+ * what makes it **referenced**, and therefore never reported by `findOrphans`.
+ * Losing that would mean the "unreferenced artwork" button offering to delete
+ * the one image in the folder the user chose by hand.
+ *
+ * The catalogue's own file for such a book is then genuinely unreferenced and
+ * *is* offered — correctly: nothing draws it any more, and dropping the manual
+ * cover re-fetches it. Nothing here deletes anything either way.
+ *
  * **Pass the client.** A warm pass downloads through the cache's own transport,
  * which for `covers.openlibrary.org` would be an unidentified request outside
  * the limiter — the one thing this whole module exists to prevent. Every entry
@@ -218,6 +361,7 @@ export function readingCacheEntries(
   key: { scope: string; id: string };
   url: string;
   alternates?: readonly string[];
+  paths?: readonly string[];
   fetch: CoverFetcher;
 }[] {
   const entries: Iterable<CoverRef> =
@@ -236,11 +380,25 @@ export function readingCacheEntries(
     key: { scope: string; id: string };
     url: string;
     alternates?: readonly string[];
+    paths?: readonly string[];
     fetch: CoverFetcher;
   }[] = [];
   for (const entry of entries) {
     const key = cacheKeyFor(entry.id);
     if (!key) continue;
+
+    // The user's own picture, when they set one: the only candidate, because it
+    // is the only one anything draws.
+    const manual = manualCoverUrl(entry);
+    if (manual !== "") {
+      out.push(
+        isVaultCoverPath(manual)
+          ? { key, url: "", paths: [manual], fetch: route }
+          : { key, url: manual, fetch: route },
+      );
+      continue;
+    }
+
     const candidates: string[] = [];
     const cover = (entry.coverUrl ?? "").trim();
     if (cover !== "" && cover !== "none") candidates.push(cover);

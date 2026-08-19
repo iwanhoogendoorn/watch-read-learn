@@ -595,6 +595,21 @@
   white-space: nowrap;
 }
 
+/* Setting a cover by hand, under the fact grid: the buttons on one line and the
+   sentence explaining them on the next, so a narrow modal wraps sensibly. The
+   buttons themselves are plain `.wl-btn`s — this box only places them. */
+.wl-cover-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wl-space-2);
+  margin-top: var(--wl-space-3);
+}
+
+.wl-cover-actions .wl-reading-hint {
+  flex: 1 0 100%;
+}
+
 /* Inline in the title cell: quiet until hovered, like every row affordance. */
 /* --- category chips, the vault column, and setting a missing total ------- */
 

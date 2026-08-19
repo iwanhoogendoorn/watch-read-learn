@@ -21,10 +21,23 @@
  * other surface. There is no book-specific mapping anywhere in this codebase.
  */
 import { readExtra, type ReadingPatch } from "../../../types";
+import { MANUAL_COVER_KEY } from "../covers";
 import type { ReadingEntry } from "../progress";
 
-/** The preserved keys a reading row carries beyond its declared shape. */
-export type ReadingExtraKey = "review" | "description" | "publisher" | "notes";
+/**
+ * The preserved keys a reading row carries beyond its declared shape.
+ *
+ * `manualCoverUrl` is the fifth and it is spelled in `covers.ts`, not here:
+ * that module both reads it during the paint and reports it to the artwork
+ * cache, and a second spelling of a key is a cover that renders but is offered
+ * for deletion as an orphan.
+ */
+export type ReadingExtraKey =
+  | "review"
+  | "description"
+  | "publisher"
+  | "notes"
+  | typeof MANUAL_COVER_KEY;
 
 /** One extra, always as a string — an absent key and a blank one are the same. */
 export function readingExtra(entry: ReadingEntry, key: ReadingExtraKey): string {

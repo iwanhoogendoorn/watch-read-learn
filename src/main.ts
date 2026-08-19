@@ -57,6 +57,7 @@ import {
   type OpenLibraryClientWithAuthors,
 } from "./services/openlibrary";
 import { totalFromSeasons, withAddedSeason } from "./data/episodes";
+import { reconcileJudgements } from "./data/review";
 import { NoteWriter } from "./data/notes";
 import { WatchLogStore } from "./data/store";
 import { createGamesStore } from "./domains/games/store";
@@ -1357,6 +1358,37 @@ export default class WatchLogPlugin extends Plugin {
    * the OLD default folder exists — a user who chose either path by hand is
    * left entirely alone.
    */
+  /**
+   * Offer to complete every half-judged title, then do exactly what was shown.
+   *
+   * The list in the dialog IS the change: each line is one title and the half
+   * it gains. Nothing with both halves present is ever touched — disagreement
+   * between two things the user typed is a judgement, not a defect — and
+   * `autoStatus: false` because filling in an old review must not reshuffle a
+   * status today.
+   */
+  private async reconcileJudgements(): Promise<void> {
+    const plan = reconcileJudgements(this.store.allTitles(), this.store.settings.reviews);
+    if (plan.length === 0) {
+      new Notice("Every rated title has its review, and every review its rating.");
+      return;
+    }
+    const result = await confirmAction(this.app, {
+      title: "Complete half-entered ratings and reviews",
+      message:
+        `${plan.length} title(s) have one half of a judgement — a rating with no ` +
+        "review, or a review with no rating — left over from the old sync bug. " +
+        "Completing them writes the half the other one already implies:",
+      details: plan.map((entry) => entry.describe),
+      confirmText: `Complete ${plan.length} title(s)`,
+    });
+    if (!result.confirmed) return;
+    for (const entry of plan) {
+      this.store.updateTitle(entry.id, entry.patch, "judgement-reconciled", { autoStatus: false });
+    }
+    new Notice(`Completed ${plan.length} title(s).`);
+  }
+
   private async relocateImageCache(): Promise<void> {
     const OLD = "WatchLog/images";
     const target = normalizeCacheFolder(this.store.settings.imageCacheFolder);
@@ -2205,6 +2237,18 @@ export default class WatchLogPlugin extends Plugin {
         this.integrations.cancelMetadataSweep();
         new Notice("The metadata refresh will stop after the title it is on.");
       },
+    });
+
+    // Completes half-judged titles — five stars with no review, a review over
+    // zero stars — left behind by the 1.19–1.22 sync bugs. A command rather
+    // than a migration on purpose: a review is the user's opinion, and even a
+    // derived one is shown for a yes before it is stored. `reconcileJudgements`
+    // reads the same two mapping functions the live binding uses, so this
+    // writes exactly what the sync would have written at the time.
+    this.addCommand({
+      id: "reconcile-judgements",
+      name: "Complete half-entered ratings and reviews",
+      callback: () => void this.reconcileJudgements(),
     });
 
     // --- the two Wave-3 leaves ---------------------------------------------
