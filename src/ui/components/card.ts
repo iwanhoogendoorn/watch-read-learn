@@ -13,6 +13,24 @@
  * Accessibility: the card is `role="button"` with `tabindex=0` and opens on
  * Enter/Space. Every hover action stops propagation so it can never also open the
  * detail modal, and every one of them carries an `aria-label`.
+ *
+ * ---------------------------------------------------------------------------
+ * The poster-card SHELL is separate from what fills it
+ * ---------------------------------------------------------------------------
+ *
+ * `buildPosterCard` below is the full card's *presentation* with the watchlist
+ * taken out of it: the 2:3 frame, the scrim caption slot, the badge and heart
+ * corners, the hover action column, the focus and selection outlines, and the
+ * right-click seam. `buildFullCard` is one caller; the Reading tab's book card
+ * (`domains/reading/card.ts`) is the other, and it fills the same slots with
+ * what a book actually has.
+ *
+ * That is deliberately a shared *primitive* rather than a shared component:
+ * `buildTitleCard` is built around `TitleV4` — episodes, Plex, airing — so a
+ * book cannot be handed to it. But a second implementation of the frame would
+ * be a second set of CSS classes, and two grids that drift apart the first time
+ * either is touched. The classes below are declared exactly once, in
+ * `styles/20-cards.css`, and both cards wear them.
  */
 import { Menu, setIcon } from "obsidian";
 import {
@@ -75,15 +93,151 @@ export function buildTitleCard(
 }
 
 // ---------------------------------------------------------------------------
+// The poster-card shell
+// ---------------------------------------------------------------------------
+
+/**
+ * Everything the frame needs to know, and nothing about what it holds.
+ *
+ * Each `render*` callback is handed the element the stylesheet is written
+ * against, already created and already in the right place in the tree. Ordering
+ * is not the caller's to choose: the caption must be the LAST child of the
+ * poster wrap or the scrim paints under the artwork instead of over it, and
+ * `tests/card-glass.test.ts` pins exactly that.
+ */
+export interface PosterCardSpec {
+  /** What the card announces. Required, because a nameless button is not one. */
+  ariaLabel: string;
+  /**
+   * Open the thing. **Absent leaves the card inert** — no role, no tabindex, no
+   * pointer — which is what an embedded, read-only context asks for.
+   */
+  onActivate?: () => void;
+  favorite?: boolean;
+  pinned?: boolean;
+  /** Fill the `.wl-poster` box: an image, a placeholder, a lazy observer. */
+  renderPoster: (poster: HTMLElement) => void;
+  /**
+   * The top-left corner, on bare artwork. The row is removed again when the
+   * callback puts nothing in it — an empty badge is worse than no badge.
+   */
+  renderBadges?: (badges: HTMLElement) => void;
+  /** The hover/touch action column. Absent means the card has no chrome. */
+  renderActions?: (row: HTMLElement) => void;
+  /** Right-clicking anywhere on the artwork. Usually the ⋮ menu, again. */
+  onContextMenu?: (event: MouseEvent) => void;
+  /** The caption, on the scrim. */
+  renderBody: (body: HTMLElement) => void;
+}
+
+/**
+ * The frame every poster card in this plugin is drawn in.
+ *
+ * Returns the `.wl-card` element so the caller can hang its own dataset and
+ * state classes (`is-selected`) off it.
+ */
+export function buildPosterCard(parent: HTMLElement, spec: PosterCardSpec): HTMLElement {
+  const card = parent.createDiv({ cls: "wl-card" });
+  card.toggleClass("is-favorite", spec.favorite === true);
+  if (spec.pinned) card.addClass("is-pinned");
+
+  if (spec.onActivate) {
+    const activate = spec.onActivate;
+    card.addClass("is-clickable");
+    card.setAttribute("role", "button");
+    card.setAttribute("tabindex", "0");
+    card.setAttribute("aria-label", spec.ariaLabel);
+    card.addEventListener("click", () => activate());
+    card.addEventListener("keydown", (event: KeyboardEvent) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      activate();
+    });
+  }
+
+  const posterWrap = card.createDiv({ cls: "wl-card-poster" });
+  spec.renderPoster(posterWrap.createDiv({ cls: "wl-poster" }));
+  // No separate scrim layer: the caption's own background layer carries the
+  // whole gradient, and a second full-card wash on top of it was a veil over
+  // the part of the poster nothing needed to cover.
+
+  if (spec.renderBadges) {
+    const badges = posterWrap.createDiv({ cls: "wl-card-badges" });
+    spec.renderBadges(badges);
+    if (badges.childElementCount === 0) badges.remove();
+  }
+
+  if (spec.favorite) {
+    const fav = posterWrap.createDiv({ cls: "wl-card-fav" });
+    setIcon(fav, "heart");
+    fav.setAttribute("aria-label", "Favourite");
+  }
+
+  if (spec.renderActions) {
+    spec.renderActions(posterWrap.createDiv({ cls: "wl-card-actions" }));
+  }
+  if (spec.onContextMenu) {
+    const onContextMenu = spec.onContextMenu;
+    // Right-clicking the card opens the same menu — one handler, two entry points.
+    posterWrap.addEventListener("contextmenu", (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onContextMenu(event);
+    });
+  }
+
+  // The caption is a SIBLING of the poster and the last child of the wrap, not
+  // a box drawn over a cropped poster: the whole poster is behind it and the
+  // panel's own background layer (`.wl-card-body::before`) shades what it
+  // covers instead of hiding it. Being last is what puts the scrim above the
+  // art.
+  spec.renderBody(posterWrap.createDiv({ cls: "wl-card-body" }));
+
+  return card;
+}
+
+/**
+ * One button in a card's action column.
+ *
+ * Exported because the rule it encodes is not the watchlist's: an action must
+ * never *also* open the detail screen, and it must say what it does out loud.
+ * A second copy of that in another domain is a second chance to forget one.
+ */
+export function cardActionButton(
+  parent: HTMLElement,
+  icon: string,
+  label: string,
+  onClick: (event: MouseEvent) => void,
+): HTMLElement {
+  const button = parent.createEl("button", {
+    cls: "wl-card-action",
+    attr: { type: "button", "aria-label": label, title: label },
+  });
+  setIcon(button, icon);
+  button.addEventListener("click", (event: MouseEvent) => {
+    // Never let an action also open the detail modal.
+    event.preventDefault();
+    event.stopPropagation();
+    onClick(event);
+  });
+  return button;
+}
+
+// ---------------------------------------------------------------------------
 // Shared pieces
 // ---------------------------------------------------------------------------
 
-function buildPoster(parent: HTMLElement, title: TitleV4, ctx: CardCtx): HTMLElement {
-  const poster = parent.createDiv({ cls: "wl-poster" });
+/** Point an existing `.wl-poster` box at the title's artwork. */
+function fillPoster(poster: HTMLElement, title: TitleV4, ctx: CardCtx): void {
   poster.dataset.posterSeed = title.title;
   const url = posterUrlFor(title);
   if (ctx.posterLoader) ctx.posterLoader.observe(poster, url);
   else renderPosterPlaceholder(poster, title.title);
+}
+
+function buildPoster(parent: HTMLElement, title: TitleV4, ctx: CardCtx): HTMLElement {
+  const poster = parent.createDiv({ cls: "wl-poster" });
+  fillPoster(poster, title, ctx);
   return poster;
 }
 
@@ -128,37 +282,28 @@ function metaLine(title: TitleV4): string {
 // ---------------------------------------------------------------------------
 
 function buildFullCard(parent: HTMLElement, title: TitleV4, ctx: CardCtx): HTMLElement {
-  const card = parent.createDiv({ cls: "wl-card" });
-  card.toggleClass("is-favorite", title.favorite);
-  if (title.pinned) card.addClass("is-pinned");
-  makeActivatable(card, title, ctx, `${title.title} — open details`);
-
-  const posterWrap = card.createDiv({ cls: "wl-card-poster" });
-  buildPoster(posterWrap, title, ctx);
-  // No separate scrim layer: the caption's own background layer carries the
-  // whole gradient, and a second full-card wash on top of it was a veil over
-  // the part of the poster nothing needed to cover.
-
-  if (ctx.showPlexBadge) {
-    const badges = posterWrap.createDiv({ cls: "wl-card-badges" });
-    renderPlexBadge(badges, title);
-    if (badges.childElementCount === 0) badges.remove();
+  const spec: PosterCardSpec = {
+    ariaLabel: `${title.title} — open details`,
+    favorite: title.favorite,
+    pinned: title.pinned,
+    renderPoster: (poster) => fillPoster(poster, title, ctx),
+    renderBody: (body) => buildFullBody(body, title, ctx),
+  };
+  if (ctx.onOpen) spec.onActivate = () => ctx.onOpen?.(title);
+  if (ctx.showPlexBadge) spec.renderBadges = (badges) => void renderPlexBadge(badges, title);
+  if (ctx.showActions) {
+    spec.renderActions = (row) => buildActions(row, title, ctx);
+    spec.onContextMenu = (event) => openCardMenu(event, title, ctx);
   }
 
-  if (title.favorite) {
-    const fav = posterWrap.createDiv({ cls: "wl-card-fav" });
-    setIcon(fav, "heart");
-    fav.setAttribute("aria-label", "Favourite");
-  }
+  const card = buildPosterCard(parent, spec);
+  // Select mode reads this off the closest `[data-title-id]`, so it is on the
+  // card whether or not the card is activatable.
+  card.dataset.titleId = title.id;
+  return card;
+}
 
-  if (ctx.showActions) buildActions(posterWrap, title, ctx);
-
-  // The caption is a SIBLING of the poster and the last child of the wrap, not
-  // a box drawn over a cropped poster: the whole poster is behind it and the
-  // panel's own background layer (`.wl-card-body::before`) shades what it
-  // covers instead of hiding it. Being last is what puts the scrim above the
-  // art.
-  const body = posterWrap.createDiv({ cls: "wl-card-body" });
+function buildFullBody(body: HTMLElement, title: TitleV4, ctx: CardCtx): void {
   body.createDiv({ cls: "wl-card-title", text: title.title });
 
   const pills = body.createDiv({ cls: "wl-card-pills" });
@@ -209,17 +354,16 @@ function buildFullCard(parent: HTMLElement, title: TitleV4, ctx: CardCtx): HTMLE
   }
 
   if (ctx.showProgress) renderProgressBar(body, title);
-
-  return card;
 }
 
 // ---------------------------------------------------------------------------
 // Hover actions
 // ---------------------------------------------------------------------------
 
-function buildActions(parent: HTMLElement, title: TitleV4, ctx: CardCtx): HTMLElement {
-  const row = parent.createDiv({ cls: "wl-card-actions" });
+/** The card's own name for the shared button, kept so the call sites read short. */
+const actionButton = cardActionButton;
 
+function buildActions(row: HTMLElement, title: TitleV4, ctx: CardCtx): HTMLElement {
   const next = getNextUnwatchedEpisode(title);
   if (next !== null && episodesRemaining(title) > 0) {
     const pair = toSeasonEpisode(title, next);
@@ -267,36 +411,13 @@ function buildActions(parent: HTMLElement, title: TitleV4, ctx: CardCtx): HTMLEl
   ) => {
     openCardMenu(event, title, ctx);
   });
-  // Right-clicking the card opens the same menu — one handler, two entry points.
-  parent.addEventListener("contextmenu", (event: MouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    openCardMenu(event, title, ctx);
-  });
+  // The right-click half of the same menu lives on the shell — see the
+  // `onContextMenu` this card hands it.
   menuButton.addClass("wl-card-menu");
 
   return row;
 }
 
-function actionButton(
-  parent: HTMLElement,
-  icon: string,
-  label: string,
-  onClick: (event: MouseEvent) => void,
-): HTMLElement {
-  const button = parent.createEl("button", {
-    cls: "wl-card-action",
-    attr: { type: "button", "aria-label": label, title: label },
-  });
-  setIcon(button, icon);
-  button.addEventListener("click", (event: MouseEvent) => {
-    // Never let an action also open the detail modal.
-    event.preventDefault();
-    event.stopPropagation();
-    onClick(event);
-  });
-  return button;
-}
 
 function openCardMenu(event: MouseEvent, title: TitleV4, ctx: CardCtx): void {
   const menu = new Menu();

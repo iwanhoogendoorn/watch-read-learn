@@ -14,8 +14,72 @@
  */
 import type { CustomColumn, CustomColumnType } from "../../types";
 import type { ReadingEntry } from "./progress";
+import { yearOf } from "./viewstate";
 
 export const CUSTOM_COLUMN_TYPES: readonly CustomColumnType[] = ["text", "number", "select"];
+
+// ---------------------------------------------------------------------------
+// Built-in columns
+// ---------------------------------------------------------------------------
+
+/**
+ * A column over a fact the row already carries.
+ *
+ * **Not** a `CustomColumn`, and deliberately not. A custom column is a field
+ * the *user* invented, stored per row under `customFields[id]`. A publication
+ * year is neither invented nor stored: it is read off `releaseDate`, the same
+ * value the detail screen prints, the decade facet buckets by and
+ * `derivedStatus` reads to decide "To be released". Giving it a `customFields`
+ * entry would be a second copy of a fact that already exists, free to drift the
+ * first time somebody edits the release date — and it would arrive as a column
+ * the user could rename, retype and delete, which is not what a year is.
+ *
+ * What it *does* share with a custom column is being the reader's to switch
+ * off, which is why it is declared here and edited in the same modal.
+ */
+export interface BuiltInColumn {
+  id: string;
+  name: string;
+  /** The cell's text, or `""` when this row cannot answer. */
+  value(entry: ReadingEntry): string;
+}
+
+/**
+ * Every built-in column, in the order they appear after Author.
+ *
+ * One so far. The list exists rather than a single special case because the
+ * next one (page count, date finished) must not need the table rewritten.
+ */
+export const BUILT_IN_COLUMNS: readonly BuiltInColumn[] = [
+  {
+    id: "year",
+    name: "Year",
+    value: (entry) => {
+      // `yearOf` is the domain's one answer to "when was this published", and
+      // returns `null` for a row with no release date or an unparseable one.
+      const year = yearOf(entry);
+      return year === null ? "" : String(year);
+    },
+  },
+];
+
+/**
+ * The built-ins to draw, given what the reader has switched off.
+ *
+ * **Exclusion, not inclusion** — the same convention every facet in this domain
+ * follows, and the reason it is the right one here too: a built-in added in a
+ * later version is visible the moment it exists, instead of being invisible to
+ * everybody whose stored list of "columns I want" predates it. It also makes
+ * "on by default" fall out for free, since an absent key hides nothing.
+ */
+export function visibleBuiltInColumns(hidden: readonly string[] = []): BuiltInColumn[] {
+  return BUILT_IN_COLUMNS.filter((column) => !hidden.includes(column.id));
+}
+
+/** Flip one built-in, returning the new hidden list. Never mutates. */
+export function toggleBuiltInColumn(hidden: readonly string[], id: string): string[] {
+  return hidden.includes(id) ? hidden.filter((value) => value !== id) : [...hidden, id];
+}
 
 /** v3's id shape (`col-1`), continued rather than replaced. */
 export function nextColumnId(existing: readonly CustomColumn[]): string {

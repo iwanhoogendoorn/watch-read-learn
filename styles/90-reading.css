@@ -160,7 +160,18 @@
   color: var(--text-normal);
 }
 
-/* --- the table ------------------------------------------------------------ */
+/* --- the table -------------------------------------------------------------
+ *
+ * One line per row, the way the Library's table is one line per row — the two
+ * are read one tab apart and a reading row that stood twice as tall made them
+ * look like two different applications. The header, the cell padding, the hover
+ * and the focus ring are not restated here at all: they come from `.wl-table`
+ * in 30-library.css, which is the whole point.
+ *
+ * Everything below is the *reading-shaped* half of that: a cover column the
+ * Library does not have, a progress bar the Library does not have, and the
+ * rules that stop either of them growing a second line.
+ * -------------------------------------------------------------------------- */
 
 .wl-reading-results {
   min-height: 0;
@@ -175,29 +186,69 @@
 }
 
 .wl-reading-cover-cell {
-  width: 44px;
+  width: 34px;
   padding-right: 0;
 }
 
 /* Deliberately sized rather than given an aspect-ratio: a fixed ratio on a
    table cell is what turned the dashboard into empty rectangles (QA4), and the
-   invariant test in tests/styles.test.ts keeps it that way. */
+   invariant test in tests/styles.test.ts keeps it that way.
+
+   24×36 rather than the 34×50 it was: the thumb is the tallest thing in the
+   row, so it *is* the row height, and at 50px it alone put this table a third
+   taller than the Library's however tidy everything else got. Small enough to
+   sit on one text line, big enough that a cover is still a cover. */
 .wl-reading-thumb {
-  width: 34px;
-  height: 50px;
+  width: 24px;
+  height: 36px;
   border-radius: var(--wl-radius-s, 4px);
   overflow: hidden;
 }
 
+/* One line, always: the title is the widest thing here and the only cell that
+   could plausibly wrap to three rows. It ellipses instead, exactly as the
+   card's caption does, and the full string is in the row's own tooltip-free
+   detail screen one click away. */
+.wl-reading-table .wl-table-title,
+.wl-reading-author-cell {
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Year, and whatever built-in comes after it: a short fact, so the column is
+   no wider than the fact. Tabular figures so a column of years lines up. */
+.wl-reading-builtin-head,
+.wl-reading-builtin-cell {
+  width: 1%;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 .wl-reading-progress-cell {
-  min-width: 160px;
+  min-width: 170px;
+}
+
+/* The bar, the number and (when there is no number) the way to supply one, on
+   one line. `min-width: 0` on the bar is what lets it give way to the text
+   rather than pushing the column wider. */
+.wl-reading-progress-line {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
 }
 
 .wl-reading-progress-text {
-  margin-top: var(--wl-space-1);
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Stars and the public's number share a line — see the comment in tab.ts. */
+.wl-reading-rating-cell {
+  white-space: nowrap;
 }
 
 .wl-reading-column-cell {
@@ -223,8 +274,12 @@
 
 /* --- progress bar --------------------------------------------------------- */
 
+/* `width` still carries the standalone use (the detail screen's own bar); the
+   flex pair is what lets the table's copy give way to the number beside it. */
 .wl-reading-bar {
   width: 100%;
+  flex: 1 1 auto;
+  min-width: 2.5rem;
   height: 4px;
   border-radius: var(--wl-radius-pill, 999px);
   background: var(--background-modifier-border);
@@ -421,6 +476,26 @@
 
 /* --- the columns modal ---------------------------------------------------- */
 
+/* The "always available" ticks in the columns modal. One line each: there is
+   nothing to configure about a built-in but whether you want to see it. */
+.wl-reading-builtin-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+  margin: var(--wl-space-2) 0 var(--wl-space-4);
+}
+
+.wl-reading-builtin-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-2);
+}
+
+.wl-reading-builtin-name {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+}
+
 .wl-reading-column-list {
   display: flex;
   flex-direction: column;
@@ -453,10 +528,17 @@
 /* --- narrow screens ------------------------------------------------------- */
 
 @media (max-width: 700px) {
-  /* The author and the custom columns are the first things to go: on a phone
-     the row has to answer "what is it, how far am I" and nothing else. */
-  .wl-reading-table th:nth-child(3),
-  .wl-reading-table td:nth-child(3),
+  /* The author, the built-ins and the custom columns are the first things to
+     go: on a phone the row has to answer "what is it, how far am I" and
+     nothing else.
+
+     By CLASS, not by `nth-child`. The positional version silently pointed at
+     the wrong column the moment Year was inserted before Category, which is
+     the failure mode a rule that counts always has. */
+  .wl-reading-author-head,
+  .wl-reading-author-cell,
+  .wl-reading-builtin-head,
+  .wl-reading-builtin-cell,
   .wl-reading-column-head,
   .wl-reading-column-cell {
     display: none;
@@ -525,6 +607,64 @@
   max-width: 14rem;
 }
 
+/*
+ * One row of chips in a table cell, whatever the picker in the detail modal
+ * does with the same class. Two chips is the cap the markup enforces; this is
+ * the belt to that braces — a single long category name must shorten rather
+ * than push the row onto a second line.
+ */
+.wl-reading-category-cell .wl-reading-category-chips {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+/*
+ * The table's category chip is a PILL, not a chip of its own.
+ *
+ * It used to declare its whole look: a solid `--background-secondary` fill at
+ * `--font-smallest`, which beside a tinted, coloured `.wl-pill` read as a heavy
+ * grey blob — two per row, and the column looked like it belonged to a
+ * different application from the Library's Type pills. It wears `.wl-pill` now,
+ * and this rule adds only the two things a pill is not: a button, and a click.
+ *
+ * Scoped to the cell on purpose. The SAME class names the removable chips in
+ * the detail modal's category picker, and those are `.wl-chip`s — resetting
+ * their border here would take the outline off a control that needs one.
+ */
+.wl-reading-category-cell .wl-reading-category-chip {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* The element is a `<button>`; the theme gives it a frame for free. */
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  /*
+   * Restate the pill's fill, because the theme's `button` background beats
+   * `.wl-pill` here and lands opaque: measured `rgb(204, 208, 218)` where the
+   * Library's table pill is `srgb(… / 0.18)`. That solid slab beside a tinted
+   * Type pill is the "heavy blob" this column was reported for — inheriting the
+   * pill class was necessary but not sufficient, because a `<button>` does not
+   * start from nothing the way a `<span>` does.
+   */
+  background: color-mix(in srgb, var(--wl-pill, var(--interactive-accent)) 18%, transparent);
+}
+
+/* The pill's own tint, turned up — the same colour, more of it, rather than a
+   different colour appearing on hover. */
+.wl-reading-category-cell .wl-reading-category-chip:hover,
+.wl-reading-category-cell .wl-reading-category-chip:focus-visible {
+  background: color-mix(in srgb, var(--wl-pill, var(--interactive-accent)) 34%, transparent);
+}
+
+/* "…and three more", counted rather than listed. The names are in the title. */
+.wl-reading-category-more {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: var(--font-smallest);
+  font-variant-numeric: tabular-nums;
+}
+
 .wl-reading-category-chips {
   display: flex;
   flex-wrap: wrap;
@@ -532,22 +672,20 @@
   align-items: center;
 }
 
-.wl-reading-category-chip {
-  padding: 1px var(--wl-space-2);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--wl-radius-pill);
-  background: var(--background-secondary);
-  box-shadow: none;
-  color: var(--text-muted);
-  font-size: var(--font-smallest);
-  line-height: 1.5;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.wl-reading-category-chip:hover {
-  border-color: var(--text-accent);
-  color: var(--text-accent);
+/*
+ * A category has no colour of its own.
+ *
+ * Types and statuses take `--wl-pill` from the user's palette; a category is
+ * just a word Google or Open Library filed the book under, and inventing a
+ * colour for it would be inventing meaning. `--text-muted` is the honest
+ * source: `.wl-pill` mixes it to an 18% tint and prints the text in it, which
+ * is a quiet neutral pill in both themes and follows the theme rather than
+ * fixing a grey. On a card it needs no special case either — the scrim rules
+ * read `--wl-pill` too, and lift whatever they find to a lightness that clears
+ * the artwork.
+ */
+.wl-pill.is-category {
+  --wl-pill: var(--text-muted);
 }
 
 /* An icon column: no wider than the glyph it holds. */
@@ -566,8 +704,9 @@
   margin-left: 0;
 }
 
+/* Inline with the bar, not under it: it appears only on the rows that have no
+   number, and as a second line it made those rows the tall ones. */
 .wl-reading-set-total {
-  margin-top: var(--wl-space-1);
   padding: 0;
   border: none;
   background: transparent;
@@ -584,7 +723,6 @@
 
 .wl-reading-set-total-input {
   width: 6ch;
-  margin-top: var(--wl-space-1);
   padding: 0 var(--wl-space-1);
   font-size: var(--font-smallest);
 }
@@ -642,9 +780,9 @@
   text-decoration: underline;
 }
 
-/* Under the stars in the table's Rating cell. */
+/* Beside the stars in the table's Rating cell, not under them. */
 .wl-reading-community-cell {
-  margin-top: var(--wl-space-1);
+  margin-left: var(--wl-space-2);
   color: var(--text-faint);
   font-size: var(--font-ui-smaller);
   white-space: nowrap;

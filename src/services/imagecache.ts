@@ -66,7 +66,7 @@ export type VaultAdapterFits = Assert<
 >;
 
 /** Where images go when the user has not said otherwise. */
-export const DEFAULT_IMAGE_CACHE_FOLDER = "WatchLog/images";
+export const DEFAULT_IMAGE_CACHE_FOLDER = "WRL/images";
 
 /**
  * Staging name, mirroring `data/backup.ts`. Cleaned up on success and failure.

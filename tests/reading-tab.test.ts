@@ -36,9 +36,23 @@ afterEach(() => {
   restore();
 });
 
+/**
+ * Mount the tab **in table mode**, said out loud.
+ *
+ * Everything below is the table's contract — its columns, its chips, its
+ * in-vault cell, its +1 button — so the table is set up rather than assumed.
+ * The tab now opens as a poster grid by default; seeding the stored mode (with
+ * the one-time-move marker already set, which is where every reader is from
+ * their second launch onwards) is what keeps these tests about the table
+ * instead of about the default. The default has its own tests, in
+ * `tests/reading-grid.test.ts`, and the grid has its own coverage there too.
+ */
 async function mount() {
+  const data = JSON.parse(TEXT) as { reading: { settings: Record<string, unknown> } };
+  data.reading.settings["viewModeGridDefault"] = true;
+  data.reading.settings["viewMode"] = "table";
   const store = new WatchLogStore({
-    loadData: async () => JSON.parse(TEXT) as unknown,
+    loadData: async () => data as unknown,
     saveData: async () => undefined,
   } as never);
   await store.load();
@@ -274,7 +288,9 @@ describe("a total nobody knows", () => {
     input.fire("keydown", { key: "Enter" });
 
     expect(reading.allBooks().find((b) => b.id === book.id)?.totalPages).toBe(356);
-    expect(el.textContent).toContain("0 / 356 pages");
+    // Compact, like the Library table's `12/24 eps` — the two tables read the
+    // same way or they do not read as one app.
+    expect(el.textContent).toContain("0/356 pages");
     controller.destroy();
   });
 
@@ -326,7 +342,11 @@ describe("an empty shelf", () => {
     const el = controller.el as unknown as StubEl;
     expect(el.textContent).toContain("No books yet");
     expect(el.textContent).toContain("Open Library");
+    // Mounted without seeding a mode, so this one opens as a fresh install
+    // does — on the grid. The empty state stands in front of BOTH views, so
+    // neither a table row nor a card is drawn.
     expect(el.querySelectorAll(".wl-reading-row")).toHaveLength(0);
+    expect(el.querySelectorAll(".wl-card")).toHaveLength(0);
     controller.destroy();
   });
 });

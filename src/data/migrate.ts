@@ -548,6 +548,16 @@ function migrateSettings(raw: Rec, note: (m: string) => void): Settings {
   // that predates them, which is exactly the behaviour that file already had.
   s.cacheImagesLocally = bool(s.cacheImagesLocally, defaults.cacheImagesLocally);
   s.imageCacheFolder = str(s.imageCacheFolder, defaults.imageCacheFolder) || defaults.imageCacheFolder;
+  // The cache's first default shipped as `WatchLog/images` — the old brand,
+  // gone from everything else since the rename. A stored value that IS that
+  // default (and only that: a folder the user chose is theirs, even one they
+  // named WatchLog) follows the default to `WRL/images`. The plugin moves the
+  // folder's contents on load when the old path exists — see
+  // `relocateImageCache` in `main.ts` — so the setting and the files change
+  // together rather than the cache silently going cold.
+  if (s.imageCacheFolder === "WatchLog/images") {
+    s.imageCacheFolder = defaults.imageCacheFolder;
+  }
 
   s.libraryViewMode = s.libraryViewMode === "table" ? "table" : defaults.libraryViewMode;
 

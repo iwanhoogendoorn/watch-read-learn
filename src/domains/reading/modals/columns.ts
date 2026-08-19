@@ -12,12 +12,22 @@ import { Modal, setIcon, type App } from "obsidian";
 import type { CustomColumn, CustomColumnType, ReadingKind } from "../../../types";
 import { confirmAction } from "../../../ui/modals/confirm";
 import { sanitizeColor } from "../../../ui/components/pills";
-import { CUSTOM_COLUMN_TYPES, createColumn, replaceColumn, withoutColumn } from "../columns";
+import {
+  BUILT_IN_COLUMNS,
+  CUSTOM_COLUMN_TYPES,
+  createColumn,
+  replaceColumn,
+  withoutColumn,
+} from "../columns";
 
 export interface ReadingColumnsOptions {
   kind: ReadingKind;
   getColumns: () => CustomColumn[];
   onChange: (columns: CustomColumn[]) => void;
+  /** Built-in column ids the reader has switched off. Exclusion, not inclusion. */
+  getHidden?: () => string[];
+  /** Flip one built-in. Absent hides the section entirely. */
+  onToggleBuiltIn?: (id: string) => void;
 }
 
 const TYPE_LABELS: Record<CustomColumnType, string> = {
@@ -56,6 +66,9 @@ export class ReadingColumnsModal extends Modal {
       cls: "wl-modal-title",
       text: this.options.kind === "book" ? "Book columns" : "Manga columns",
     });
+    this.renderBuiltIns(contentEl);
+
+    contentEl.createDiv({ cls: "wl-reading-section-label", text: "Your columns" });
     contentEl.createDiv({
       cls: "wl-reading-hint",
       text: "Columns show in the table and in each entry. Removing one keeps what you already typed in it.",
@@ -77,6 +90,35 @@ export class ReadingColumnsModal extends Modal {
       attr: { type: "button" },
     });
     done.addEventListener("click", () => this.close());
+  }
+
+  /**
+   * The columns that are always available because the row always answers them.
+   *
+   * They get a tick rather than the name/type/colour/delete row a custom column
+   * gets: there is nothing to rename, nothing to retype, and deleting a year
+   * would mean deleting a release date. The only question a built-in has is
+   * whether you want to look at it.
+   */
+  private renderBuiltIns(host: HTMLElement): void {
+    const onToggle = this.options.onToggleBuiltIn;
+    if (!onToggle || BUILT_IN_COLUMNS.length === 0) return;
+    const hidden = this.options.getHidden?.() ?? [];
+
+    host.createDiv({ cls: "wl-reading-section-label", text: "Always available" });
+    const list = host.createDiv({ cls: "wl-reading-builtin-list" });
+    for (const column of BUILT_IN_COLUMNS) {
+      const row = list.createDiv({ cls: "wl-reading-builtin-row" });
+      const box = row.createEl("input", {
+        attr: { type: "checkbox", "aria-label": `Show the ${column.name} column` },
+      });
+      box.checked = !hidden.includes(column.id);
+      box.addEventListener("change", () => {
+        onToggle(column.id);
+        this.render();
+      });
+      row.createSpan({ cls: "wl-reading-builtin-name", text: column.name });
+    }
   }
 
   private renderRow(host: HTMLElement, column: CustomColumn): void {

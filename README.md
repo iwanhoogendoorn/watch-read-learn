@@ -21,6 +21,11 @@ manga and games in one library, wired into a home media stack.
   read and pages left as tiles, the same rating-and-review control, the same
   "Today" buttons on its dates. One binding, one set of controls, adapted rather
   than copied, so the two can never drift apart.
+- **And the same shelf** — Reading opens as a grid of covers wearing the very
+  card the Library's posters wear (the same CSS classes, declared once), with
+  the dense single-line table one toggle away. The table carries the year, and
+  its category chips are the same pill as everywhere else rather than a
+  component of their own.
 - **A title screen with room to breathe** — a title opens as a real workspace
   pane by default: poster, synopsis, time left and time watched, season
   accordions, and dates with a "Today" button beside each one. Every cast and

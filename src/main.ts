@@ -70,6 +70,7 @@ import { WatchLogSettingTab } from "./settings";
 import { WatchLogView } from "./ui/view";
 import {
   createImageCache,
+  DEFAULT_IMAGE_CACHE_FOLDER,
   normalizeCacheFolder,
   type ImageCache,
 } from "./services/imagecache";
@@ -1343,6 +1344,57 @@ export default class WatchLogPlugin extends Plugin {
   }
 
   /**
+   * Move the cache out of `WatchLog/images`, once, if it is still there.
+   *
+   * The first default shipped under the old brand; `migrate.ts` repoints the
+   * *setting* at `WRL/images`, and this moves the *files* so the two change
+   * together — a repointed setting over an unmoved folder is a cache that went
+   * silently cold and re-downloads everything.
+   *
+   * Copy, verify, then delete, one file at a time: a crash mid-move leaves
+   * every image present in at least one of the two folders, and `prime()`
+   * ignores the stragglers. Only runs when the setting is the NEW default and
+   * the OLD default folder exists — a user who chose either path by hand is
+   * left entirely alone.
+   */
+  private async relocateImageCache(): Promise<void> {
+    const OLD = "WatchLog/images";
+    const target = normalizeCacheFolder(this.store.settings.imageCacheFolder);
+    if (target !== normalizeCacheFolder(DEFAULT_IMAGE_CACHE_FOLDER)) return;
+    const adapter = this.app.vault.adapter;
+    if (!(await adapter.exists(OLD))) return;
+    try {
+      const listing = await adapter.list(OLD);
+      if (!(await adapter.exists(target))) await adapter.mkdir(target);
+      let moved = 0;
+      for (const path of listing.files) {
+        const name = path.slice(path.lastIndexOf("/") + 1);
+        // Staging leftovers are not cache entries; leave them for cleanup.
+        if (name.startsWith(".") || name.endsWith(".writing.tmp")) continue;
+        const dest = `${target}/${name}`;
+        if (!(await adapter.exists(dest))) {
+          await adapter.writeBinary(dest, await adapter.readBinary(path));
+        }
+        // Verified by existence at the destination; only then does the source go.
+        if (await adapter.exists(dest)) {
+          await adapter.remove(path);
+          moved += 1;
+        }
+      }
+      // The folder itself only goes when nothing is left in it.
+      const after = await adapter.list(OLD);
+      if (after.files.length === 0 && after.folders.length === 0) {
+        await adapter.rmdir(OLD, false);
+      }
+      if (moved > 0) new Notice(`Artwork cache moved to ${target} (${moved} file(s)).`);
+    } catch (err) {
+      // A failed move is a cold cache, not a broken plugin: prime() simply
+      // finds fewer files and the next warm re-downloads them.
+      console.warn("[wrl] could not relocate the artwork cache:", err);
+    }
+  }
+
+  /**
    * Re-read the settings into the cache and re-read the folder into its index.
    *
    * Called on load and whenever the toggle or the folder changes. Reads only —
@@ -1351,6 +1403,7 @@ export default class WatchLogPlugin extends Plugin {
   async primeImageCache(): Promise<void> {
     const cache = this.imageCache;
     if (!cache) return;
+    await this.relocateImageCache();
     cache.configure({
       enabled: this.store.settings.cacheImagesLocally,
       folder: normalizeCacheFolder(this.store.settings.imageCacheFolder),

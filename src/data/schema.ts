@@ -152,7 +152,7 @@ export function createDefaultSettings(): Settings {
     // Off, because turning it on writes binary files into the user's vault.
     cacheImagesLocally: false,
     // Mirrors `DEFAULT_IMAGE_CACHE_FOLDER`; normalised again before any write.
-    imageCacheFolder: "WatchLog/images",
+    imageCacheFolder: "WRL/images",
 
     libraryViewMode: "grid",
     filterState: createFilterState(),

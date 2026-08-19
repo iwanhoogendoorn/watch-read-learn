@@ -27,6 +27,7 @@ import {
   type DateFormat,
   type BookSuggestionHit,
   type GoogleBooksClient,
+  type LibraryViewMode,
   type OpenLibraryClient,
   type Preset,
   type ReadingKind,
@@ -36,16 +37,17 @@ import {
   type WatchLogStoreApi,
 } from "../../types";
 import { createSearchBox } from "../../ui/components/searchbox";
-import { createPosterLoader, renderPosterPlaceholder } from "../../ui/components/posters";
+import { createPosterLoader } from "../../ui/components/posters";
+import { createVirtualGrid, type VirtualGridHandle } from "../../ui/components/virtual";
+import { CARD_SIZE_OFFSET, CARD_SIZE_PX } from "../../constants";
+import { CoverPool, type CoverCache, type CoverHandle } from "./covers";
 import {
-  CoverPool,
-  coverIsbn,
-  keepCover,
-  loadCover,
-  localCoverUrl,
-  needsProxy,
-  type CoverCache,
-} from "./covers";
+  buildBookCard,
+  compactProgress,
+  renderReadingCover,
+  type BookCardCtx,
+  type ReadingCoverDeps,
+} from "./card";
 import { fetchCoverBytes } from "./coverfetch";
 import { openBookFile } from "./bookfile";
 import { formatCommunityRating } from "./community";
@@ -53,7 +55,12 @@ import { createStars } from "../../ui/components/stars";
 import { renderEmptyState } from "../../ui/components/empty";
 import { renderPill, sanitizeColor } from "../../ui/components/pills";
 import { createPresetButton, makePresetId, type PresetView } from "../../ui/modals/preset";
-import { columnDisplay, columnStyleClass } from "./columns";
+import {
+  columnDisplay,
+  columnStyleClass,
+  toggleBuiltInColumn,
+  visibleBuiltInColumns,
+} from "./columns";
 import { ReadingColumnsModal } from "./modals/columns";
 import { AddReadingModal } from "./modals/add";
 import { ReadingDetailModal } from "./modals/detail";
@@ -117,9 +124,46 @@ export interface ReadingDeps {
   onDismissSuggestion?: (key: string) => void;
 }
 
-/** Where the two view keys live inside the round-tripped reading settings. */
+/** Where the view keys live inside the round-tripped reading settings. */
 const SUBTAB_KEY = "activeSubTab";
 const VIEW_STATE_KEY = "viewState";
+/**
+ * Grid or table, for **both** shelves.
+ *
+ * Not per-shelf, unlike the query/filters/sort beside it. Those describe a
+ * *library* — excluding an author on the books shelf must not silently filter
+ * the manga one — but "I want to see covers" describes the person, not the
+ * shelf, and both shelves are covers either way. Same argument
+ * `openTitlesInFullView` makes for full views: one switch somebody already
+ * understands beats a second one that says the same thing about manga.
+ */
+const VIEW_MODE_KEY = "viewMode";
+
+/**
+ * Set once, when a shelf that predates the poster grid is carried onto it.
+ *
+ * Separate from `VIEW_MODE_KEY` on purpose: the mode is an answer that changes
+ * every time the toggle is pressed, and this records that the question was
+ * asked at all. Reading the mode alone cannot tell "table because they chose
+ * it" from "table because that is all there used to be".
+ */
+const GRID_DEFAULT_MARKER = "viewModeGridDefault";
+
+/** The gap between cards, matching the Library's grid exactly. */
+const GRID_GAP = 12;
+
+/** How many category chips a table row shows before it starts counting. */
+const CATEGORY_CHIP_LIMIT = 2;
+
+/**
+ * Built-in columns the reader has switched off, per shelf.
+ *
+ * Per shelf for the same reason the custom columns are: books and manga are
+ * two libraries, and the modal that edits them is already one per shelf. It
+ * records what is HIDDEN, so a built-in added in a later version shows up the
+ * moment it exists — see `visibleBuiltInColumns`.
+ */
+const HIDDEN_COLUMNS_KEY = "hiddenColumns";
 
 interface PersistedViewState {
   query?: string;
@@ -159,12 +203,15 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
   // --- view state ---------------------------------------------------------
 
   let kind: ReadingKind = readKind();
+  let viewMode: LibraryViewMode = readViewMode();
   const state = readViewState(kind);
   let query = state.query;
   let filters = state.filters;
   let sort = state.sort;
   let secondarySort = state.secondarySort;
   let rows: ReadingEntry[] = [];
+  /** The mounted poster grid, when the tab is in grid mode. */
+  let grid: VirtualGridHandle<ReadingEntry> | null = null;
   /** Set on teardown; async work checks it before touching anything. */
   let destroyed = false;
   let drawerOpen = false;
@@ -172,6 +219,39 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
   function readKind(): ReadingKind {
     const raw = readExtra<string>(reading.reading.settings, SUBTAB_KEY);
     return raw === "manga" ? "manga" : "book";
+  }
+
+  /**
+   * The view mode, and the one-time move to the poster grid.
+   *
+   * Reading opens as covers, like the Library — that is the point of the grid
+   * existing. The first version of this hedged, keeping an existing shelf on
+   * the table on the grounds that turning a 300-book list into a wall of covers
+   * unasked is a surprise rather than a default. It was asked for.
+   *
+   * So the grid is simply the default now, and `GRID_DEFAULT_MARKER` carries a
+   * shelf that predates it across exactly once — the same guard shape as the
+   * `openTitlesInFullView` flip in `data/migrate.ts`, and for the same reason:
+   * the *stored* answer would otherwise win forever, so raising the default
+   * alone would be invisible to everybody who already has the plugin.
+   *
+   * The marker, not the stored value, is the guard. Once it is on disk this
+   * never runs again, so a later "no, table please" is the reader's own answer
+   * and is never overruled.
+   */
+  function readViewMode(): LibraryViewMode {
+    const settings = reading.reading.settings;
+    if (readExtra<unknown>(settings, GRID_DEFAULT_MARKER) !== true) {
+      writeExtra(settings, GRID_DEFAULT_MARKER, true);
+      writeExtra(settings, VIEW_MODE_KEY, "grid");
+      store.save("reading-view-mode");
+      return "grid";
+    }
+    const raw = readExtra<string>(settings, VIEW_MODE_KEY);
+    if (raw === "grid" || raw === "table") return raw;
+    writeExtra(settings, VIEW_MODE_KEY, "grid");
+    store.save("reading-view-mode");
+    return "grid";
   }
 
   /**
@@ -214,6 +294,19 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
 
   function columns(): CustomColumn[] {
     return reading.columns(kind);
+  }
+
+  function hiddenColumns(): string[] {
+    const all = readExtra<Record<string, string[]>>(reading.reading.settings, HIDDEN_COLUMNS_KEY);
+    return all?.[kind] ?? [];
+  }
+
+  function setHiddenColumns(next: string[]): void {
+    const all =
+      readExtra<Record<string, string[]>>(reading.reading.settings, HIDDEN_COLUMNS_KEY) ?? {};
+    all[kind] = next;
+    writeExtra(reading.reading.settings, HIDDEN_COLUMNS_KEY, all);
+    store.save("reading-hidden-columns");
   }
 
   function pool(): readonly ReadingEntry[] {
@@ -312,6 +405,34 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
   const sortLabel = sortButton.createSpan({ cls: "wl-btn-label" });
   sortButton.addEventListener("click", (event: MouseEvent) => openSortMenu(event));
 
+  /**
+   * Grid ↔ table, the Library's control verbatim: same toolbar slot (straight
+   * after Sort), same classes, same icon convention — the icon shows the
+   * *destination*, not the current mode — and the same two labels.
+   */
+  const viewToggle = toolbar.createEl("button", {
+    cls: "wl-btn wl-icon-btn wl-view-toggle",
+    attr: { type: "button" },
+  });
+  function syncViewToggle(): void {
+    const isGrid = viewMode === "grid";
+    viewToggle.empty();
+    setIcon(viewToggle, isGrid ? "table" : "layout-grid");
+    const label = isGrid ? "Switch to table view" : "Switch to poster grid";
+    viewToggle.setAttribute("aria-label", label);
+    viewToggle.setAttribute("title", label);
+    // Which columns a table shows is a question the grid cannot answer, so the
+    // button that asks it is not offered there.
+    columnsButton.toggleClass("is-hidden", isGrid);
+  }
+  viewToggle.addEventListener("click", () => {
+    viewMode = viewMode === "grid" ? "table" : "grid";
+    writeExtra(reading.reading.settings, VIEW_MODE_KEY, viewMode);
+    store.save("reading-view-mode");
+    syncViewToggle();
+    render();
+  });
+
   const columnsButton = toolbar.createEl("button", {
     cls: "wl-btn wl-icon-btn wl-reading-columns-btn",
     attr: { type: "button", "aria-label": "Columns", title: "Your columns" },
@@ -323,6 +444,11 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
       getColumns: () => [...columns()],
       onChange: (next) => {
         reading.setColumns(kind, next);
+        render();
+      },
+      getHidden: () => hiddenColumns(),
+      onToggleBuiltIn: (id) => {
+        setHiddenColumns(toggleBuiltInColumn(hiddenColumns(), id));
         render();
       },
     }).open();
@@ -593,10 +719,13 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
   // --- rendering ----------------------------------------------------------
 
   function render(): void {
+    grid?.destroy();
+    grid = null;
     posterLoader.releaseWithin?.(resultsHost);
     // The rows about to be discarded own object URLs; releasing them here is
     // what stops a list scrolled for an hour from pinning every blob it drew.
     covers.releaseAll();
+    cellCovers.clear();
     resultsHost.empty();
 
     const all = pool();
@@ -642,7 +771,97 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
       return;
     }
 
-    renderTable();
+    if (viewMode === "table") renderTable();
+    else renderGrid();
+  }
+
+  // --- the poster grid ----------------------------------------------------
+
+  /**
+   * Cover handles by the poster box that owns them.
+   *
+   * The grid evicts cells as you scroll, and an evicted cell's object URL has
+   * to go with it — an unrevoked one pins its blob for the lifetime of the
+   * window. `covers` still holds them too, so a re-render releases the lot;
+   * this map is what makes a long scroll cost nothing. Releasing twice is a
+   * no-op by design.
+   */
+  const cellCovers = new Map<HTMLElement, CoverHandle>();
+
+  function coverDeps(): ReadingCoverDeps {
+    return {
+      posterLoader,
+      openLibrary: deps.openLibrary,
+      imageCache: deps.imageCache,
+      fetchBytes: fetchCoverBytes,
+    };
+  }
+
+  /** The one place a cover is drawn, in either view. */
+  function paintCover(poster: HTMLElement, entry: ReadingEntry): void {
+    const handle = renderReadingCover(poster, entry, coverDeps());
+    if (!handle) return;
+    covers.add(handle);
+    cellCovers.set(poster, handle);
+  }
+
+  function bookCardContext(): BookCardCtx {
+    return {
+      settings,
+      statusColors: reading.reading.settings.statusColors,
+      showActions: true,
+      renderPoster: paintCover,
+      onOpen: (entry) => openDetail(entry),
+      onBump: (entry) => {
+        reading.update(kind, entry.id, bumpPatch(entry, 1), "reading-progress");
+        render();
+      },
+      onToggleFavorite: (entry) => {
+        reading.update(kind, entry.id, { favorite: !entry.favorite }, "reading-favorite");
+        render();
+      },
+      // Per entry, because the answer is: the linked book file, else the
+      // generated note, else nothing at all — and the menu never offers an
+      // action the data cannot support.
+      canOpenInVault: (entry) =>
+        (entry.filePath ?? "").trim() !== "" ||
+        ((entry.vaultPage ?? "").trim() !== "" && deps.onOpenNote !== undefined),
+      onOpenInVault: openInVault,
+    };
+  }
+
+  function openInVault(entry: ReadingEntry): void {
+    const filePath = (entry.filePath ?? "").trim();
+    if (filePath !== "") {
+      openBookFile(app, filePath, entry.filePage);
+      return;
+    }
+    deps.onOpenNote?.(entry, kind);
+  }
+
+  function renderGrid(): void {
+    const ctx = bookCardContext();
+    // The Library's own column width, off the same card-size setting: the two
+    // grids are the same grid or they are not the same app.
+    const minWidth = CARD_SIZE_PX[settings.cardSize + CARD_SIZE_OFFSET] ?? 160;
+    const handle = createVirtualGrid<ReadingEntry>(resultsHost, {
+      minCellWidth: minWidth,
+      gap: GRID_GAP,
+      // 2:3 cover, text overlaid on the scrim — the cell is the cover.
+      cellHeight: (width) => Math.round(width * 1.5),
+      onUnmount: (cell) => {
+        const poster = cell.querySelector<HTMLElement>(".wl-poster");
+        if (!poster) return;
+        posterLoader.unobserve(poster);
+        cellCovers.get(poster)?.release();
+        cellCovers.delete(poster);
+      },
+      renderCell: (entry, cell) => {
+        buildBookCard(cell, entry, ctx);
+      },
+    });
+    handle.setItems(rows);
+    grid = handle;
   }
 
   function renderCounter(total: number): void {
@@ -730,8 +949,27 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
     const table = wrap.createEl("table", { cls: "wl-table wl-reading-table" });
     const head = table.createEl("thead").createEl("tr");
 
-    const labels = ["", "Title", "Author", "Category", "Status", "Progress", "Rating", "In vault"];
-    for (const label of labels) head.createEl("th", { text: label });
+    // Built-ins sit after Author: they answer "what is this", the way the
+    // Library's Year sits with its Type and Status rather than off by the
+    // progress bar.
+    const builtIn = visibleBuiltInColumns(hiddenColumns());
+    const labels: { label: string; cls?: string }[] = [
+      { label: "" },
+      { label: "Title" },
+      { label: "Author", cls: "wl-reading-author-head" },
+      ...builtIn.map((column) => ({ label: column.name, cls: "wl-reading-builtin-head" })),
+      { label: "Category" },
+      { label: "Status" },
+      { label: "Progress" },
+      { label: "Rating" },
+      { label: "In vault" },
+    ];
+    // Every header that a narrow screen drops is CLASSED rather than counted:
+    // an `nth-child` rule is a rule that shears the table the first time a
+    // column is inserted before it, which is exactly what just happened.
+    for (const { label, cls } of labels) {
+      head.createEl("th", cls === undefined ? { text: label } : { cls, text: label });
+    }
     // Classed so the narrow-screen rule can hide the header and its cells
     // together — hiding one without the other shears the whole table.
     for (const column of columns()) {
@@ -753,69 +991,63 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
       row.setAttribute("role", "button");
       row.setAttribute("tabindex", "0");
 
-      // Cover — lazy, through the shared poster pipeline, so a shelf of 300
-      // books does not fetch 300 images on mount.
+      // Cover — through the one polite path, the same one the grid draws with,
+      // so a shelf of 300 books does not fetch 300 images on mount and none of
+      // them goes around the limiter.
       const coverCell = row.createEl("td", { cls: "wl-reading-cover-cell" });
-      const poster = coverCell.createDiv({ cls: "wl-poster wl-reading-thumb" });
-      poster.dataset.posterSeed = entry.title;
-      const cover = (entry.coverUrl ?? "").trim();
-      const isbn = coverIsbn(entry);
-      if ((cover === "" || cover === "none") && isbn === "") {
-        renderPosterPlaceholder(poster, entry.title);
-      } else if (cover === "" || cover === "none" || needsProxy(cover)) {
-        // Open Library covers go through the client: same User-Agent, same
-        // limiter as the API, because covers share its allowance and an
-        // unidentified caller gets a third of it (W8 review P1-5). The shared
-        // lazy loader cannot help here — it ends in an `<img src>`, which is
-        // Chromium's request rather than ours. When Open Library has no image
-        // for the book (niche titles routinely 404), the loader falls back to
-        // Google's keyless cover CDN by ISBN before settling for a placeholder.
-        const img = poster.createEl("img", { cls: "wl-poster-img" });
-        img.setAttribute("alt", "");
-        img.setAttribute("decoding", "async");
-        covers.add(
-          loadCover(img, cover === "none" ? "" : cover, {
-            client: deps.openLibrary,
-            fallbackIsbn: isbn,
-            fetchBytes: fetchCoverBytes,
-            cache: deps.imageCache,
-            cacheId: entry.id,
-            onMissing: () => {
-              img.remove();
-              renderPosterPlaceholder(poster, entry.title);
-            },
-          }),
-        );
-      } else {
-        // Directly assignable, so it goes through the shared lazy loader like a
-        // film poster does — off the local copy when there is one, and asking
-        // the cache to make one when there is not.
-        const localCover = localCoverUrl(deps.imageCache, entry.id, cover);
-        posterLoader.observe(poster, localCover === "" ? cover : localCover);
-        if (localCover === "") keepCover(deps.imageCache, entry.id, cover);
-      }
+      paintCover(coverCell.createDiv({ cls: "wl-poster wl-reading-thumb" }), entry);
 
       const titleCell = row.createEl("td", { cls: "wl-table-title" });
       titleCell.createSpan({ text: entry.title });
-      row.createEl("td", { text: entry.author || "—" });
+      row.createEl("td", { cls: "wl-reading-author-cell", text: entry.author || "—" });
+
+      // The facts the row already carries — today just the publication year,
+      // read off `releaseDate` rather than stored a second time. A row that
+      // cannot answer gets the same em dash Author and In-vault use, never a
+      // blank cell and never `NaN` from a half-written date.
+      for (const column of builtIn) {
+        const value = column.value(entry);
+        row.createEl("td", {
+          cls: "wl-reading-builtin-cell",
+          text: value === "" ? "—" : value,
+        });
+      }
 
       // Categories, as chips that filter — the same move the Library's genres
       // make, so "show me the rest of the hacking shelf" is one click.
+      //
+      // Capped at two, with the rest counted. The Library's table is one line
+      // per row, and a book filed under six categories was single-handedly
+      // three rows tall; the whole list is still one click away in the detail
+      // screen, and the cap is what lets this table share the Library's rhythm.
       const categoryCell = row.createEl("td", { cls: "wl-reading-category-cell" });
       const categories = (entry.categories ?? []).filter((name) => name.trim() !== "");
       if (categories.length === 0) {
         categoryCell.setText("—");
       } else {
         const chips = categoryCell.createDiv({ cls: "wl-reading-category-chips" });
-        for (const name of categories) {
+        for (const name of categories.slice(0, CATEGORY_CHIP_LIMIT)) {
+          // The SAME `.wl-pill` every type and status in the plugin wears —
+          // a light tint with coloured text — rather than the solid grey slab
+          // it used to paint for itself. `is-category` is the colour source (a
+          // category has none of its own), `wl-reading-category-chip` adds the
+          // only two things a pill is not: a button, and a click that filters.
           const chip = chips.createEl("button", {
-            cls: "wl-reading-category-chip",
-            text: name,
+            cls: "wl-pill is-category wl-reading-category-chip",
             attr: { type: "button", title: `Show everything in ${name}` },
           });
+          chip.createSpan({ cls: "wl-pill-text", text: name });
           chip.addEventListener("click", (event: MouseEvent) => {
             event.stopPropagation();
             setQuery(`category:"${name}"`);
+          });
+        }
+        const hidden = categories.length - CATEGORY_CHIP_LIMIT;
+        if (hidden > 0) {
+          chips.createSpan({
+            cls: "wl-reading-category-more",
+            text: `+${hidden}`,
+            attr: { title: categories.slice(CATEGORY_CHIP_LIMIT).join(", ") },
           });
         }
       }
@@ -828,27 +1060,33 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
         cls: "is-status",
       });
 
+      // Bar and number on ONE line, the way the Library's Progress column is
+      // one line. Stacked, they were the single biggest reason a reading row
+      // stood twice as tall as a library row right next to it.
       const progressCell = row.createEl("td", { cls: "wl-reading-progress-cell" });
-      const bar = progressCell.createDiv({ cls: "wl-reading-bar" });
+      const progressLine = progressCell.createDiv({ cls: "wl-reading-progress-line" });
+      const bar = progressLine.createDiv({ cls: "wl-reading-bar" });
       bar.createDiv({ cls: "wl-reading-bar-fill" }).style.width = `${readingProgress(entry)}%`;
-      progressCell.createDiv({
+      progressLine.createSpan({
         cls: "wl-reading-progress-text",
-        text: progressLabel(entry) || "—",
+        text: compactProgress(entry) || "—",
       });
       // A book whose total nobody knows — no linked file, no provider data —
       // gets a way to say so rather than a dash that means "ask again never".
-      if (progressLabel(entry) === "") renderSetTotal(progressCell, entry);
+      if (progressLabel(entry) === "") renderSetTotal(progressLine, entry);
 
-      const ratingCell = row.createEl("td");
+      const ratingCell = row.createEl("td", { cls: "wl-reading-rating-cell" });
       createStars(ratingCell, {
         value: entry.rating,
         tiers: settings.ratingSystem,
         allowHalf: settings.halfStarRatings,
         unratedPlaceholder: "—",
       });
-      // The public's number rides quietly under the user's own verdict.
+      // The public's number rides quietly beside the user's own verdict —
+      // beside, not under, for the same reason the bar and its number share a
+      // line: a second row here is a second row on every rated book.
       if ((entry.communityRating ?? 0) > 0) {
-        ratingCell.createDiv({
+        ratingCell.createSpan({
           cls: "wl-reading-community-cell",
           text: `★ ${formatCommunityRating(entry.communityRating ?? 0, entry.communityVotes ?? 0)}`,
         });
@@ -955,6 +1193,7 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
 
   buildSubTabs();
   syncSortButton();
+  syncViewToggle();
   render();
   // Reads files, so it never blocks the first paint.
   void fillTotalsFromFiles();
@@ -967,6 +1206,7 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
       buildSubTabs();
       presets.refresh();
       syncSortButton();
+      syncViewToggle();
       renderDrawer();
       render();
     },
@@ -975,10 +1215,13 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
       // already been torn down; reading a 30MB PDF outlives a tab switch.
       destroyed = true;
       persistViewState();
+      grid?.destroy();
+      grid = null;
       searchBox.destroy();
       presets.destroy();
       posterLoader.destroy();
       covers.releaseAll();
+      cellCovers.clear();
       el.remove();
     },
   };
