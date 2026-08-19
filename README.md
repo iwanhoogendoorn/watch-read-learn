@@ -91,6 +91,15 @@ manga and games in one library, wired into a home media stack.
 - **A cover of your own** — when neither catalogue has one, set a book's cover
   from a URL or a file on disk. A cover you chose is never overwritten by a
   refresh and never offered for deletion as an orphan.
+- **A study workspace inside every book** — chapters, each with a note and an
+  Excalidraw drawing, opened beside the book itself: three visible Read buttons
+  (notes, drawing, or both), Cmd-click for a separate OS window you can
+  Cmd-Tab to, and an "insert page" action that embeds the page the PDF viewer
+  is on — `![[book.pdf#page=41]]` — as a screenshot that never goes stale and
+  carries its own reference. The chapter index heals itself from disk, and
+  removing a chapter asks first, then moves the note, the drawing and its
+  exports to the trash together — or, unticked, forgets the chapter and keeps
+  every file.
 - **One command to finish old half-judgements** — titles the old sync bug left
   with stars but no review (or the reverse) can be completed in one confirmed
   step, using the same mapping the live binding uses. Titles with both halves

@@ -58,6 +58,7 @@ import {
 } from "./services/openlibrary";
 import { totalFromSeasons, withAddedSeason } from "./data/episodes";
 import { reconcileJudgements } from "./data/review";
+import { insertCurrentPageIntoActiveNote } from "./domains/reading/study";
 import { NoteWriter } from "./data/notes";
 import { WatchLogStore } from "./data/store";
 import { createGamesStore } from "./domains/games/store";
@@ -2249,6 +2250,24 @@ export default class WatchLogPlugin extends Plugin {
       id: "reconcile-judgements",
       name: "Complete half-entered ratings and reviews",
       callback: () => void this.reconcileJudgements(),
+    });
+
+    // The study workspace's keyboard half: embed the page the PDF viewer is on
+    // into the chapter note that is on screen. The button on the book screen
+    // does the same thing; this one exists so a reader with the note focused
+    // never has to leave it. Which chapter is decided by the active file's
+    // path, and a file that matches nothing is told so, never guessed at.
+    this.addCommand({
+      id: "study-insert-current-page",
+      name: "Insert the current book page into this chapter note",
+      callback: () => {
+        void insertCurrentPageIntoActiveNote(
+          this.app,
+          [...this.store.reading.books, ...this.store.reading.manga],
+          this.store.settings,
+          this.store.reading,
+        ).then((outcome) => new Notice(outcome.message));
+      },
     });
 
     // --- the two Wave-3 leaves ---------------------------------------------

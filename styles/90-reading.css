@@ -255,20 +255,39 @@
   white-space: nowrap;
 }
 
+/* Three 24px controls, no wider than they need to be. `1%` is the table idiom
+   for "shrink to fit" and `nowrap` is what stops the last column being the one
+   that decides to become two lines. */
 .wl-reading-action-cell {
-  width: 36px;
+  width: 1%;
+  white-space: nowrap;
   text-align: right;
 }
 
-/* The +1 button stays out of the way until the row is under the pointer —
+/* All the row's actions on one line, right-aligned against the table edge.
+   The tallest thing in a reading row is the 36px cover thumb and these are
+   24px, so adding to this row cannot add to the row's height — which is the
+   whole reason the study shortcuts live here rather than in a cell of their
+   own. */
+.wl-reading-rowactions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--wl-space-1);
+}
+
+/* The row's buttons stay out of the way until the row is under the pointer —
    a table of 300 books should read as a list, not as a wall of buttons. */
-.wl-reading-bump {
+.wl-reading-bump,
+.wl-reading-quick {
   opacity: 0;
   transition: opacity var(--wl-dur-fast, 0.12s) ease;
 }
 
 .wl-reading-row:hover .wl-reading-bump,
-.wl-reading-bump:focus-visible {
+.wl-reading-row:hover .wl-reading-quick,
+.wl-reading-bump:focus-visible,
+.wl-reading-quick:focus-visible {
   opacity: 1;
 }
 

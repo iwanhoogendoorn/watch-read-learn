@@ -228,6 +228,18 @@ export interface BookCardCtx {
   onOpenInVault?: (entry: ReadingEntry) => void;
   /** Whether *this* entry has anything to open. No target, no menu entry. */
   canOpenInVault?: (entry: ReadingEntry) => boolean;
+  /**
+   * The study shortcut — the book beside the current chapter's note. The card
+   * offers it in the ⋮ menu rather than as a fourth hover icon: a poster is
+   * mostly poster, and a row of four controls over it is a toolbar with a
+   * picture behind it.
+   */
+  onStudy?: (entry: ReadingEntry) => void;
+  /** Open what is already written for the current chapter. */
+  onOpenChapterNote?: (entry: ReadingEntry) => void;
+  /** The same note, in an OS window of its own — a menu is where a modifier
+   *  cannot be taught, so this one is spelled out. */
+  onPopOutChapter?: (entry: ReadingEntry) => void;
   onDelete?: (entry: ReadingEntry) => void;
 }
 
@@ -346,6 +358,33 @@ function openBookCardMenu(event: MouseEvent, entry: ReadingEntry, ctx: BookCardC
         .setTitle(hasFile ? "Open the book" : "Open the note")
         .setIcon(hasFile ? "book-open" : "file-text")
         .onClick(() => ctx.onOpenInVault?.(entry)),
+    );
+  }
+
+  if (ctx.onStudy) {
+    menu.addSeparator();
+    menu.addItem((item) =>
+      item
+        .setTitle("Read & take notes")
+        .setIcon("columns-2")
+        .onClick(() => ctx.onStudy?.(entry)),
+    );
+  }
+  if (ctx.onOpenChapterNote) {
+    menu.addItem((item) =>
+      item
+        .setTitle("Open the chapter note")
+        .setIcon("file-text")
+        .onClick(() => ctx.onOpenChapterNote?.(entry)),
+    );
+  }
+
+  if (ctx.onPopOutChapter) {
+    menu.addItem((item) =>
+      item
+        .setTitle("Chapter note in a separate window")
+        .setIcon("picture-in-picture-2")
+        .onClick(() => ctx.onPopOutChapter?.(entry)),
     );
   }
 

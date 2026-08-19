@@ -71,6 +71,65 @@ export class MarkdownRenderChild {
 export class SuggestModal {}
 
 /**
+ * Obsidian's context menu, recorded rather than shown.
+ *
+ * A menu is a real part of a control's contract — the reading card's ⋮ and the
+ * study section's Read button both put actions *only* there — so a test has to
+ * be able to say which items a menu offered and to fire one. `items` is the
+ * whole point; `showAtMouseEvent` is a no-op because there is nothing to show.
+ */
+export class MenuItem {
+  title = "";
+  icon = "";
+  warning = false;
+  click: () => void = () => undefined;
+
+  setTitle(title: string): this {
+    this.title = title;
+    return this;
+  }
+  setIcon(icon: string): this {
+    this.icon = icon;
+    return this;
+  }
+  setWarning(warning: boolean): this {
+    this.warning = warning;
+    return this;
+  }
+  onClick(fn: () => void): this {
+    this.click = fn;
+    return this;
+  }
+}
+
+export class Menu {
+  readonly items: MenuItem[] = [];
+  /** Every menu built since the last reset — how a test finds the one it fired. */
+  static opened: Menu[] = [];
+
+  addItem(build: (item: MenuItem) => unknown): this {
+    const item = new MenuItem();
+    build(item);
+    this.items.push(item);
+    return this;
+  }
+
+  addSeparator(): this {
+    return this;
+  }
+
+  showAtMouseEvent(_event: unknown): this {
+    Menu.opened.push(this);
+    return this;
+  }
+
+  showAtPosition(_position: unknown): this {
+    Menu.opened.push(this);
+    return this;
+  }
+}
+
+/**
  * Vault file/folder stand-ins. `data/notes.ts` uses `instanceof` on these, so a
  * test that hands the writer a plain object gets the same "not a file" branch
  * production takes for a missing path.
@@ -97,7 +156,11 @@ export class FuzzySuggestModal {
   }
 }
 
-export const Platform = { isMobile: false, isDesktop: true };
+/**
+ * `isMacOS` is mutable and defaults to false: the popout modifier is Cmd on a
+ * Mac and Ctrl elsewhere, and a test has to be able to stand in both places.
+ */
+export const Platform = { isMobile: false, isDesktop: true, isMacOS: false };
 
 export function setIcon(): void {
   /* no-op */

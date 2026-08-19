@@ -1,0 +1,132 @@
+/* ==========================================================================
+   98 — the study workspace
+
+   The chapter index on a book's screen: one row per chapter, a name on the
+   left and the five verbs on the right (note, diagram, read side by side,
+   embed the page you are on, rename, remove).
+
+   Every class here is `wl-study-*` so nothing collides with `90-reading.css`
+   (`.wl-reading-*`) or `96-bookdetail.css` (`.wl-bdv-*`). Shared controls —
+   `.wl-btn`, `.wl-icon-btn`, `.wl-input`, `.wl-field-label` — are adjusted
+   through *qualified* selectors only, never re-declared: one class, one
+   component.
+
+   No literal colours. Obsidian's theme variables and `--wl-*` only.
+   ========================================================================== */
+
+.wl-study {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-3);
+}
+
+.wl-study-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--wl-space-3);
+}
+
+.wl-study-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wl-space-2);
+}
+
+/* A chapter. The name takes the slack so the verbs stay in one column down the
+   list — a row of buttons that shifts left and right per chapter name is a row
+   nobody can build muscle memory for. */
+.wl-study-row {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-3);
+  padding: var(--wl-space-2) var(--wl-space-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--wl-radius-s);
+  background: var(--background-secondary);
+}
+
+.wl-study-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  /* One line: a chapter called something enormous must not double the row's
+     height and knock every other row out of alignment. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-ui-small);
+}
+
+.wl-study-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-1);
+  flex: 0 0 auto;
+}
+
+.wl-study-btn {
+  /* Icon buttons in a dense row; the shared `.wl-icon-btn` sizing stands, this
+     only stops them growing when the row has spare width. */
+  flex: 0 0 auto;
+}
+
+/* The three Read verbs read as a group. A qualified sibling selector rather
+   than a class the markup has to remember: the first Read button is by
+   definition the one after Diagram, and the hair of space in front of it is
+   what separates "open the file" from "open the book beside it". */
+.wl-study-diagram + .wl-study-read {
+  margin-left: var(--wl-space-2);
+}
+
+/* Chapter material that already exists reads as *open this*, not *make this* —
+   the single most useful thing the row can tell you before you click. */
+.wl-study-btn.is-present {
+  color: var(--text-accent);
+}
+
+/* An action the book is not ready for: still there, still says why in its
+   tooltip, visibly not the thing to click. Never `display: none` — a control
+   that vanishes teaches nobody what would bring it back. */
+.wl-study-btn.is-unavailable {
+  opacity: 0.45;
+}
+
+.wl-study-empty,
+.wl-study-hint {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.wl-study-add {
+  display: flex;
+  align-items: center;
+  gap: var(--wl-space-3);
+}
+
+.wl-study-newname {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wl-study-addbtn {
+  flex: 0 0 auto;
+}
+
+/* The inline rename replaces the label, so it inherits the label's slack. */
+.wl-study-rename {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Narrow leaves and the modal: the verbs wrap under the name rather than
+   squeezing it to nothing. */
+@media (max-width: 640px) {
+  .wl-study-row {
+    flex-wrap: wrap;
+  }
+
+  .wl-study-name {
+    flex-basis: 100%;
+  }
+}

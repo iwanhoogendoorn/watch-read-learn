@@ -60,6 +60,7 @@ import {
   renderSynopsisProse,
   type ReadingDetailContext,
 } from "../../domains/reading/detail/sections";
+import { renderStudySection } from "../../domains/reading/detail/study";
 import { renderPill, sanitizeColor } from "../components/pills";
 import { iconTextButton } from "../detail/fields";
 import { isEditable } from "../detail/surface";
@@ -262,6 +263,9 @@ class BookDetailPane implements BookDetailController, ReadingSurface {
     renderReadingStatTiles(host, entry);
     this.renderControls(host, entry, context);
     renderProgressSection(host, entry, this, "wl-bdv-progress");
+    // Between the counter and the fields, because that is where it sits in the
+    // reading itself: you know where you are, so now you take notes on it.
+    renderStudySection(host, entry, this, this.app);
     this.renderEditor(host, entry, context);
     renderCustomColumns(host, entry, this);
     renderMoreLikeThis(host, entry, context);

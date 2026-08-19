@@ -31,6 +31,7 @@ import {
   type OpenLibraryClient,
   type Preset,
   type ReadingKind,
+  type ReadingPatch,
   type Settings,
   type SortSpec,
   type TabController,
@@ -50,6 +51,19 @@ import {
 } from "./card";
 import { fetchCoverBytes } from "./coverfetch";
 import { openBookFile } from "./bookfile";
+import {
+  READ_HINT,
+  chapterLabel,
+  currentChapter,
+  openReadMenu,
+  openStudyShortcut,
+  popoutRequested,
+  readRequestFor,
+  POPOUT_HINT,
+  READ_BUTTONS,
+  type ReadRequest,
+  type StudyContext,
+} from "./study";
 import { formatCommunityRating } from "./community";
 import { createStars } from "../../ui/components/stars";
 import { renderEmptyState } from "../../ui/components/empty";
@@ -827,6 +841,17 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
         (entry.filePath ?? "").trim() !== "" ||
         ((entry.vaultPage ?? "").trim() !== "" && deps.onOpenNote !== undefined),
       onOpenInVault: openInVault,
+      // The same two verbs the table row carries, so a reader who works in the
+      // grid is not sent back to the table to take a note.
+      onStudy: (entry) => {
+        void openStudyShortcut(studyContext(entry), studyCommit(entry), "note");
+      },
+      onOpenChapterNote: (entry) => {
+        void openStudyShortcut(studyContext(entry), studyCommit(entry), "alone");
+      },
+      onPopOutChapter: (entry) => {
+        void openStudyShortcut(studyContext(entry), studyCommit(entry), "alone", true);
+      },
     };
   }
 
@@ -905,6 +930,95 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
     }
 
     cell.createSpan({ cls: "wl-reading-vault-empty", text: "—" });
+  }
+
+  // -------------------------------------------------------------------------
+  // Study, from the row
+  //
+  // "Can I also have shortcuts here for this?" — the study workspace was on the
+  // book's own screen, which meant opening a book before you could take a note
+  // about it. These are the two verbs worth having a row away: read it beside
+  // your notes, and open what you already wrote.
+  //
+  // Which chapter? `currentChapter` decides — the furthest one indexed, or
+  // chapter 1 for a book that has never been given one, created on first use.
+  // Reading is the moment notes start; nobody should have to go and configure a
+  // chapter list first.
+  // -------------------------------------------------------------------------
+
+  function studyContext(entry: ReadingEntry): StudyContext {
+    return { app, entry, settings, reading: reading.reading };
+  }
+
+  function studyCommit(entry: ReadingEntry): (patch: ReadingPatch) => void {
+    return (patch) => {
+      reading.update(kind, entry.id, patch, "study-chapter-added");
+    };
+  }
+
+  /**
+   * Two icon buttons in the row's own action column — never a second line and
+   * never a second cell. The table is one line per book by hard-won design
+   * (`styles/90-reading.css`), and 24px controls beside a 36px cover thumb
+   * cannot make it taller.
+   */
+  function renderStudyActions(host: HTMLElement, entry: ReadingEntry): void {
+    const chapter = currentChapter(entry);
+    const run = (request: ReadRequest): void => {
+      void openStudyShortcut(
+        studyContext(entry),
+        studyCommit(entry),
+        request.layout,
+        request.popout,
+      );
+    };
+
+    // The two side-by-side verbs as their own buttons, exactly as the chapter
+    // row carries them — the reader asked for a visible "Read & draw" and a
+    // modifier is not one. Both are 24px in a 36px-tall row, so the row's
+    // height is unchanged; "Read with both" stays in the right-click menu,
+    // which is where the one-line discipline puts the third.
+    for (const option of READ_BUTTONS.filter((o) => o.layout !== "both")) {
+      const button = host.createEl("button", {
+        cls: "wl-btn wl-icon-btn wl-reading-quick",
+        attr: {
+          type: "button",
+          "aria-label": option.title,
+          title: `${chapterLabel(chapter)} — ${option.hint}. ${READ_HINT}`,
+        },
+      });
+      setIcon(button, option.icon);
+      button.addEventListener("click", (event: MouseEvent) => {
+        event.stopPropagation();
+        const request = readRequestFor(event);
+        const layout =
+          event.altKey === true || event.shiftKey === true ? request.layout : option.layout;
+        run({ layout, popout: request.popout });
+      });
+      button.addEventListener("contextmenu", (event: MouseEvent) => {
+        event.stopPropagation();
+        openReadMenu(event, run);
+      });
+    }
+
+    const note = host.createEl("button", {
+      cls: "wl-btn wl-icon-btn wl-reading-quick",
+      attr: {
+        type: "button",
+        "aria-label": "Open the chapter note",
+        title: `Open the note for ${chapterLabel(chapter)} — ${POPOUT_HINT}`,
+      },
+    });
+    setIcon(note, "file-text");
+    note.addEventListener("click", (event: MouseEvent) => {
+      event.stopPropagation();
+      void openStudyShortcut(
+        studyContext(entry),
+        studyCommit(entry),
+        "alone",
+        popoutRequested(event),
+      );
+    });
   }
 
   /**
@@ -1115,9 +1229,13 @@ export function mountReadingTab(container: HTMLElement, deps: ReadingDeps): Read
         }
       }
 
-      // The one-click action a reading list is actually used for.
+      // The one-click actions a reading list is actually used for. All of them
+      // share the row's last cell — a second `<td>` would be a second column in
+      // a table whose header this loop does not write.
       const actionCell = row.createEl("td", { cls: "wl-reading-action-cell" });
-      const bump = actionCell.createEl("button", {
+      const actions = actionCell.createDiv({ cls: "wl-reading-rowactions" });
+      renderStudyActions(actions, entry);
+      const bump = actions.createEl("button", {
         cls: "wl-btn wl-icon-btn wl-reading-bump",
         attr: {
           type: "button",
