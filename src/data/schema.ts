@@ -40,7 +40,7 @@ export const DEFAULT_TYPES: NamedColor[] = [
 export const DEFAULT_STATUSES: NamedColor[] = [
   { name: "Watching", color: "#1D9E75" },
   { name: "Plan to watch", color: "#00A9A5" },
-  { name: "Completed", color: "#378ADD" },
+  { name: "Watched", color: "#378ADD" },
   { name: "To be released", color: "#E8873A" },
   { name: "Dropped", color: "#E24B4A" },
 ];
@@ -63,6 +63,30 @@ export const DEFAULT_REVIEWS: NamedColor[] = [
   { name: "Good", color: "#378ADD" },
   { name: "Awesome", color: "#1D9E75" },
   { name: "Marvelous", color: "#7F77DD" },
+];
+
+/**
+ * Where a title was watched.
+ *
+ * Ordered the way the question is actually answered: the two places that are
+ * not a subscription first (your own server, and going out), then the services,
+ * then the catch-all. Colours come from the same palette the other lists use —
+ * they are data, injected as `--wl-pill`, never CSS.
+ *
+ * The list is the user's from the moment they open settings: rename Plex,
+ * delete Disney+, add a friend's sofa. A title keeps whatever it stored even
+ * after its venue is deleted here (the Dashboard still counts it), because a
+ * fact about a night in is not invalidated by editing a dropdown.
+ */
+export const DEFAULT_WATCHED_VIA: NamedColor[] = [
+  { name: "Plex", color: "#E8873A" },
+  { name: "Cinema", color: "#BA7517" },
+  { name: "Netflix", color: "#E24B4A" },
+  { name: "HBO Max", color: "#7F77DD" },
+  { name: "Disney+", color: "#378ADD" },
+  { name: "Prime Video", color: "#00A9A5" },
+  { name: "Apple TV+", color: "#D85A30" },
+  { name: "Somewhere else", color: "#888780" },
 ];
 
 /** Must be exactly five entries; anything else is reset wholesale on load. */
@@ -104,12 +128,26 @@ export function createFilterState(): FilterState {
  */
 export const FULL_VIEW_DEFAULT_MARKER = "fullViewDefaultApplied";
 
+/**
+ * Marker for the one-shot `Completed` → `Watched` status rename
+ * (`data/migrate.ts`).
+ *
+ * Same escape hatch and the same reasoning as the marker above: the rename
+ * changed a name that is sitting in the user's own `settings.statuses`, and a
+ * check against the *current* defaults could never tell "not renamed yet" from
+ * "renamed, then deliberately named Completed again". `true` means this install
+ * has already been offered the new spelling, once, and the status list is the
+ * user's from then on.
+ */
+export const WATCHED_STATUS_RENAME_MARKER = "watchedStatusRenameApplied";
+
 export function createDefaultSettings(): Settings {
   const settings: Settings = {
     types: DEFAULT_TYPES.map((t) => ({ ...t })),
     statuses: DEFAULT_STATUSES.map((t) => ({ ...t })),
     priorities: DEFAULT_PRIORITIES.map((t) => ({ ...t })),
     reviews: DEFAULT_REVIEWS.map((t) => ({ ...t })),
+    watchedViaOptions: DEFAULT_WATCHED_VIA.map((t) => ({ ...t })),
     ratingSystem: DEFAULT_RATING_SYSTEM.map((t) => ({ ...t })),
     rootFolder: "Watch Read Learn",
     autoCreateFolders: true,
@@ -191,6 +229,10 @@ export function createDefaultSettings(): Settings {
   // the full view *off* on their first day would be overruled by the flip on
   // the next load, which is the one thing the marker exists to prevent.
   writeExtra(settings, FULL_VIEW_DEFAULT_MARKER, true);
+  // Likewise: this list already says "Watched", so there is nothing to rename —
+  // but an install that never stamps the marker would have a status the user
+  // later names "Completed" renamed out from under them on the next load.
+  writeExtra(settings, WATCHED_STATUS_RENAME_MARKER, true);
   return settings;
 }
 
@@ -394,6 +436,7 @@ export function createTitle(seed: Partial<TitleV4> & Pick<TitleV4, "id" | "title
     status: "Plan to watch",
     priority: "",
     review: "",
+    watchedVia: "",
     rating: 0,
     notes: "",
     favorite: false,

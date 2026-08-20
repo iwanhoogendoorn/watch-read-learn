@@ -94,6 +94,7 @@ const FIELDS = [
   "director",
   "studio",
   "note",
+  "via",
   "rating",
   "year",
   "eps-left",

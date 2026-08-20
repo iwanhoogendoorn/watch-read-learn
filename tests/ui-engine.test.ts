@@ -65,9 +65,9 @@ describe("sortValue", () => {
   });
 
   it("orders status by the user's configured list, not the alphabet", () => {
-    // Configured order is Watching, Plan to watch, Completed, To be released, Dropped.
+    // Configured order is Watching, Plan to watch, Watched, To be released, Dropped.
     expect(sortValue(title({ status: "Watching" }), "status", settings)).toBe(0);
-    expect(sortValue(title({ status: "Completed" }), "status", settings)).toBe(2);
+    expect(sortValue(title({ status: "Watched" }), "status", settings)).toBe(2);
     expect(sortValue(title({ status: "Nonsense" }), "status", settings)).toBeNull();
   });
 
@@ -104,7 +104,7 @@ describe("sortTitles", () => {
     const titles = [
       title({ id: "a", title: "Alpha", status: "Watching", rating: 2 }),
       title({ id: "b", title: "Beta", status: "Watching", rating: 5 }),
-      title({ id: "c", title: "Gamma", status: "Completed", rating: 4 }),
+      title({ id: "c", title: "Gamma", status: "Watched", rating: 4 }),
     ];
     const out = sortTitles(
       titles,

@@ -104,6 +104,16 @@ manga and games in one library, wired into a home media stack.
   removing a chapter asks first, then moves the note, the drawing and its
   exports to the trash together — or, unticked, forgets the chapter and keeps
   every file.
+- **Where you watched it** — every film and show can carry its venue: Plex, the
+  cinema, Netflix, HBO Max, or a list you edit yourself. The watched wizard asks
+  at the right moment (preselecting Plex when the title is on your server), the
+  Dashboard counts titles and watched time per venue — with an honest
+  "Unrecorded" row rather than a panel that silently ignores your history — and
+  `via:"Netflix"` works as a search. Nothing is ever filled in behind your back.
+- **A film is watched, not completed** — the stock status is called Watched now.
+  Existing libraries are renamed once, settings and titles together; a status
+  you renamed yourself is left alone, old CSV exports still import, and books
+  and games keep "Completed", because those really are completed.
 - **One command to finish old half-judgements** — titles the old sync bug left
   with stars but no review (or the reverse) can be completed in one confirmed
   step, using the same mapping the live binding uses. Titles with both halves

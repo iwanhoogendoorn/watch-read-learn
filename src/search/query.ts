@@ -8,6 +8,7 @@
  *   "den haag"              quoted → exact, accent-insensitive substring
  *   -sushi                  negation; negation always forces *exact* matching
  *   cast:cranston           field-scoped substring
+ *   via:"Netflix"           where you watched it (`venue:` also accepted)
  *   rating:>=4 year:>2020   numeric comparison, `>` `>=` `<` `<=` `=`
  *   eps-left:<5 runtime:<45 …and the derived numeric fields
  *   plex:yes requested:no   enumerated predicates
@@ -99,6 +100,7 @@ export const TEXT_FIELDS: readonly QueryTextField[] = [
   "director",
   "studio",
   "note",
+  "via",
 ];
 
 export const NUMERIC_FIELDS: readonly QueryNumericField[] = [
@@ -171,6 +173,9 @@ const TEXT_ALIASES: Record<string, QueryTextField> = {
   network: "studio",
   note: "note",
   notes: "note",
+  via: "via",
+  venue: "via",
+  watchedvia: "via",
 };
 
 const NUMERIC_ALIASES: Record<string, QueryNumericField> = {
@@ -415,6 +420,7 @@ function buildDoc(title: TitleV4, index: number): SearchDoc {
     director: norm(joinValues(director)),
     studio: norm(joinValues(studio)),
     note: norm(title.notes ?? ""),
+    via: norm(title.watchedVia ?? ""),
   };
 
   const year = titleYear(title);
@@ -425,6 +431,7 @@ function buildDoc(title: TitleV4, index: number): SearchDoc {
       title.status,
       title.priority,
       title.review,
+      title.watchedVia,
       title.genres,
       title.tags,
       cast,

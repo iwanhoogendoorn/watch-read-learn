@@ -45,9 +45,9 @@ describe("mostCommon", () => {
 
 describe("pinCandidate", () => {
   it("prefers an explicit pin, then something in progress, then anything", () => {
-    const pinned = title({ id: "pinned", pinned: true, status: "Completed" });
+    const pinned = title({ id: "pinned", pinned: true, status: "Watched" });
     const watching = title({ id: "watching", status: "Watching" });
-    const other = title({ id: "other", status: "Completed" });
+    const other = title({ id: "other", status: "Watched" });
     expect(pinCandidate([other, watching, pinned], "Watching")?.id).toBe("pinned");
     expect(pinCandidate([other, watching], "Watching")?.id).toBe("watching");
     expect(pinCandidate([other], "Watching")?.id).toBe("other");

@@ -1109,7 +1109,7 @@ export class Integrations {
     }
     recomputeOffsets(seasons);
 
-    // `autoStatus: false`: appending a season to a Completed show must not flip
+    // `autoStatus: false`: appending a season to a Watched show must not flip
     // it to Watching and wipe its finish date. The user decides that; the card
     // just grows a "New season" chip (QA3).
     this.store.updateTitle(

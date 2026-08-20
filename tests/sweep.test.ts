@@ -171,7 +171,7 @@ describe("isSweepEligible", () => {
   });
 
   it("skips a completed film — a finished film's metadata is settled", () => {
-    expect(isSweepEligible(film({ status: "Completed" }))).toBe(false);
+    expect(isSweepEligible(film({ status: "Watched" }))).toBe(false);
   });
 
   it("skips a fully-watched film even when its status says otherwise", () => {
@@ -179,12 +179,12 @@ describe("isSweepEligible", () => {
   });
 
   it("KEEPS refreshing a completed show — that is how a new season is noticed", () => {
-    expect(isSweepEligible(show({ status: "Completed" }))).toBe(true);
+    expect(isSweepEligible(show({ status: "Watched" }))).toBe(true);
   });
 
   it("keeps refreshing a show whose every episode is ticked", () => {
     const watched = Array.from({ length: 19 }, (_, i) => i + 1);
-    expect(isSweepEligible(show({ status: "Completed", watchedEpisodes: watched }))).toBe(true);
+    expect(isSweepEligible(show({ status: "Watched", watchedEpisodes: watched }))).toBe(true);
   });
 
   it("skips a title with no TMDB id — there is nothing to look up", () => {
@@ -202,7 +202,7 @@ describe("isSweepEligible", () => {
   });
 
   it("treats a show with no explicit media type as a show", () => {
-    const chimera = show({ tmdbMediaType: undefined, status: "Completed" });
+    const chimera = show({ tmdbMediaType: undefined, status: "Watched" });
     expect(isSweepEligible(chimera)).toBe(true);
   });
 });
@@ -242,7 +242,7 @@ describe("selectSweepTitles", () => {
     const titles = [
       show({ id: "due-show" }),
       show({ id: "fresh-show", communityRatingLastFetched: FRESH }),
-      film({ id: "done-film", status: "Completed" }),
+      film({ id: "done-film", status: "Watched" }),
       show({ id: "dropped-show", status: "Dropped" }),
       film({ id: "due-film" }),
     ];
@@ -255,7 +255,7 @@ describe("selectSweepTitles", () => {
   it("ignores the TTL under force, but never the skip rules", () => {
     const titles = [
       show({ id: "fresh-show", communityRatingLastFetched: FRESH }),
-      film({ id: "done-film", status: "Completed" }),
+      film({ id: "done-film", status: "Watched" }),
     ];
     expect(
       selectSweepTitles(titles, { ttlHours: 168, now: NOW, force: true }).map((t) => t.id),
@@ -312,7 +312,7 @@ describe("providerOnlyPatch", () => {
       review: "Loved it",
       notes: "watched with Sam",
       favorite: true,
-      status: "Completed",
+      status: "Watched",
       priority: "High",
       tags: ["rewatch"],
       watchedEpisodes: [1, 2, 3],
@@ -362,7 +362,7 @@ describe("createMetadataSweep", () => {
       review: "Masterpiece",
       notes: "Ep 7 is the one",
       favorite: true,
-      status: "Completed",
+      status: "Watched",
       priority: "High",
       tags: ["rewatch", "sci-fi"],
       watchedEpisodes: watched,
@@ -405,7 +405,7 @@ describe("createMetadataSweep", () => {
     expect(title.review).toBe("Masterpiece");
     expect(title.notes).toBe("Ep 7 is the one");
     expect(title.favorite).toBe(true);
-    expect(title.status).toBe("Completed");
+    expect(title.status).toBe("Watched");
     expect(title.priority).toBe("High");
     expect(title.tags).toEqual(["rewatch", "sci-fi"]);
     expect(title.watchedEpisodes).toEqual(watched);
@@ -610,7 +610,7 @@ describe("createMetadataSweep", () => {
     const deps = sweepDeps([
       show({ id: "due" }),
       show({ id: "fresh", communityRatingLastFetched: FRESH }),
-      film({ id: "done", status: "Completed" }),
+      film({ id: "done", status: "Watched" }),
     ]);
     expect(createMetadataSweep(deps).dueCount()).toBe(1);
     expect(deps.details).not.toHaveBeenCalled();

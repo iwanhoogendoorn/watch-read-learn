@@ -79,7 +79,7 @@ function lovedShow(): TitleV4 {
 
 describe("resolving names against the user's settings", () => {
   it("uses the configured status names, not hardcoded ones", () => {
-    expect(resolveStatusName("completed", SETTINGS.statuses)).toBe("Completed");
+    expect(resolveStatusName("completed", SETTINGS.statuses)).toBe("Watched");
     expect(resolveStatusName("planned", SETTINGS.statuses)).toBe("Plan to watch");
     expect(resolveStatusName("dropped", SETTINGS.statuses)).toBe("Dropped");
   });
@@ -332,7 +332,7 @@ describe("mergePatch never clobbers the user's own data", () => {
       status: "Plan to watch",
     });
     const { patch } = mergePatch(untouched, incoming, SETTINGS);
-    expect(patch.status).toBe("Completed");
+    expect(patch.status).toBe("Watched");
   });
 
   it("does not overwrite a real season list with one derived from watch history", () => {
@@ -474,7 +474,7 @@ describe("buildTitle", () => {
       "fixture-rain",
     );
     expect(title.type).toBe("Movie");
-    expect(title.status).toBe("Completed");
+    expect(title.status).toBe("Watched");
     expect(title.totalEpisodes).toBe(1);
     expect(title.watchedEpisodes).toEqual([1]);
   });

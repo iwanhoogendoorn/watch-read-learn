@@ -48,7 +48,7 @@ const ROWS = [".wl-card-title", ".wl-card-pills", ".wl-card-meta"];
 
 describe("every card has the same caption rows", () => {
   const cases: Array<[string, Partial<TitleV4>]> = [
-    ["a rated, finished show", { type: "TV Show", rating: 5, totalEpisodes: 10, status: "Completed" }],
+    ["a rated, finished show", { type: "TV Show", rating: 5, totalEpisodes: 10, status: "Watched" }],
     ["an unrated film with nothing but a year", { type: "Movie", rating: 0, year: 2002 }],
     ["a show part-way through", { type: "TV Show", rating: 0, totalEpisodes: 32, watchedEpisodes: [1, 2] }],
     ["a title with no status at all", { status: "" }],

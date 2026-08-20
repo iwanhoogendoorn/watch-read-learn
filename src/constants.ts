@@ -66,10 +66,18 @@ export const YOUTUBE_WATCH_BASE = "https://www.youtube.com/watch?v=";
 // These five ship as defaults and v3 force-inserted "To be released", so the
 // names are safe to key behaviour off. Everything user-facing still reads the
 // configured list; only these semantic checks use the literals.
+//
+// `STATUS_COMPLETED` is spelled **Watched**. A film is watched, not completed —
+// "Completed" was the one name in this list that described a task rather than
+// the thing the plugin is about, and it sat beside Watching and Plan to watch
+// saying a different kind of word. The constant keeps its `COMPLETED` name
+// because it is the *semantic slot* ("the finished one") that the whole codebase
+// keys off; only the string a user reads changed. Existing vaults are moved
+// across once by `WATCHED_STATUS_RENAME_MARKER` in `data/migrate.ts`.
 
 export const STATUS_WATCHING = "Watching";
 export const STATUS_PLAN_TO_WATCH = "Plan to watch";
-export const STATUS_COMPLETED = "Completed";
+export const STATUS_COMPLETED = "Watched";
 export const STATUS_TO_BE_RELEASED = "To be released";
 export const STATUS_DROPPED = "Dropped";
 

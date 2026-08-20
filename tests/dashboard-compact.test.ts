@@ -100,7 +100,7 @@ function library(): TitleV4[] {
     title({
       id: "spider",
       title: "Spider-Man",
-      status: "Completed",
+      status: "Watched",
       releaseDate: "2002-05-01",
       year: 2002,
       watchedEpisodes: [1],
@@ -321,7 +321,7 @@ describe("the compact layout", () => {
     // By-type tiles below it.
     for (const type of model.byType) expect(total).toContain(`${type.total} ${type.type}`);
 
-    expect(texts.some((t) => t.startsWith("Completed") && t.includes(String(model.completed)))).toBe(
+    expect(texts.some((t) => t.startsWith("Watched") && t.includes(String(model.completed)))).toBe(
       true,
     );
     // Durations go through the one formatter, day-scale included.
@@ -333,7 +333,7 @@ describe("the compact layout", () => {
     // 144d 23h is the shape the reference shows; ours comes out of the same
     // `formatMinutes` every other surface uses.
     const titles = [
-      title({ id: "long", status: "Completed", totalEpisodes: 1, episodeDuration: 208_740 }),
+      title({ id: "long", status: "Watched", totalEpisodes: 1, episodeDuration: 208_740 }),
     ];
     const { root } = compact(titles);
     expect(tileTexts(root).some((t) => t.includes("144d 23h"))).toBe(true);
@@ -377,10 +377,14 @@ describe("the compact layout", () => {
     }
   });
 
-  it("closes with one panel of four ranked lists", () => {
+  it("closes with one panel of five ranked lists — venues included", () => {
+    // Four at first, on the argument that compact means four and the rich
+    // layout is a click away. The person whose dashboard this is runs the
+    // compact layout and asked for the venue numbers: a statistic that lives
+    // only in the layout you are not looking at is not a statistic.
     const { root } = compact();
     const headings = root.querySelectorAll(".wl-credit-heading").map((el) => el.textContent);
-    expect(headings).toEqual(["By year", "Top cast", "Top directors", "Top studios"]);
+    expect(headings).toEqual(["By year", "Top cast", "Top directors", "Top studios", "Where you watch"]);
     // Newest year first — the rich layout charts them ascending, a ranked list
     // reads the other way.
     const years = root
@@ -407,7 +411,7 @@ describe("the compact layout", () => {
     // Every ranked list either has rows or says why it has none. A bare empty
     // box under a heading is the shape "the dashboard looks broken" took.
     const cards = root.querySelectorAll(".wl-credit-card");
-    expect(cards).toHaveLength(4);
+    expect(cards).toHaveLength(5);
     for (const card of cards) {
       const hasRows = card.querySelectorAll(".wl-credit-row").length > 0;
       const saysWhy = card.querySelectorAll(".wl-chart-empty").length > 0;
@@ -711,7 +715,7 @@ describe("hiding a shelf", () => {
     settings.statuses = [
       { name: "Plan to watch", color: "" },
       { name: "Watching", color: "" },
-      { name: "Completed", color: "" },
+      { name: "Watched", color: "" },
     ];
     for (const status of settings.statuses) {
       setShelfVisible(settings, statusShelfId(status.name), true);
@@ -720,7 +724,7 @@ describe("hiding a shelf", () => {
     const rails = railTitles(root);
     expect(rails.indexOf("Plan to watch")).toBeGreaterThan(-1);
     expect(rails.indexOf("Watching")).toBeGreaterThan(rails.indexOf("Plan to watch"));
-    expect(rails.indexOf("Completed")).toBeGreaterThan(rails.indexOf("Watching"));
+    expect(rails.indexOf("Watched")).toBeGreaterThan(rails.indexOf("Watching"));
     // And every status rail sits after every curated one.
     expect(rails.indexOf("Plan to watch")).toBeGreaterThan(rails.indexOf("Recently released"));
   });
@@ -754,7 +758,7 @@ describe("hiding a shelf", () => {
     const { root } = mount(library(), settings);
     const rails = railTitles(root);
     expect(rails).toContain("Plan to watch");
-    expect(rails).toContain("Completed");
+    expect(rails).toContain("Watched");
     expect(rails).not.toContain("To be released");
     expect(rails).not.toContain("Dropped");
   });

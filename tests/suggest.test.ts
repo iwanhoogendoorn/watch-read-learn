@@ -52,7 +52,7 @@ describe("how much a seed's opinion is worth", () => {
   });
 
   it("treats finishing something as a quieter yes", () => {
-    expect(seedWeightFor(title({ rating: 0, status: "Completed" }))).toBe(0.7);
+    expect(seedWeightFor(title({ rating: 0, status: "Watched" }))).toBe(0.7);
   });
 
   it("gives a dropped show no vote at all", () => {
@@ -68,7 +68,7 @@ describe("choosing what to ask about", () => {
     const seeds = pickSeeds([
       title({ id: "a", title: "Loved", tmdbId: 1, rating: 5 }),
       title({ id: "b", title: "Fine", tmdbId: 2, rating: 3 }),
-      title({ id: "c", title: "Finished", tmdbId: 3, status: "Completed" }),
+      title({ id: "c", title: "Finished", tmdbId: 3, status: "Watched" }),
     ]);
     expect(seeds[0]?.title).toBe("Loved");
   });

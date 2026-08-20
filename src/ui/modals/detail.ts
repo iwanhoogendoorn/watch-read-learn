@@ -63,6 +63,7 @@ import {
   renderSelectField,
   renderStatusField,
   renderTextField,
+  renderWatchedViaField,
 } from "../detail/fields";
 import {
   renderCommunityRating,
@@ -826,6 +827,7 @@ export class DetailModal extends Modal implements DetailSurface {
       onChange: (value) => this.patch({ priority: value }, "detail-priority"),
     });
     renderReviewField(grid, title, this);
+    renderWatchedViaField(grid, title, this);
     renderSelectField(grid, {
       label: "Type",
       values: this.store.settings.types.map((t) => t.name),

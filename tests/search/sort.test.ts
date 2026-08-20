@@ -65,7 +65,7 @@ describe("empty-last", () => {
 
   it("treats rating 0 and zero time-left as empty, but 0 % progress as real", () => {
     expect(sortValue(title("x", { rating: 0 }), "rating")).toBeNull();
-    expect(sortValue(title("x", { status: "Completed", episodeDuration: 45 }), "timeLeft")).toBeNull();
+    expect(sortValue(title("x", { status: "Watched", episodeDuration: 45 }), "timeLeft")).toBeNull();
 
     const started = title("x", {
       status: "Watching",
@@ -81,11 +81,11 @@ describe("empty-last", () => {
 describe("user-configured order", () => {
   it("sorts status by the settings list, not alphabetically", () => {
     const library = [
-      title("completed", { status: "Completed" }),
+      title("completed", { status: "Watched" }),
       title("watching", { status: "Watching" }),
       title("dropped", { status: "Dropped" }),
     ];
-    // Settings order is Watching, Plan to watch, Completed, To be released, Dropped.
+    // Settings order is Watching, Plan to watch, Watched, To be released, Dropped.
     expect(ids(sortTitles(library, { key: "status", direction: "asc" }, null, CTX))).toEqual([
       "watching",
       "completed",
@@ -95,7 +95,7 @@ describe("user-configured order", () => {
 
   it("follows a reordered list without any code change", () => {
     const reversed: SortContext = { statusOrder: [...(CTX.statusOrder ?? [])].reverse() };
-    const library = [title("completed", { status: "Completed" }), title("watching", { status: "Watching" })];
+    const library = [title("completed", { status: "Watched" }), title("watching", { status: "Watching" })];
     expect(ids(sortTitles(library, { key: "status", direction: "asc" }, null, reversed))).toEqual([
       "completed",
       "watching",
@@ -177,7 +177,7 @@ describe("two levels and stability", () => {
     const library = [
       title("b", { status: "Watching", rating: 3 }),
       title("a", { status: "Watching", rating: 5 }),
-      title("c", { status: "Completed", rating: 4 }),
+      title("c", { status: "Watched", rating: 4 }),
     ];
     const sorted = sortTitles(
       library,

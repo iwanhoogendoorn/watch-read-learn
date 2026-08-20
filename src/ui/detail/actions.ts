@@ -15,10 +15,10 @@ import { openWatchedWizard } from "../modals/watched";
 import type { DetailSurface } from "./surface";
 
 /**
- * Ask the three things finishing something tells you, then write them.
+ * Ask what finishing something tells you, then write it.
  *
  * Only the fields the wizard actually returns are written: leaving the rating
- * alone in there must leave the rating alone here.
+ * — or the venue — alone in there must leave it alone here.
  */
 export function askWatched(app: App, title: TitleV4, surface: DetailSurface): void {
   openWatchedWizard(app, {
@@ -27,6 +27,7 @@ export function askWatched(app: App, title: TitleV4, surface: DetailSurface): vo
     ratingTiers: surface.store.settings.ratingSystem,
     halfStars: surface.store.settings.halfStarRatings,
     reviews: surface.store.settings.reviews,
+    watchedViaOptions: surface.store.settings.watchedViaOptions,
     onConfirm: (result) => {
       const patch: TitlePatch = { status: STATUS_COMPLETED };
       if (result.date) {
@@ -37,6 +38,9 @@ export function askWatched(app: App, title: TitleV4, surface: DetailSurface): vo
       }
       if (result.rating > 0) patch.rating = result.rating;
       if (result.review !== "") patch.review = result.review;
+      // A venue nobody picked is not a venue. The Plex pre-selection only
+      // becomes a write because the user pressed Mark watched with it showing.
+      if (result.watchedVia !== "") patch.watchedVia = result.watchedVia;
       surface.patch(patch, "detail-watched");
     },
   });

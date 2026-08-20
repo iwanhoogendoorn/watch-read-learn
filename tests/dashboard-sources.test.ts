@@ -39,7 +39,7 @@ function storeOf(titles: TitleV4[], books: Book[]): WatchLogStoreApi {
 
 function mount(): StubEl {
   const film = createTitle({ id: "f", title: FILM, type: "Movie" });
-  film.status = "Completed";
+  film.status = "Watched";
   film.rating = 5;
   const book = createBook({ id: "b", title: BOOK });
   book.author = "An Author";

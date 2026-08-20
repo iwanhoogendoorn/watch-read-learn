@@ -187,7 +187,7 @@ describe("state helpers", () => {
 describe("buildFacetSections", () => {
   const settings = createDefaultSettings();
   const titles: TitleV4[] = [
-    title({ id: "a", type: "Movie", status: "Completed", genres: ["Drama"], year: 1994 }),
+    title({ id: "a", type: "Movie", status: "Watched", genres: ["Drama"], year: 1994 }),
     title({ id: "b", type: "TV Show", status: "Watching", genres: ["Drama", "Sci-Fi"], year: 2021 }),
     title({ id: "c", type: "Movie", status: "Watching", genres: [], tags: ["cosy"] }),
   ];

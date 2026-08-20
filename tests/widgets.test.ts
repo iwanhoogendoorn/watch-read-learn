@@ -228,12 +228,12 @@ describe("sortForWidget", () => {
     const custom = settings();
     custom.statuses = [
       { name: "Watching", color: "#000000" },
-      { name: "Completed", color: "#000000" },
+      { name: "Watched", color: "#000000" },
       { name: "Plan to watch", color: "#000000" },
     ];
     const titles = [
       title({ id: "plan", status: "Plan to watch" }),
-      title({ id: "done", status: "Completed" }),
+      title({ id: "done", status: "Watched" }),
       title({ id: "now", status: "Watching" }),
     ];
     expect(sortForWidget(titles, "status", "asc", custom).map((t) => t.id)).toEqual([
@@ -260,7 +260,7 @@ describe("sortForWidget", () => {
 describe("selectTitles", () => {
   const titles = [
     title({ id: "a", status: "Watching", rating: 5 }),
-    title({ id: "b", status: "Completed", rating: 4 }),
+    title({ id: "b", status: "Watched", rating: 4 }),
     title({ id: "c", status: "Watching", rating: 3 }),
   ];
 

@@ -23,9 +23,11 @@
  * The whole module is pure. Modals, files and progress bars live in
  * `domains/csv/`.
  */
+import { STATUS_COMPLETED } from "../constants";
 import {
   CSV_WATCHLIST_COLUMNS,
   type Book,
+  type NamedColor,
   type CsvImportPlan,
   type CsvImportRow,
   type Game,
@@ -194,6 +196,15 @@ export const WATCHLIST_FIELDS: CsvField[] = [
   { key: "type", label: "Type", synonyms: ["type"], kind: "text" },
   { key: "status", label: "Status", synonyms: ["status"], kind: "text" },
   { key: "priority", label: "Priority", synonyms: ["priority"], kind: "text" },
+  // Where it was watched. Import-only, like `review`: the export's fourteen
+  // columns are v3's and frozen (see the header of this file), so a venue
+  // travels *in* through a spreadsheet and *out* through the JSON backup.
+  {
+    key: "watchedVia",
+    label: "Watched via",
+    synonyms: ["watchedvia", "watched via", "watched_via", "venue", "service"],
+    kind: "text",
+  },
   { key: "rating", label: "Rating", synonyms: ["rating", "score"], kind: "number" },
   {
     key: "totalEpisodes",
@@ -617,6 +628,56 @@ export function coerceRow(domain: WidgetDomain, values: Record<string, string>):
     out[field.key] = raw;
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Import: status values
+// ---------------------------------------------------------------------------
+
+/**
+ * Status *values* an old export carries that the current list no longer spells
+ * that way. Keyed by the folded cell, so the table stays one entry per rename.
+ *
+ * The watched status shipped as `Completed` up to 1.21. Every export written
+ * before that says so, and those files are not going to be re-exported — a CSV
+ * in someone's downloads folder from two years ago is exactly the thing the
+ * importer exists for. Compare `STATUS_COMPLETED` in `constants.ts`.
+ */
+const LEGACY_STATUS_VALUES: Record<string, string> = {
+  completed: STATUS_COMPLETED,
+};
+
+/**
+ * Which of the user's configured statuses a status cell means.
+ *
+ * Four steps, in this order and for this reason:
+ *
+ *   1. **An exact configured name is taken at face value.** A vault that still
+ *      has a status literally called `Completed` — because the user made one, or
+ *      kept theirs through the rename — gets its own, never the alias.
+ *   2. **Case is not a difference.** `completed` out of a spreadsheet is the
+ *      user's `Completed`; writing the cell verbatim would strand the row on a
+ *      status no menu offers.
+ *   3. **Then the rename table**, and only when the vault actually has the
+ *      status it names.
+ *   4. **Otherwise the cell stands.** An import has always been allowed to carry
+ *      a status this vault does not have; the row said something, and guessing
+ *      is worse than keeping it.
+ */
+export function resolveWatchlistStatus(raw: string, statuses: readonly NamedColor[]): string {
+  const value = raw.trim();
+  if (value === "") return "";
+  const names = statuses.map((entry) => entry.name);
+  if (names.includes(value)) return value;
+
+  const folded = value.toLowerCase();
+  const sameName = names.find((name) => name.toLowerCase() === folded);
+  if (sameName !== undefined) return sameName;
+
+  const renamed = LEGACY_STATUS_VALUES[folded];
+  if (renamed !== undefined && names.includes(renamed)) return renamed;
+
+  return value;
 }
 
 // ---------------------------------------------------------------------------

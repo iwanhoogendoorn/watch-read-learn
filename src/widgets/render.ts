@@ -25,6 +25,10 @@ import { MarkdownRenderChild, setIcon, type MarkdownPostProcessorContext, type P
 import {
   FENCE_ALIAS,
   FENCE_WATCHLOG,
+  NON_COUNTING_STATUSES,
+  STATUS_COMPLETED,
+  STATUS_PLAN_TO_WATCH,
+  STATUS_WATCHING,
   WIDGET_DEFAULT_LIMIT_CARDS,
   WIDGET_DEFAULT_LIMIT_OTHER,
 } from "../constants";
@@ -184,7 +188,7 @@ export function applyViewDefaults(spec: WidgetSpec, explicit: Set<string>): Widg
   if (spec.view === "stat" && !spec.stat) spec.stat = "time";
   // `shortlist` reads as a to-do list, so it implies the planning status.
   if (spec.view === "shortlist" && !explicit.has("status") && spec.statuses.length === 0) {
-    spec.statuses = ["Plan to watch"];
+    spec.statuses = [STATUS_PLAN_TO_WATCH];
   }
   return spec;
 }
@@ -792,11 +796,11 @@ function renderStatBlock(el: HTMLElement, titles: TitleV4[], stat: WidgetStat, s
       break;
     }
     case "completed": {
-      const counting = titles.filter((t) => t.status !== "Dropped" && t.status !== "To be released");
-      const done = counting.filter((t) => isFullyWatched(t) || t.status === "Completed").length;
+      const counting = titles.filter((t) => !NON_COUNTING_STATUSES.includes(t.status));
+      const done = counting.filter((t) => isFullyWatched(t) || t.status === STATUS_COMPLETED).length;
       const pct = counting.length === 0 ? 0 : Math.round((done / counting.length) * 100);
       const strip = block.createDiv({ cls: "wl-widget-strip" });
-      statCell(strip, String(done), "Completed");
+      statCell(strip, String(done), "Watched");
       statCell(strip, `${pct}%`, `of ${counting.length}`);
       break;
     }
@@ -956,7 +960,7 @@ function pinnedFor(
     return selectTitles(all, spec, { settings, now });
   }
   const pinned = all.filter((t) => t.pinned);
-  const pool = pinned.length > 0 ? pinned : all.filter((t) => t.status === "Watching");
+  const pool = pinned.length > 0 ? pinned : all.filter((t) => t.status === STATUS_WATCHING);
   return pool.slice(0, Math.max(1, spec.limit));
 }
 

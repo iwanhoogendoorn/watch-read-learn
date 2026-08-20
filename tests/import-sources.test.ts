@@ -292,7 +292,7 @@ describe("Trakt", () => {
     ]);
   });
 
-  it("calls a show with fewer watches than aired episodes Watching, not Completed", () => {
+  it("calls a show with fewer watches than aired episodes Watching, not Watched", () => {
     const signal = byTitle(parsed.records, "Fixture Signal");
     expect(signal.airedEpisodes).toBe(12);
     expect(signal.status).toBe("watching");

@@ -28,8 +28,8 @@
  *   2. **`autoStatus: false` on every write.** A background refresh is not a
  *      user action; it must not trip the auto-complete rules and reshuffle
  *      statuses behind the user's back (`types.ts` on `updateTitle`).
- *   3. **It skips what cannot change.** Dropped titles, and *completed films* —
- *      a finished film's metadata is done. Completed **shows** keep being
+ *   3. **It skips what cannot change.** Dropped titles, and *watched films* —
+ *      a finished film's metadata is done. Watched **shows** keep being
  *      refreshed, because a new season announcing itself on a show you finished
  *      is the single best thing this sweep can find.
  *   4. **One title failing does not end the run.** A 404 on one row is normal;
@@ -108,7 +108,7 @@ export const SWEEP_TTL_SETTING_KEY = "metadataSweepTtlHours";
 /**
  * Has the user finished with this title?
  *
- * The same two signals every other surface uses — the configured `Completed`
+ * The same two signals every other surface uses — the configured `Watched`
  * status, and "every non-skipped episode is ticked" — rather than a third
  * definition invented here.
  */
@@ -129,8 +129,8 @@ function isFinished(title: TitleV4): boolean {
  *     settled facts, and the user has already watched it. A finished *show* is
  *     the opposite case: it is the exact shape of title that gets renewed, and
  *     "Season 5 announced on the show you finished in 2021" is the headline
- *     result of this whole feature. So `Completed` alone is never a reason to
- *     skip — only `Completed` **and** a film.
+ *     result of this whole feature. So `Watched` alone is never a reason to
+ *     skip — only `Watched` **and** a film.
  *
  * Statuses are user-configurable, so this reads them through the constants in
  * `constants.ts` (the mechanism `shelves.ts` documents) and never through a

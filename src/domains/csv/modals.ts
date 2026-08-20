@@ -21,6 +21,7 @@
  * Everything that decides anything is in `data/csv.ts`; this file is the screens.
  */
 import { Modal, Notice, normalizePath, setIcon, type App } from "obsidian";
+import { STATUS_PLAN_TO_WATCH } from "../../constants";
 import {
   autoDetectMapping,
   buildImportPlan,
@@ -32,6 +33,7 @@ import {
   fieldsFor,
   indexExisting,
   parseCsv,
+  resolveWatchlistStatus,
 } from "../../data/csv";
 import { createBook, createGame, createManga, createTitle, slugify, uniqueId } from "../../data/schema";
 import { applyTrackerPlan } from "../import/apply";
@@ -518,7 +520,13 @@ export class CsvImportModal extends Modal {
 
     if (this.csvScope === "watchlist") {
       const type = String(values.type ?? "") || settings.types[0]?.name || "Movie";
-      const status = String(values.status ?? "") || settings.statuses[0]?.name || "Plan to watch";
+      // An old export says "Completed" where this vault now says "Watched", and
+      // a spreadsheet says whatever the person typed — both land on a
+      // configured status here rather than as a name no menu offers.
+      const status =
+        resolveWatchlistStatus(String(values.status ?? ""), settings.statuses) ||
+        settings.statuses[0]?.name ||
+        STATUS_PLAN_TO_WATCH;
       const seed = { ...values, title, type, status } as Record<string, unknown>;
       // `studio` arrives from a spreadsheet, so it is the user's, not an API's.
       if (Array.isArray(seed.studio)) {

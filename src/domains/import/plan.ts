@@ -49,6 +49,10 @@ import type { ImportEpisode, ImportRecord, ImportStatus, TrackerSource } from ".
  * it is actually configured. `on-hold` has no v3/v4 equivalent at all; a user who
  * has added one gets it, and everyone else gets Watching, which is what an
  * on-hold show is from the library's point of view — started, not finished.
+ *
+ * The substring fallbacks are ordered by the *user's* list order, so a vault
+ * that kept `Completed` as its own status gets it back for `completed` rows;
+ * only a vault with neither name falls through to the first status it has.
  */
 export function resolveStatusName(status: ImportStatus, statuses: readonly NamedColor[]): string {
   const names = statuses.map((entry) => entry.name);
@@ -63,7 +67,10 @@ export function resolveStatusName(status: ImportStatus, statuses: readonly Named
     const hold = like("hold");
     if (hold !== undefined) return hold;
   }
-  return has(STATUS_WATCHING) ? STATUS_WATCHING : (like("watch") ?? names[0] ?? STATUS_WATCHING);
+  // `"watching"`, not `"watch"`: the finished status is spelled **Watched**, so
+  // a substring of `watch` now matches the one status this branch must never
+  // pick. `Currently watching` and the like still land here.
+  return has(STATUS_WATCHING) ? STATUS_WATCHING : (like("watching") ?? names[0] ?? STATUS_WATCHING);
 }
 
 /**

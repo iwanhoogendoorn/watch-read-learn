@@ -145,7 +145,7 @@ describe("P0-2 — season geometry rebase", () => {
       totalEpisodes: 10,
     });
 
-    expect(store.getTitle("s")?.status).toBe("Completed");
+    expect(store.getTitle("s")?.status).toBe("Watched");
   });
 });
 

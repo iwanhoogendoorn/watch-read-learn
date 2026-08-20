@@ -135,7 +135,7 @@ export function mediaTypeForTitle(title: TitleV4): MediaType {
  *
  * **The user's own status is deliberately not consulted** (QA2 report 1). The
  * headline case for this whole engine is a show you finished and marked
- * Completed announcing another season; gating the queue on "am I still watching
+ * Watched announcing another season; gating the queue on "am I still watching
  * it" would switch the feature off for exactly the titles it exists to serve.
  * The only thing that decides is what *upstream* says: a non-terminal show is
  * tracked, whatever the local row looks like.

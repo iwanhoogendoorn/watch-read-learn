@@ -165,8 +165,8 @@ describe("time maths", () => {
     expect(calcTimeWatched(showWithSkips())).toBe(10 * 45);
   });
 
-  it("credits a Completed title with its whole effective total", () => {
-    const title = showWithSkips({ status: "Completed", watchedEpisodes: [1, 2, 3] });
+  it("credits a Watched title with its whole effective total", () => {
+    const title = showWithSkips({ status: "Watched", watchedEpisodes: [1, 2, 3] });
     expect(calcTimeWatched(title)).toBe(16 * 45);
   });
 
@@ -175,7 +175,7 @@ describe("time maths", () => {
     expect(episodesRemaining(showWithSkips())).toBe(6);
   });
 
-  it.each(["Completed", "Dropped", "To be released"])(
+  it.each(["Watched", "Dropped", "To be released"])(
     "reports zero time remaining for %s — the same answer in every surface",
     (status) => {
       expect(calcTimeRemaining(showWithSkips({ status }))).toBe(0);

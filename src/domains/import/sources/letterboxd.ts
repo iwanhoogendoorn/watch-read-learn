@@ -57,7 +57,7 @@ interface Draft {
  * Parse one Letterboxd CSV into drafts, merged into `drafts` by name+year.
  *
  * `watchlist.csv` is the only file that means "not seen yet"; every other file
- * is evidence of a watch, so a film present in both ends up Completed, which is
+ * is evidence of a watch, so a film present in both ends up Watched, which is
  * what Letterboxd itself shows.
  */
 function readOne(text: string, kind: ReturnType<typeof fileKind>, drafts: Map<string, Draft>): number {

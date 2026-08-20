@@ -66,7 +66,7 @@ function legacyFile(): Record<string, unknown> {
         id: "dune",
         title: "Dune",
         type: "Movie",
-        status: "Completed",
+        status: "Watched",
         priority: "",
         review: "Great",
         rating: 5,

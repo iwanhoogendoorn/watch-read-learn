@@ -2,7 +2,7 @@
  * QA round 2 regressions — "Upcoming does not work" (`BUGS-QA1.md`, W5 section).
  *
  * The live case behind every test here: *Dexter: Resurrection* sits in the vault
- * as a migrated v3 row (no `tmdbId`, no `airing`), locally **Completed**, while
+ * as a migrated v3 row (no `tmdbId`, no `airing`), locally **Watched**, while
  * Overseerr says `Returning Series` with a Season 2 that has zero episodes and
  * no air date yet. Every link in that chain had to hold for the announcement to
  * reach the Upcoming tab.
@@ -28,7 +28,7 @@ function dexter(overrides: Partial<TitleV4> = {}): TitleV4 {
     id: "dexter-resurrection",
     title: "Dexter: Resurrection",
     type: "TV Show",
-    status: "Completed",
+    status: "Watched",
     totalEpisodes: 10,
     releaseDate: "2025-07-11",
     seasons: [
@@ -85,14 +85,14 @@ describe("W5-2 — the local watch status never gates an airing refresh", () => 
     const done = dexter({
       tmdbId: 259909,
       tmdbMediaType: "tv",
-      status: "Completed",
+      status: "Watched",
       airing: { showStatus: "Returning Series", checkedAt: NOW.toISOString() },
     });
     expect(shouldTrackAiring(done, NOW)).toBe(true);
   });
 
   it("treats every local status the same — only upstream decides", () => {
-    for (const status of ["Watching", "Completed", "Dropped", "Plan to watch"]) {
+    for (const status of ["Watching", "Watched", "Dropped", "Plan to watch"]) {
       const returning = dexter({ tmdbId: 259909, status, airing: { showStatus: "Returning Series" } });
       const ended = dexter({ tmdbId: 259909, status, airing: { showStatus: "Ended" } });
       expect(shouldTrackAiring(returning, NOW)).toBe(true);

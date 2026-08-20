@@ -4,7 +4,7 @@
  * The problem it solves is the twenty-minute scroll: a library big enough to
  * be worth tracking is big enough to make "what tonight?" a chore. The command
  * rolls one title from everything that can actually be watched *now* —
- * Plan to watch or Watching, never Completed/Dropped/To be released — shows it
+ * Plan to watch or Watching, never Watched/Dropped/To be released — shows it
  * big, and offers exactly two ways out: watch it (land on the filtered
  * Library) or roll again.
  *

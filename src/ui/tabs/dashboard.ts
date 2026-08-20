@@ -16,8 +16,12 @@
  * `computeDashboard` is pure and unit-tested; the mount function only paints it.
  */
 import { Notice, setIcon } from "obsidian";
-import { NON_COUNTING_STATUSES, STATUS_WATCHING } from "../../constants";
+import { NON_COUNTING_STATUSES, STATUS_COMPLETED, STATUS_WATCHING } from "../../constants";
 import { renderPosterPlaceholder } from "../components/posters";
+// The *colour* pill — the user's own hex, injected as `--wl-pill`. `./upcoming`
+// exports a same-named pill keyed by tone instead; this panel needs the one
+// that speaks palette, so it is imported under a name that says which.
+import { renderPill as renderColorPill } from "../components/pills";
 import {
   calcTimeRemaining,
   calcTimeWatched,
@@ -40,7 +44,15 @@ import { buildShelves } from "../../domains/shelves";
 import { openShelfSettings } from "../modals/shelfsettings";
 import { bindCreditLink, personOpener } from "../detail/people";
 import { renderShelfRow } from "../components/shelf";
-import { derivedStatus, progressLabel, readingProgress } from "../../domains/reading/progress";
+// Reading keeps its own fixed five, and its finished one is still called
+// "Completed" — a book is completed, not watched. Aliased on import so the two
+// vocabularies cannot be mistaken for each other at the call site.
+import {
+  STATUS_COMPLETED as READING_COMPLETED,
+  derivedStatus,
+  progressLabel,
+  readingProgress,
+} from "../../domains/reading/progress";
 import { daysUntil, toDateString } from "../../services/airing";
 import { formatPlaytime, gamesCompletedStat, timePlayedStat } from "../../domains/games/stats";
 import {
@@ -84,6 +96,24 @@ export interface TypeStats {
   timeRemaining: number;
 }
 
+/**
+ * One row of "Where you watch": a venue, how many titles carry it, and how many
+ * minutes of watching that adds up to.
+ *
+ * `color` is the user's configured colour, or `""` for a venue that is no
+ * longer in settings and for the Unrecorded row — both of which render as a
+ * neutral pill rather than borrowing somebody else's colour.
+ */
+export interface VenueStat {
+  label: string;
+  count: number;
+  /** Minutes, from `calcTimeWatched` — the plugin's only watched-time formula. */
+  minutes: number;
+  color: string;
+  /** True for the single `""` row, which always sorts last. */
+  unrecorded: boolean;
+}
+
 export interface DashboardModel {
   total: number;
   /** Titles that count towards the completion ratio (Dropped/To be released excluded). */
@@ -100,6 +130,7 @@ export interface DashboardModel {
   topCast: CountBucket[];
   topDirectors: CountBucket[];
   topStudios: CountBucket[];
+  byVenue: VenueStat[];
   continueWatching: TitleV4[];
   upNext: UpcomingEntry[];
   recentlyWatched: TitleV4[];
@@ -112,6 +143,9 @@ function formatCount(value: number): string {
     .toString()
     .replace(/\B(?=(\d{3})+(?!\d))/g, "\u2009");
 }
+
+/** The one name for "the user never said". Not a venue, and never clickable. */
+export const VENUE_UNRECORDED_LABEL = "Unrecorded";
 
 export const DASHBOARD_SHELF_LIMIT = 8;
 export const DASHBOARD_UP_NEXT_LIMIT = 3;
@@ -194,6 +228,74 @@ function topCounts(
     .slice(0, Math.max(0, limit));
 }
 
+/**
+ * "Where you watch", counted honestly.
+ *
+ * Three rules, and each of them exists because the obvious alternative lies:
+ *
+ *   1. **Every title lands in exactly one row.** The ones with no venue
+ *      recorded become a single `Unrecorded` row at the bottom rather than
+ *      disappearing, so the counts add up to the library and a panel covering
+ *      three titles out of two hundred cannot pretend otherwise.
+ *   2. **A venue the settings no longer offer still counts.** Deleting
+ *      "Netflix" from the list does not un-watch what was watched on it; the
+ *      row survives with no colour, which is exactly what it now is.
+ *   3. **Time comes from `calcTimeWatched`** — the one formula — so the minutes
+ *      here can never disagree with the minutes in the Overview above.
+ *
+ * Ranked by count, then by time, then alphabetically, so the order is stable
+ * for two venues that tie.
+ */
+export function venueStats(
+  titles: readonly TitleV4[],
+  settings: Settings,
+): VenueStat[] {
+  const colors = new Map<string, string>();
+  for (const option of settings.watchedViaOptions ?? []) colors.set(option.name, option.color);
+
+  const tally = new Map<string, { count: number; minutes: number }>();
+  let unrecorded = { count: 0, minutes: 0 };
+
+  for (const title of titles) {
+    const venue = typeof title.watchedVia === "string" ? title.watchedVia.trim() : "";
+    const minutes = calcTimeWatched(title);
+    if (venue === "") {
+      unrecorded = { count: unrecorded.count + 1, minutes: unrecorded.minutes + minutes };
+      continue;
+    }
+    const entry = tally.get(venue);
+    if (entry) {
+      entry.count += 1;
+      entry.minutes += minutes;
+    } else {
+      tally.set(venue, { count: 1, minutes });
+    }
+  }
+
+  const rows: VenueStat[] = [...tally.entries()]
+    .map(([label, entry]) => ({
+      label,
+      count: entry.count,
+      minutes: entry.minutes,
+      color: colors.get(label) ?? "",
+      unrecorded: false,
+    }))
+    .sort(
+      (a, b) => b.count - a.count || b.minutes - a.minutes || a.label.localeCompare(b.label),
+    );
+
+  if (unrecorded.count > 0) {
+    rows.push({
+      label: VENUE_UNRECORDED_LABEL,
+      count: unrecorded.count,
+      minutes: unrecorded.minutes,
+      color: "",
+      unrecorded: true,
+    });
+  }
+  return rows;
+}
+
 export function titleYear(title: TitleV4): number | null {
   if (typeof title.year === "number" && Number.isFinite(title.year) && title.year > 0) {
     return title.year;
@@ -240,7 +342,7 @@ export function computeDashboard(
   now: Date = new Date(),
 ): DashboardModel {
   const counting = titles.filter(counts);
-  const completed = counting.filter((t) => isFullyWatched(t) || t.status === "Completed");
+  const completed = counting.filter((t) => isFullyWatched(t) || t.status === STATUS_COMPLETED);
 
   let timeWatched = 0;
   let timeRemaining = 0;
@@ -266,7 +368,7 @@ export function computeDashboard(
     })
     .map(([type, list]) => {
       const countingList = list.filter(counts);
-      const done = countingList.filter((t) => isFullyWatched(t) || t.status === "Completed").length;
+      const done = countingList.filter((t) => isFullyWatched(t) || t.status === STATUS_COMPLETED).length;
       return {
         type,
         total: list.length,
@@ -325,12 +427,15 @@ export function computeDashboard(
   const topDirectors = topCounts(titles, (t) => mergedCredits(t.director, t.manualDirector), cap);
   const topStudios = topCounts(titles, (t) => mergedCredits(t.studio, t.manualStudio), cap);
 
+  // --- venues --------------------------------------------------------------
+  const byVenue = venueStats(titles, settings);
+
   // --- shelves -------------------------------------------------------------
   const continueWatching = titles
     .filter((t) => {
       if (!counts(t)) return false;
       if (isFullyWatched(t)) return false;
-      return getProgress(t) > 0 || t.status === "Watching";
+      return getProgress(t) > 0 || t.status === STATUS_WATCHING;
     })
     .slice()
     .sort((a, b) => activityTime(b) - activityTime(a))
@@ -341,7 +446,7 @@ export function computeDashboard(
     .slice(0, DASHBOARD_UP_NEXT_LIMIT);
 
   const recentlyWatched = titles
-    .filter((t) => getProgress(t) > 0 || t.status === "Completed")
+    .filter((t) => getProgress(t) > 0 || t.status === STATUS_COMPLETED)
     .slice()
     .sort((a, b) => activityTime(b) - activityTime(a))
     .slice(0, DASHBOARD_SHELF_LIMIT);
@@ -366,6 +471,7 @@ export function computeDashboard(
     topCast,
     topDirectors,
     topStudios,
+    byVenue,
     continueWatching,
     upNext,
     recentlyWatched,
@@ -633,6 +739,54 @@ function renderCreditList(
       row.createSpan({ cls: "wl-chip", text: bucket.label });
     }
     row.createSpan({ cls: "wl-credit-count", text: String(bucket.count) });
+  }
+}
+
+/**
+ * The "Where you watch" list.
+ *
+ * The venue is a pill rather than a chip because its colour is *data* — the
+ * user's own, injected as `--wl-pill` by `renderPill`, never a hardcoded hex —
+ * and because that is how the same value is spelled everywhere else in the
+ * plugin. Count and time share one line: two numbers about the same row do not
+ * need two columns.
+ *
+ * A row is clickable only when there is a query to jump to and something to
+ * search for, so `Unrecorded` — which is the absence of a value — never is.
+ */
+function renderVenueList(
+  parent: HTMLElement,
+  heading: string,
+  rows: readonly VenueStat[],
+  deps: TabDeps,
+): void {
+  const card = parent.createDiv({ cls: "wl-credit-card" });
+  card.createDiv({ cls: "wl-credit-heading", text: heading });
+  if (rows.length === 0) {
+    card.createDiv({
+      cls: "wl-chart-empty",
+      text: "Nothing tracked yet — the watched wizard asks where, and this fills in.",
+    });
+    return;
+  }
+  const list = card.createDiv({ cls: "wl-credit-list" });
+  for (const row of rows) {
+    const line = list.createDiv({ cls: "wl-credit-row" });
+    const pill = renderColorPill(line, { text: row.label, color: row.color });
+    const jump = deps.onJumpToQuery;
+    if (jump && !row.unrecorded) {
+      pill.addClass("is-clickable");
+      pill.setAttr("role", "button");
+      pill.setAttr("tabindex", "0");
+      pill.setAttribute("title", `Show everything watched via ${row.label}`);
+      pill.addEventListener("click", () => jump(`via:"${row.label}"`));
+    }
+    line.createSpan({
+      cls: "wl-credit-count",
+      // "12 · 4h 30m", and no time at all when nothing in the row has a known
+      // runtime — "0m" beside a real count reads as a bug rather than a gap.
+      text: row.minutes > 0 ? `${row.count} · ${formatMinutes(row.minutes)}` : String(row.count),
+    });
   }
 }
 
@@ -966,7 +1120,7 @@ function renderCompactDashboard(
     // is furniture that also happens to be a lie.
     const watching = model.byStatus.find((bucket) => bucket.label === STATUS_WATCHING);
     if (watching) renderStatTile(grid, STATUS_WATCHING, formatCount(watching.count));
-    renderStatTile(grid, "Completed", formatCount(model.completed), [
+    renderStatTile(grid, "Watched", formatCount(model.completed), [
       `${model.percent}% of ${formatCount(model.counting)} counted`,
     ]);
     renderStatTile(grid, "Time watched", formatMinutes(model.timeWatched));
@@ -1010,6 +1164,13 @@ function renderCompactDashboard(
     renderCreditList(grid, "Top directors", model.topDirectors, deps, "director", { onPick });
     // A studio is not a person; it keeps the search.
     renderCreditList(grid, "Top studios", model.topStudios, deps, "studio");
+    // The venue column was left off this panel at first, on the argument that
+    // compact means four ranked lists and the rich layout is a click away. The
+    // person whose dashboard this is runs the compact layout and asked for
+    // these numbers — a statistic that lives only in the layout you are not
+    // looking at is not a statistic. The grid is `auto-fit`, so the fifth list
+    // flows to its own track instead of crowding the four.
+    renderVenueList(grid, "Where you watch", model.byVenue, deps);
   });
 }
 
@@ -1285,7 +1446,7 @@ export function mountDashboardTab(host: HTMLElement, deps: TabDeps): TabControll
           ["Manga", reading.manga],
         ] as const) {
           if (entries.length === 0) continue;
-          const done = entries.filter((e) => derivedStatus(e) === "Completed").length;
+          const done = entries.filter((e) => derivedStatus(e) === READING_COMPLETED).length;
           renderTypeCard(grid, {
             type: label,
             total: entries.length,
@@ -1478,6 +1639,20 @@ export function mountDashboardTab(host: HTMLElement, deps: TabDeps): TabControll
       renderCreditList(grid, "Studios", model.topStudios, deps, "studio");
     });
 
+    // --- where you watch ---------------------------------------------------
+    //
+    // Watchlist only: a book has no venue and a game has no cinema, and a panel
+    // that renders empty for two of the three sources is furniture. It follows
+    // the same source chip every panel above it does.
+    if (source === "watchlist") {
+      section(el, "Where you watch", (s) => {
+        s.addClass("wl-panel");
+        sectionHeader(s, "Where you watch", `${formatCount(model.total)} titles`);
+        const grid = s.createDiv({ cls: "wl-credit-grid" });
+        renderVenueList(grid, "By venue", model.byVenue, deps);
+      });
+    }
+
     // --- shelves -----------------------------------------------------------
     section(el, CONTINUE_LABEL[source], (s) => {
       s.addClass("wl-panel", "is-half");
@@ -1625,7 +1800,7 @@ export function mountDashboardTab(host: HTMLElement, deps: TabDeps): TabControll
       sectionHeader(s, FINISHED_LABEL[source]);
       if (source === "reading") {
         const finished = [...reading.books, ...reading.manga]
-          .filter((entry) => derivedStatus(entry) === "Completed")
+          .filter((entry) => derivedStatus(entry) === READING_COMPLETED)
           .sort((a, b) => (b.dateFinished ?? b.dateModified ?? "").localeCompare(a.dateFinished ?? a.dateModified ?? ""))
           .slice(0, 5);
         if (finished.length === 0) {

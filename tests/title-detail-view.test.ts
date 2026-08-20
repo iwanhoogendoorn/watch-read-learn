@@ -248,7 +248,7 @@ describe("the stat tiles", () => {
   it("says Yes once the film has been watched", async () => {
     const { el } = await open({
       episodeDuration: 128,
-      status: "Completed",
+      status: "Watched",
       watchedEpisodes: [1],
     });
     expect(statTile(el, "Watched")).toBe("Yes");
@@ -638,7 +638,7 @@ describe("episodes that have not aired", () => {
       .filter((b) => b.textContent === "Mark season watched")[1];
     button?.fire("click");
     expect(store.getTitle("t")?.watchedEpisodes).toEqual([5, 6]);
-    expect(store.getTitle("t")?.status).not.toBe("Completed");
+    expect(store.getTitle("t")?.status).not.toBe("Watched");
   });
 
   it("says how many of a part-aired season exist", async () => {

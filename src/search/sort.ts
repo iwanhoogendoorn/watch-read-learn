@@ -10,7 +10,7 @@
  *      to the top.
  *   2. **Status and priority follow the user's configured list order**, not the
  *      alphabet. `settings.statuses` is an ordered list — Watching, Plan to
- *      watch, Completed — and sorting by status must honour it. v3 hardcoded its
+ *      watch, Watched — and sorting by status must honour it. v3 hardcoded its
  *      own order and ignored the user's, which is the bug this fixes.
  *
  * `0` is treated as empty for `rating` (unrated, not "rated zero") and for

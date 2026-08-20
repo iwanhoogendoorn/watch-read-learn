@@ -148,7 +148,7 @@ describe("the recently watched shelf", () => {
     const shelf = recentlyWatchedShelf([
       title({ id: "untouched", status: "Plan to watch", dateModified: "2026-08-01T00:00:00.000Z" }),
       title({ id: "ticked", watchedEpisodes: [1, 2], dateModified: "2026-06-01T00:00:00.000Z" }),
-      movie({ id: "finished", status: "Completed", dateFinished: "2026-07-04" }),
+      movie({ id: "finished", status: "Watched", dateFinished: "2026-07-04" }),
     ]);
     expect(ids(shelf)).toEqual(["finished", "ticked"]);
   });
@@ -175,7 +175,7 @@ describe("what counts as actively followed", () => {
     expect(isActivelyFollowed(title({ id: "b", status: "Plan to watch" }))).toBe(true);
     expect(isActivelyFollowed(title({ id: "c", status: "Dropped" }))).toBe(false);
     expect(isActivelyFollowed(title({ id: "d", status: "To be released" }))).toBe(false);
-    expect(isActivelyFollowed(title({ id: "e", status: "Completed" }))).toBe(false);
+    expect(isActivelyFollowed(title({ id: "e", status: "Watched" }))).toBe(false);
     expect(
       isActivelyFollowed(title({ id: "f", watchedEpisodes: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] })),
     ).toBe(false);
@@ -257,7 +257,7 @@ describe("the recently released shelf", () => {
       [
         movie({ id: "dropped", status: "Dropped", releaseDate: "2026-08-01" }),
         movie({ id: "unreleased", status: "To be released", releaseDate: "2026-08-01" }),
-        movie({ id: "done", status: "Completed", releaseDate: "2026-08-01" }),
+        movie({ id: "done", status: "Watched", releaseDate: "2026-08-01" }),
         movie({ id: "following", releaseDate: "2026-08-01" }),
       ],
       NOW,
@@ -299,7 +299,7 @@ describe("buildShelves", () => {
     const shelves = buildShelves(
       [
         movie({ id: "fav", favorite: true, releaseDate: "2020-01-01" }),
-        movie({ id: "watched", status: "Completed", dateFinished: "2026-07-01" }),
+        movie({ id: "watched", status: "Watched", dateFinished: "2026-07-01" }),
         movie({ id: "recent", releaseDate: "2026-07-20" }),
       ],
       NOW,

@@ -75,7 +75,7 @@ function show(overrides: Partial<TitleV4> = {}): TitleV4 {
     id: "dexter-resurrection",
     title: "Dexter: Resurrection",
     type: "TV Show",
-    status: "Completed",
+    status: "Watched",
     totalEpisodes: 10,
     watchedEpisodes: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
     dateFinished: "2025-09-08",
@@ -201,7 +201,7 @@ describe("W6-3 — adopting a season leaves the user's row alone", () => {
     return store;
   };
 
-  it("keeps a Completed show Completed when a season is appended", () => {
+  it("keeps a Watched show Watched when a season is appended", () => {
     const title = show();
     const store = storeWith(title);
     const seasons = withAddedSeason(title.seasons, 2, 0, null);
@@ -214,7 +214,7 @@ describe("W6-3 — adopting a season leaves the user's row alone", () => {
     );
 
     const after = store.getTitle(title.id);
-    expect(after?.status).toBe("Completed");
+    expect(after?.status).toBe("Watched");
     expect(after?.dateFinished).toBe("2025-09-08");
     expect(after?.seasons.map((s) => s.seasonNumber)).toEqual([1, 2]);
     // Every watched episode survives.
@@ -575,14 +575,14 @@ describe("W6-5 — multi-season context on the card", () => {
     // with its single "episode" never ticked in a grid it does not show.
     // episodesRemaining was 1 and a MOVIE wore a "New season" chip.
     const film = createTitle({ id: "vfi", title: "Voicemails", type: "Movie" });
-    film.status = "Completed";
+    film.status = "Watched";
     expect(film.watchedEpisodes).toEqual([]);
     expect(hasUnwatchedNewSeason(film)).toBe(false);
   });
 
   it("badges a finished show that has grown a season — and only that", () => {
     // The case fix 3 refuses to handle by rewriting the status.
-    const grown = twoSeasons({ status: "Completed" });
+    const grown = twoSeasons({ status: "Watched" });
     expect(hasUnwatchedNewSeason(grown)).toBe(true);
 
     // Part-way through is not "new season", it is just watching.
@@ -590,7 +590,7 @@ describe("W6-5 — multi-season context on the card", () => {
     // Finished and nothing new: nothing to say.
     expect(
       hasUnwatchedNewSeason(
-        twoSeasons({ status: "Completed", watchedEpisodes: Array.from({ length: 18 }, (_, i) => i + 1) }),
+        twoSeasons({ status: "Watched", watchedEpisodes: Array.from({ length: 18 }, (_, i) => i + 1) }),
       ),
     ).toBe(false);
   });

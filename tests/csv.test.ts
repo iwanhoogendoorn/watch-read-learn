@@ -25,9 +25,12 @@ import {
   indexExisting,
   parseCsv,
   parseLooseDate,
+  resolveWatchlistStatus,
   serializeCsv,
   WATCHLIST_FIELDS,
 } from "../src/data/csv";
+import { STATUS_COMPLETED } from "../src/constants";
+import { DEFAULT_STATUSES } from "../src/data/schema";
 import { createBook, createGame, createTitle } from "../src/data/schema";
 import { CSV_WATCHLIST_COLUMNS } from "../src/types";
 
@@ -121,7 +124,7 @@ function sampleTitle() {
     id: "arrival",
     title: 'Arrival, or "Story of Your Life"',
     type: "Movie",
-    status: "Completed",
+    status: "Watched",
     priority: "",
     rating: 4.5,
     totalEpisodes: 1,
@@ -317,6 +320,41 @@ describe("coerceRow", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Status values out of an old file
+// ---------------------------------------------------------------------------
+
+describe("resolveWatchlistStatus", () => {
+  const stock = DEFAULT_STATUSES;
+
+  it("reads an export written before the Watched rename", () => {
+    // The whole point: `watchlog-export-2024-11-03.csv` says "Completed", and
+    // that file is never going to be written again.
+    expect(resolveWatchlistStatus("Completed", stock)).toBe(STATUS_COMPLETED);
+  });
+
+  it("gives a vault that has its own Completed status its own back", () => {
+    const mine = [...stock, { name: "Completed", color: "#000000" }];
+    expect(resolveWatchlistStatus("Completed", mine)).toBe("Completed");
+  });
+
+  it("does not treat case as a difference", () => {
+    expect(resolveWatchlistStatus("watching", stock)).toBe("Watching");
+    expect(resolveWatchlistStatus("PLAN TO WATCH", stock)).toBe("Plan to watch");
+    expect(resolveWatchlistStatus("  completed ", stock)).toBe(STATUS_COMPLETED);
+  });
+
+  it("keeps a status this vault does not have rather than guessing", () => {
+    expect(resolveWatchlistStatus("On hold", stock)).toBe("On hold");
+    expect(resolveWatchlistStatus("", stock)).toBe("");
+  });
+
+  it("does not reach for the alias when the vault has no watched status", () => {
+    const mine = [{ name: "Watching", color: "" }, { name: "Seen", color: "" }];
+    expect(resolveWatchlistStatus("Completed", mine)).toBe("Completed");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The round trip
 // ---------------------------------------------------------------------------
 
@@ -330,7 +368,7 @@ describe("export → import", () => {
 
     expect(values.title).toBe(original.title);
     expect(values.type).toBe("Movie");
-    expect(values.status).toBe("Completed");
+    expect(values.status).toBe("Watched");
     expect(values.rating).toBe(4.5);
     expect(values.totalEpisodes).toBe(1);
     expect(values.episodeDuration).toBe(116);
@@ -340,6 +378,29 @@ describe("export → import", () => {
     expect(values.externalLink).toBe(original.externalLink);
     expect(values.notes).toBe("Rewatch, with subtitles");
     expect(values.studio).toEqual(["Lava Bear Films", "FilmNation"]);
+  });
+
+  it("brings an export written before the Watched rename in as Watched", () => {
+    // A real 1.21 file: v3's fourteen columns, in v3's order, with the word the
+    // status list used to use. Nothing is going to rewrite this file for us.
+    const oldExport = [
+      "title,type,status,priority,rating,totalEpisodes,episodeDuration,dateStarted,dateFinished,releaseDate,dateAdded,externalLink,notes,studio",
+      "Arrival,Movie,Completed,,4.5,1,116,2024-03-09,2024-03-09,2016-11-11,2024-03-01,,,FilmNation",
+      "Severance,TV Show,Watching,High,0,9,50,2024-05-01,,2022-02-18,2024-04-28,,,Apple",
+    ].join("\n");
+
+    const rows = parseCsv(oldExport);
+    const mapping = autoDetectMapping(rows[0]!, "watchlist");
+    const plan = buildImportPlan("watchlist", rows, mapping, indexExisting([]));
+    // The same two steps the importer runs per row (`domains/csv/modals.ts`).
+    const statuses = plan.rows.map((row) =>
+      resolveWatchlistStatus(String(coerceRow("watchlist", row.values).status ?? ""), DEFAULT_STATUSES),
+    );
+
+    expect(statuses).toEqual([STATUS_COMPLETED, "Watching"]);
+    // And the rest of the row is untouched by any of it.
+    expect(coerceRow("watchlist", plan.rows[0]!.values).rating).toBe(4.5);
+    expect(coerceRow("watchlist", plan.rows[0]!.values).dateFinished).toBe("2024-03-09");
   });
 
   it("re-importing an export flags every row as a duplicate", () => {

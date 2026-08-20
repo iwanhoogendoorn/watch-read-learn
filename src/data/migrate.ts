@@ -18,10 +18,12 @@
  */
 import {
   DEFAULT_ADD_TYPE_LAST_USED,
+  STATUS_COMPLETED,
   STATUS_PLAN_TO_WATCH,
   STATUS_TO_BE_RELEASED,
   TYPE_MOVIE,
 } from "../constants";
+import { VISIBLE_SHELVES_KEY, statusShelfId } from "../domains/shelves";
 import {
   READING_STATUSES,
   SCHEMA_VERSION,
@@ -37,6 +39,7 @@ import {
   type Season,
   type Settings,
   type SortKey,
+  type Preset,
   type SortSpec,
   type TitleV4,
   type WatchLogData,
@@ -51,7 +54,9 @@ import {
   DEFAULT_REVIEWS,
   DEFAULT_STATUSES,
   DEFAULT_TYPES,
+  DEFAULT_WATCHED_VIA,
   FULL_VIEW_DEFAULT_MARKER,
+  WATCHED_STATUS_RENAME_MARKER,
   createDefaultData,
   createDefaultSettings,
   createDraftsState,
@@ -167,6 +172,11 @@ export function migrate(raw: unknown): MigrationResult {
   }
   rawRec.titles = titles;
   report.titlesMigrated = titles.length;
+
+  // Needs both halves in hand — the settings list is what decides whether the
+  // rename happens at all, and the titles are what must not be left pointing at
+  // a name that list no longer has.
+  renameCompletedStatus(settings, titles, note);
 
   rawRec.groups = migrateGroups(rawRec.groups);
   if (!Array.isArray(rawRec.history)) rawRec.history = [];
@@ -446,6 +456,9 @@ function migrateSettings(raw: Rec, note: (m: string) => void): Settings {
   s.statuses = migrateNamedColors(s.statuses, DEFAULT_STATUSES);
   s.priorities = migrateNamedColors(s.priorities, DEFAULT_PRIORITIES);
   s.reviews = migrateNamedColors(s.reviews, DEFAULT_REVIEWS);
+  // A file written before venues existed has no key at all and gets the eight
+  // defaults; a file that has the key keeps every entry, colour and position.
+  s.watchedViaOptions = migrateNamedColors(s.watchedViaOptions, DEFAULT_WATCHED_VIA);
 
   // v3 load-time repairs worth keeping.
   if (!s.statuses.some((x) => x.name === STATUS_TO_BE_RELEASED)) {
@@ -601,6 +614,152 @@ function migrateSettings(raw: Rec, note: (m: string) => void): Settings {
 }
 
 // ---------------------------------------------------------------------------
+// The Completed → Watched rename
+// ---------------------------------------------------------------------------
+
+/** What the stock "you have finished this" status was called before v1.22. */
+const LEGACY_COMPLETED_STATUS = "Completed";
+
+/**
+ * Rename `"Completed"` to `"Watched"` in a status list — and everywhere the old
+ * name is *stored* — exactly once per install.
+ *
+ * The problem this solves is the one `FULL_VIEW_DEFAULT_MARKER` solves, with a
+ * sharper edge: `settings.statuses` is the user's own list, saved into their
+ * `data.json`, so changing a default changes nothing for anyone who already has
+ * the plugin. Their vault would keep saying "Completed" for ever while every
+ * semantic check in the codebase compares against `STATUS_COMPLETED`, which now
+ * reads "Watched" — auto-status would stop recognising the status it just set,
+ * the Watched shelf would empty, the sweep would stop skipping finished films.
+ * So the list has to be moved across, and with it every title standing on it.
+ *
+ * Three rules, and all three are about not taking something that is the user's:
+ *
+ *   - **Only the stock entry moves.** The entry has to still be *named*
+ *     `Completed`. Someone who renamed it to "Seen" years ago has already
+ *     answered this question; nothing here has an opinion about their answer.
+ *     The colour is not part of the test — a recoloured Completed is still the
+ *     stock status, it is just not blue any more.
+ *   - **A vault holding both names is left entirely alone.** If `Watched`
+ *     already exists beside `Completed` they are two statuses the user
+ *     distinguishes, and merging them under one name is a data-loss edit
+ *     dressed as a rename.
+ *   - **The marker is stamped whatever happens**, including on the no-op
+ *     paths. `migrate()` runs on every load, not only on a version bump, so a
+ *     user who creates a status called "Completed" next month must not find it
+ *     silently renamed on the load after that.
+ *
+ * Titles then follow the list rather than the rename: they move whenever the
+ * finished list has a `Watched` and no `Completed` for them to stand on. That
+ * covers the rename itself and the one case it does not reach — a
+ * `settings.statuses` too broken to read, which `migrateSettings` replaces with
+ * the defaults, leaving titles pointing at a name no list ever had. The state
+ * that must never exist is a title standing on a name the list dropped, and
+ * this is the only pass that can still see both halves at once.
+ */
+function renameCompletedStatus(
+  settings: Settings,
+  titles: readonly TitleV4[],
+  note: (message: string) => void,
+): void {
+  if (readExtra<unknown>(settings, WATCHED_STATUS_RENAME_MARKER) === true) return;
+  // Before the early returns, not after: "we looked and there was nothing to do"
+  // is an answer, and it is the answer that must survive to the next load.
+  writeExtra(settings, WATCHED_STATUS_RENAME_MARKER, true);
+
+  const statuses = Array.isArray(settings.statuses) ? settings.statuses : [];
+  const named = (name: string): NamedColor | undefined =>
+    statuses.find((entry): entry is NamedColor => isRecord(entry) && entry.name === name);
+
+  const stock = named(LEGACY_COMPLETED_STATUS);
+  const already = named(STATUS_COMPLETED);
+  if (stock !== undefined && already !== undefined) {
+    note(
+      `"${LEGACY_COMPLETED_STATUS}" is now called "${STATUS_COMPLETED}", but this vault already has both — left the status list alone`,
+    );
+    return;
+  }
+
+  let renamed = false;
+  if (stock !== undefined) {
+    // In place. `stock` is the live object inside `settings.statuses`; replacing
+    // the array (or the entry) would drop any key a future version added to it.
+    stock.name = STATUS_COMPLETED;
+    renamed = true;
+  } else if (already === undefined) {
+    // Neither name is in the list, so there is no watched status here to move
+    // anything onto. A vault that renamed the stock entry to something of its
+    // own keeps every title exactly where the user put it.
+    return;
+  }
+
+  let moved = 0;
+  for (const title of titles) {
+    if (title.status === LEGACY_COMPLETED_STATUS) {
+      title.status = STATUS_COMPLETED;
+      moved += 1;
+    }
+  }
+
+  if (renamed) renameStoredStatusReferences(settings);
+  else if (moved === 0) return;
+
+  const what = renamed
+    ? `renamed the "${LEGACY_COMPLETED_STATUS}" status to "${STATUS_COMPLETED}"`
+    : `moved ${moved} title(s) off "${LEGACY_COMPLETED_STATUS}", which this vault's status list does not have, onto "${STATUS_COMPLETED}"`;
+  note(renamed && moved > 0 ? `${what} (${moved} title(s) moved with it)` : what);
+}
+
+/** Swap the old status name for the new one in a filter's exclusion list. */
+function renameExcludedStatus(filters: unknown): void {
+  if (!isRecord(filters)) return;
+  const excluded = (filters as unknown as FilterState).excludedStatuses;
+  if (!Array.isArray(excluded)) return;
+  // In place, and only the one entry: an exclusion list is an answer per status
+  // name, so the answer has to follow its name rather than be rebuilt around it.
+  const at = excluded.indexOf(LEGACY_COMPLETED_STATUS);
+  if (at < 0) return;
+  if (excluded.includes(STATUS_COMPLETED)) excluded.splice(at, 1);
+  else excluded[at] = STATUS_COMPLETED;
+}
+
+/**
+ * Everywhere else the old name is *written down* rather than derived.
+ *
+ * Three places, and each one is a question the user already answered:
+ *
+ *   - the live filter and every saved preset's copy of it, where the name is an
+ *     entry in `excludedStatuses` ("do not show me these");
+ *   - the shelf visibility map, keyed `status:<name>` ("show me this shelf").
+ *
+ * A key left behind is not inert — it is a stored answer pointing at a status
+ * that no longer exists, so the shelf the user switched on comes back off, and
+ * the status they hid comes back into view.
+ *
+ * What is deliberately **not** rewritten is `preset.query`: free text the user
+ * typed, where `Completed` may be a facet, a phrase, or part of a title, and
+ * where editing it means a lossy parse-and-reserialise of someone's own words.
+ */
+function renameStoredStatusReferences(settings: Settings): void {
+  renameExcludedStatus(settings.filterState);
+  if (Array.isArray(settings.savedPresets)) {
+    for (const preset of settings.savedPresets as unknown[]) {
+      if (isRecord(preset)) renameExcludedStatus((preset as unknown as Preset).filters);
+    }
+  }
+
+  const shelves = readExtra<unknown>(settings, VISIBLE_SHELVES_KEY);
+  if (!isRecord(shelves)) return;
+  const from = statusShelfId(LEGACY_COMPLETED_STATUS);
+  const to = statusShelfId(STATUS_COMPLETED);
+  if (!(from in shelves)) return;
+  // The new key wins if it somehow already exists: it is the more recent answer.
+  if (!(to in shelves)) shelves[to] = shelves[from];
+  delete shelves[from];
+  writeExtra(settings, VISIBLE_SHELVES_KEY, shelves);
+}
+
+// ---------------------------------------------------------------------------
 // Titles
 // ---------------------------------------------------------------------------
 
@@ -679,6 +838,9 @@ function migrateTitle(raw: Rec, seenIds: Set<string>, note: (m: string) => void)
   t.status = str(raw.status, "Plan to watch") || "Plan to watch";
   t.priority = str(raw.priority, "");
   t.review = str(raw.review, "");
+  // Every existing title arrives with `""`. Migration never guesses a venue —
+  // not from Plex, not from anything — because only the user was there.
+  t.watchedVia = str(raw.watchedVia, "");
   t.rating = Math.max(0, Math.min(5, num(raw.rating, 0)));
   t.notes = str(raw.notes, "");
   t.favorite = bool(raw.favorite, false);

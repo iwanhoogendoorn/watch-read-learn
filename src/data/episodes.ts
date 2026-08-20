@@ -316,7 +316,7 @@ export function expectedEpisodes(title: TitleV4): number {
 /**
  * Minutes watched.
  *
- * A `Completed` title counts its full effective total, so marking something
+ * A `Watched` title counts its full effective total, so marking something
  * complete without ticking every box still contributes its runtime. Titles that
  * have not been released, and titles with no known duration, contribute zero.
  */
@@ -331,7 +331,7 @@ export function calcTimeWatched(title: TitleV4): number {
 /**
  * Minutes left to watch. **The only time-remaining formula in the plugin.**
  *
- * Zero for every status in `NO_TIME_REMAINING_STATUSES` (Completed, Dropped,
+ * Zero for every status in `NO_TIME_REMAINING_STATUSES` (Watched, Dropped,
  * To be released) — the detail modal uses this same function, unlike v3.
  */
 export function calcTimeRemaining(title: TitleV4): number {

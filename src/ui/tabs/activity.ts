@@ -39,7 +39,9 @@ export const ACTIVITY_FILTERS: ActivityFilter[] = [
   { id: "added", label: "Added", icon: "plus" },
   { id: "watched", label: "Episodes", icon: "check" },
   { id: "season", label: "Seasons", icon: "layers" },
-  { id: "completed", label: "Completed", icon: "flag" },
+  // The stored `action` is still `completed` — it is written into the history
+  // of every vault that exists — but the word beside the chip is the domain's.
+  { id: "completed", label: "Watched", icon: "flag" },
   { id: "rating", label: "Ratings", icon: "star" },
   { id: "requested", label: "Requests", icon: "download" },
   { id: "available", label: "Available", icon: "tv" },

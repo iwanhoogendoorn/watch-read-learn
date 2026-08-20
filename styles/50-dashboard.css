@@ -383,6 +383,20 @@
   gap: var(--wl-space-3);
 }
 
+/* The venue rows use `.wl-pill` rather than `.wl-chip`, because their colour is
+   the user's own (injected as `--wl-pill`) rather than the theme's. The pill has
+   no clickable state of its own — this is the only place one is asked for. */
+.wl-credit-row .wl-pill.is-clickable {
+  cursor: pointer;
+  transition: filter var(--wl-dur-fast, 0.12s) ease;
+}
+
+.wl-credit-row .wl-pill.is-clickable:hover,
+.wl-credit-row .wl-pill.is-clickable:focus-visible {
+  filter: brightness(1.15);
+  outline: none;
+}
+
 .wl-credit-count {
   color: var(--text-faint);
   font-size: var(--font-ui-smaller);

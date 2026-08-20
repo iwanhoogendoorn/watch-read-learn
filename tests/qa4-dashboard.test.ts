@@ -110,9 +110,9 @@ describe("the dashboard renders without breaking", () => {
   it("renders every section over the real vault's shape: 4 titles, none rated, none in progress", () => {
     const titles = [
       createTitle({ id: "a", title: "The Odyssey", type: "Movie", status: "Plan to watch", releaseDate: "2026-07-17" }),
-      createTitle({ id: "b", title: "Brand New Day", type: "Movie", status: "Completed", releaseDate: "2026-07-31", watchedEpisodes: [1] }),
-      createTitle({ id: "c", title: "Dexter", type: "TV Show", status: "Completed", totalEpisodes: 10, watchedEpisodes: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], seasons: [{ name: "Season 1", episodes: 10, offset: 0, skippedEpisodes: [], seasonNumber: 1 }] }),
-      createTitle({ id: "d", title: "Spider-Man", type: "Movie", status: "Completed", releaseDate: "2002-05-01", watchedEpisodes: [1] }),
+      createTitle({ id: "b", title: "Brand New Day", type: "Movie", status: "Watched", releaseDate: "2026-07-31", watchedEpisodes: [1] }),
+      createTitle({ id: "c", title: "Dexter", type: "TV Show", status: "Watched", totalEpisodes: 10, watchedEpisodes: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], seasons: [{ name: "Season 1", episodes: 10, offset: 0, skippedEpisodes: [], seasonNumber: 1 }] }),
+      createTitle({ id: "d", title: "Spider-Man", type: "Movie", status: "Watched", releaseDate: "2002-05-01", watchedEpisodes: [1] }),
     ];
     const root = mount(titles);
 
@@ -137,6 +137,9 @@ describe("the dashboard renders without breaking", () => {
       "By year",
       "Added over time",
       "Top credits",
+      // Where you watch: watchlist-only, and it counts every title — the four
+      // here have no venue recorded, so it paints one Unrecorded row.
+      "Where you watch",
       "Continue watching",
       "Up next",
       "Recently watched",
@@ -197,7 +200,7 @@ describe("the dashboard renders without breaking", () => {
     // `.wl-card` is the poster card and carries a 2:3 aspect-ratio. The
     // dashboard's panels must not wear it, or they inherit that ratio and turn
     // into screen-tall empty rectangles — which is what "looks broken" was.
-    const root = mount([createTitle({ id: "a", title: "A", type: "Movie", status: "Completed" })]);
+    const root = mount([createTitle({ id: "a", title: "A", type: "Movie", status: "Watched" })]);
     const panels = root.querySelectorAll(".wl-panel");
     expect(panels.length).toBeGreaterThan(0);
     for (const panel of panels) expect(panel.classes.has("wl-card")).toBe(false);
@@ -238,7 +241,7 @@ describe("the dashboard model with nothing to average", () => {
 describe("per-library cards and the source filter", () => {
   const withDomains = (): WatchLogStoreApi => {
     const store = storeOf([
-      createTitle({ id: "t", title: "A Show", type: "TV Show", status: "Completed" }),
+      createTitle({ id: "t", title: "A Show", type: "TV Show", status: "Watched" }),
     ]) as unknown as Record<string, unknown>;
     store.reading = {
       books: [

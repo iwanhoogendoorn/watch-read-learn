@@ -34,7 +34,7 @@ describe("completion ratio", () => {
   it("excludes Dropped and To be released from the denominator", () => {
     const model = computeDashboard(
       [
-        title({ id: "done", status: "Completed" }),
+        title({ id: "done", status: "Watched" }),
         title({ id: "watching" }),
         title({ id: "dropped", status: "Dropped" }),
         title({ id: "unreleased", status: "To be released" }),
@@ -63,7 +63,7 @@ describe("time totals", () => {
   it("are the sum of the shared per-title formulas, nothing else", () => {
     const titles = [
       title({ id: "a", watchedEpisodes: [1, 2, 3] }),
-      title({ id: "b", status: "Completed" }),
+      title({ id: "b", status: "Watched" }),
       title({ id: "c", status: "Dropped", watchedEpisodes: [1] }),
       title({ id: "d", status: "To be released" }),
     ];
@@ -82,20 +82,20 @@ describe("charts", () => {
   it("orders statuses by the user's configured list, then anything unknown", () => {
     const custom = settings();
     custom.statuses = [
-      { name: "Completed", color: "#000000" },
+      { name: "Watched", color: "#000000" },
       { name: "Watching", color: "#000000" },
     ];
     const model = computeDashboard(
       [
         title({ id: "w", status: "Watching" }),
-        title({ id: "c", status: "Completed" }),
+        title({ id: "c", status: "Watched" }),
         title({ id: "x", status: "Abandoned mid-season" }),
       ],
       custom,
       NOW,
     );
     expect(model.byStatus.map((b) => b.label)).toEqual([
-      "Completed",
+      "Watched",
       "Watching",
       "Abandoned mid-season",
     ]);
@@ -156,7 +156,7 @@ describe("shelves", () => {
       [
         title({ id: "stale", watchedEpisodes: [1], dateModified: "2026-07-01T00:00:00.000Z" }),
         title({ id: "fresh", watchedEpisodes: [1, 2], dateModified: "2026-08-02T00:00:00.000Z" }),
-        title({ id: "done", status: "Completed", watchedEpisodes: Array.from({ length: 10 }, (_, i) => i + 1) }),
+        title({ id: "done", status: "Watched", watchedEpisodes: Array.from({ length: 10 }, (_, i) => i + 1) }),
         title({ id: "dropped", status: "Dropped", watchedEpisodes: [1] }),
       ],
       settings(),
@@ -211,9 +211,9 @@ describe("per-type cards", () => {
     ];
     const model = computeDashboard(
       [
-        title({ id: "s1", type: "TV Show", status: "Completed" }),
+        title({ id: "s1", type: "TV Show", status: "Watched" }),
         title({ id: "s2", type: "TV Show" }),
-        title({ id: "m1", type: "Movie", status: "Completed", totalEpisodes: 1, episodeDuration: 120 }),
+        title({ id: "m1", type: "Movie", status: "Watched", totalEpisodes: 1, episodeDuration: 120 }),
       ],
       custom,
       NOW,

@@ -108,6 +108,18 @@ class ConfirmModal extends Modal {
   }
 }
 
+/** The title fields `renderColorList` edits a vocabulary for. */
+type ColorListField = "type" | "status" | "priority" | "review" | "watchedVia";
+
+/** What each of those is called in a sentence the user reads. */
+const COLOR_LIST_NOUN: Record<ColorListField, string> = {
+  type: "type",
+  status: "status",
+  priority: "priority",
+  review: "review",
+  watchedVia: "venue",
+};
+
 export class WatchLogSettingTab extends PluginSettingTab {
   private plugin: WatchLogPlugin;
   private active: SectionId = "general";
@@ -356,14 +368,14 @@ export class WatchLogSettingTab extends PluginSettingTab {
 
     this.addHelp(
       new Setting(behaviour.content)
-        .setName("Complete a title on its last episode")
+        .setName("Mark a title watched on its last episode")
         .addToggle((toggle) =>
           toggle.setValue(settings.autoCompleteOnLastEpisode).onChange((value) => {
             settings.autoCompleteOnLastEpisode = value;
             this.save();
           }),
         ),
-      "Works both ways: ticking the final episode marks the title Completed, and un-ticking one on a completed title puts it back to Watching.",
+      "Works both ways: ticking the final episode marks the title Watched, and un-ticking one on a watched title puts it back to Watching.",
     );
 
     this.addHelp(
@@ -1342,6 +1354,13 @@ export class WatchLogSettingTab extends PluginSettingTab {
     this.renderColorList(parent, "Statuses", "activity", settings.statuses, "status");
     this.renderColorList(parent, "Priorities", "flag", settings.priorities, "priority");
     this.renderColorList(parent, "Reviews", "message-square", settings.reviews, "review");
+    this.renderColorList(
+      parent,
+      "Watched via",
+      "monitor-play",
+      settings.watchedViaOptions,
+      "watchedVia",
+    );
 
     const tiers = this.group(parent, {
       icon: "star",
@@ -1376,13 +1395,16 @@ export class WatchLogSettingTab extends PluginSettingTab {
     title: string,
     icon: string,
     list: NamedColor[],
-    noun: "type" | "status" | "priority" | "review",
+    field: ColorListField,
   ): void {
     const group = this.group(parent, { icon, title, chip: `${list.length}`, tone: "muted" });
     const rows = group.content.createDiv({ cls: "wl-color-list" });
 
+    // The sentences below name the thing, and the field name is not always the
+    // word for it: `watchedVia` is a venue when you are talking to a person.
+    const noun = COLOR_LIST_NOUN[field];
     const usageOf = (name: string): number =>
-      this.plugin.store.allTitles().filter((t) => t[noun] === name).length;
+      this.plugin.store.allTitles().filter((t) => t[field] === name).length;
 
     const paint = (): void => {
       rows.empty();

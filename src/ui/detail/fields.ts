@@ -53,7 +53,7 @@ export function renderSelectField(
  * The status select.
  *
  * Shared rather than written twice because the *side effect* is the interesting
- * part: moving a title to Completed is the one status change that knows three
+ * part: moving a title to Watched is the one status change that knows three
  * other things — when, how good, what you thought — and a surface that forgot to
  * ask would silently drop them. `afterChange` fires once the patch has landed.
  */
@@ -73,6 +73,32 @@ export function renderStatusField(
       surface.patch({ status: value }, "detail-status");
       afterChange?.(value);
     },
+  });
+}
+
+/**
+ * Where it was watched.
+ *
+ * One control, both surfaces, for the same reason everything else in this
+ * module is: a second copy is a second place for a write to go missing. It sits
+ * beside Status because that is where the question belongs — the venue is a
+ * fact about the watching, not about the film.
+ *
+ * `""` is offered and means "not recorded"; the Dashboard counts those rather
+ * than hiding them, so clearing this is a real answer, not a hole.
+ */
+export function renderWatchedViaField(
+  host: HTMLElement,
+  title: TitleV4,
+  surface: DetailSurface,
+  cls?: string,
+): HTMLSelectElement {
+  return renderSelectField(host, {
+    label: "Watched via",
+    cls,
+    values: ["", ...surface.store.settings.watchedViaOptions.map((v) => v.name)],
+    current: title.watchedVia,
+    onChange: (value) => surface.patch({ watchedVia: value }, "detail-watched-via"),
   });
 }
 

@@ -52,6 +52,7 @@ import {
   renderNotesField,
   renderNumberField,
   renderStatusField,
+  renderWatchedViaField,
 } from "../detail/fields";
 import {
   renderCommunityRating,
@@ -441,6 +442,7 @@ class TitleDetailPane implements TitleDetailController, DetailSurface {
     });
 
     renderReviewField(row, title, this);
+    renderWatchedViaField(row, title, this);
     renderRatingField(row, title, this, { label: "Your rating", cls: "wl-tdv-rating" });
 
     renderCommunityRating(row, title);

@@ -30,6 +30,12 @@ const REVIEWS = [
   { name: "Marvelous", color: "#e" },
 ];
 
+const VENUES = [
+  { name: "Plex", color: "#a" },
+  { name: "Cinema", color: "#b" },
+  { name: "Netflix", color: "#c" },
+];
+
 const TIERS = [
   { label: "Poor", color: "#a" },
   { label: "Fair", color: "#b" },
@@ -49,6 +55,7 @@ function open(over: Partial<TitleV4> = {}) {
     ratingTiers: TIERS,
     halfStars: false,
     reviews: REVIEWS,
+    watchedViaOptions: VENUES,
     now: new Date(2026, 7, 14),
     onConfirm: (result) => {
       saved = result as WatchedResult;
@@ -65,6 +72,13 @@ function open(over: Partial<TitleV4> = {}) {
     modal,
     result: () => saved,
     select: () => el.querySelectorAll("select")[0] as StubEl,
+    venue: () => {
+      const found = el
+        .querySelectorAll("select")
+        .find((s) => s.getAttribute("aria-label") === "Where did you watch it?");
+      if (!found) throw new Error("no venue select");
+      return found;
+    },
     stars: () => el.querySelectorAll(".wl-stars")[0] as StubEl,
     save: () =>
       el

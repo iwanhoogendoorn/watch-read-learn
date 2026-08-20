@@ -119,7 +119,7 @@ export function progressText(title: TitleV4): string {
  * "This show you finished has more to watch" (QA3 fix 3).
  *
  * Seasons now arrive on their own, and a season arriving must NOT rewrite the
- * user's status — flipping a Completed show back to Watching behind their back
+ * user's status — flipping a Watched show back to Watching behind their back
  * is exactly the kind of silent edit this plugin does not make. So the card says
  * it instead, and the decision stays theirs.
  *

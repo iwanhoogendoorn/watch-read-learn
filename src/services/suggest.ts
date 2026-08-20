@@ -26,6 +26,7 @@
  * Everything here is pure. The clients are called by the caller, which is what
  * lets the whole ranking be tested against fixed inputs.
  */
+import { STATUS_COMPLETED, STATUS_DROPPED, STATUS_WATCHING } from "../constants";
 import type { OverseerrSearchResult, TitleV4 } from "../types";
 
 /** Where a candidate came from. The order is the order of trust. */
@@ -80,14 +81,18 @@ export interface RankOptions {
  * that makes people turn recommendations off.
  */
 export function seedWeightFor(title: TitleV4): number {
+  // Case-insensitively, and against the constants rather than words spelled out
+  // here: these are the same three semantic statuses every other surface keys
+  // off, and a second spelling of them is how one surface ends up disagreeing.
   const status = (title.status ?? "").toLowerCase();
-  if (status === "dropped") return 0;
+  const is = (name: string): boolean => status === name.toLowerCase();
+  if (is(STATUS_DROPPED)) return 0;
   if (title.rating > 0) {
     // 5★ → 1.0, 4★ → 0.8, 3★ → 0.6. Below 3 the user is telling us something.
     return Math.max(0, Math.min(1, title.rating / 5));
   }
-  if (status === "completed") return 0.7;
-  if (status === "watching") return 0.6;
+  if (is(STATUS_COMPLETED)) return 0.7;
+  if (is(STATUS_WATCHING)) return 0.6;
   return 0.35;
 }
 

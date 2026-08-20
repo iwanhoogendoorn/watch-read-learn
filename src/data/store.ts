@@ -710,7 +710,7 @@ export class WatchLogStore implements WatchLogStoreApi {
       // one can un-complete it.
       //
       // `autoStatus: false` is for writes the *user did not make*: a season
-      // synced in from upstream must not silently flip a Completed show to
+      // synced in from upstream must not silently flip a Watched show to
       // Watching and wipe its finish date behind their back (QA3). The card
       // shows a "New season" chip instead and the decision stays theirs.
       if (options.autoStatus !== false) this.applyAutoCompleteRules(title);
@@ -862,8 +862,8 @@ export class WatchLogStore implements WatchLogStoreApi {
   }
 
   /**
-   * v3's auto-complete, both directions: finishing the last episode completes
-   * the title, un-ticking one on a completed title puts it back to Watching.
+   * v3's auto-complete, both directions: finishing the last episode marks the
+   * title Watched, un-ticking one on a watched title puts it back to Watching.
    */
   private applyAutoCompleteRules(title: TitleV4): void {
     if (!this.settings.autoCompleteOnLastEpisode) return;
@@ -879,7 +879,7 @@ export class WatchLogStore implements WatchLogStoreApi {
         title.dateFinished = todayIso();
       }
       this.logActivity({
-        message: `${title.title} was completed`,
+        message: `${title.title} was watched`,
         source: "Watchlist",
         action: "completed",
         titleName: title.title,

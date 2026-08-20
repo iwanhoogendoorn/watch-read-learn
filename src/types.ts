@@ -109,10 +109,18 @@ export interface TitleV4 {
   type: string;
   /** (v3) Must match a `settings.statuses[].name`. */
   status: string;
-  /** (v3) `""` (none) or a `settings.priorities[].name`. Forced `""` on Completed. */
+  /** (v3) `""` (none) or a `settings.priorities[].name`. Forced `""` on Watched. */
   priority: string;
   /** (v3) `""` or a `settings.reviews[].name`. */
   review: string;
+  /**
+   * (v4) Where it was watched — `""` or a `settings.watchedViaOptions[].name`.
+   *
+   * `""` means "not recorded" and sorts, filters and counts as empty exactly
+   * like `review` does; nothing may ever write it on the user's behalf, because
+   * a venue nobody typed is a guess wearing a statistic's clothes.
+   */
+  watchedVia: string;
 
   // --- user state ---------------------------------------------------------
   /** (v3) 0–5; `0` means unrated and always sorts/filters as empty. */
@@ -367,6 +375,12 @@ export interface Settings {
   statuses: NamedColor[];
   priorities: NamedColor[];
   reviews: NamedColor[];
+  /**
+   * (v4) The places a title can be watched — Plex, a streaming service, the
+   * cinema, somewhere else. The user's list, in the user's order, exactly like
+   * `statuses` and `reviews`: `TitleV4.watchedVia` holds one of these names.
+   */
+  watchedViaOptions: NamedColor[];
   /** Exactly 5 tiers; reset wholesale if malformed. */
   ratingSystem: RatingTier[];
   rootFolder: string;
@@ -580,7 +594,9 @@ export type QueryTextField =
   | "cast"
   | "director"
   | "studio"
-  | "note";
+  | "note"
+  /** `via:Netflix` — the venue a title was watched at (`TitleV4.watchedVia`). */
+  | "via";
 
 export type QueryNumericField = "rating" | "year" | "eps-left" | "runtime" | "community";
 

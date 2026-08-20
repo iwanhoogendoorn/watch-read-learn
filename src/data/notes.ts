@@ -74,6 +74,7 @@ export function buildFrontmatter(title: TitleV4): string {
 
   if (title.priority) lines.push(yamlLine("priority", title.priority));
   if (title.review) lines.push(yamlLine("review", title.review));
+  if (title.watchedVia) lines.push(yamlLine("watchedVia", title.watchedVia));
   lines.push(yamlLine("rating", title.rating));
   lines.push(yamlLine("progress", `${getProgress(title)}%`));
   lines.push(yamlLine("totalEpisodes", title.totalEpisodes));

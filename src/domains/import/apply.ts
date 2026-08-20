@@ -10,7 +10,7 @@
  *
  *   - **`autoStatus: false`.** The auto-complete rules exist to react to the
  *     *user* ticking off a last episode. An import that merges a season's worth
- *     of watches at once must not silently flip a Dropped show to Completed and
+ *     of watches at once must not silently flip a Dropped show to Watched and
  *     stamp a finish date the user never chose; the plan already decided what
  *     the status should be, and it decided conservatively.
  *   - **`preserveAbsoluteEpisodes`.** A merge that adopts a season list is

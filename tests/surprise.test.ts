@@ -25,7 +25,7 @@ describe("surprisePool", () => {
     const pool = surprisePool([
       title("planned", "Plan to watch"),
       title("watching", "Watching"),
-      title("done", "Completed"),
+      title("done", "Watched"),
       title("dropped", "Dropped"),
       title("future", "To be released"),
     ]);

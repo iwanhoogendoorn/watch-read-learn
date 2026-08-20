@@ -207,6 +207,16 @@ describe("migrate — settings", () => {
     expect(settings.statuses.map((s) => s.name)).toContain("To be released");
   });
 
+  it("renames the fixture's Completed status, and the title standing on it", () => {
+    // The fixture IS a pre-rename vault — that is what makes it the right place
+    // to assert this. The rename's own edge cases live in
+    // `watched-status-rename.test.ts`.
+    expect(settings.statuses.map((s) => s.name)).toContain("Watched");
+    expect(settings.statuses.map((s) => s.name)).not.toContain("Completed");
+    expect(data.titles.filter((t) => t.status === "Watched")).toHaveLength(1);
+    expect(data.titles.filter((t) => t.status === "Completed")).toEqual([]);
+  });
+
   it("recolours the legacy grey Plan to watch", () => {
     const status = settings.statuses.find((s) => s.name === "Plan to watch");
     expect(status?.color).toBe("#00A9A5");
