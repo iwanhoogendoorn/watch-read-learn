@@ -570,6 +570,16 @@ describe("W6-5 — multi-season context on the card", () => {
     expect(nextUpText(show({ status: "Watching", watchedEpisodes: [] }))).toBe("");
   });
 
+  it("never badges a movie, however it was completed", () => {
+    // The real case: Voicemails for Isabelle, a film completed via its status
+    // with its single "episode" never ticked in a grid it does not show.
+    // episodesRemaining was 1 and a MOVIE wore a "New season" chip.
+    const film = createTitle({ id: "vfi", title: "Voicemails", type: "Movie" });
+    film.status = "Completed";
+    expect(film.watchedEpisodes).toEqual([]);
+    expect(hasUnwatchedNewSeason(film)).toBe(false);
+  });
+
   it("badges a finished show that has grown a season — and only that", () => {
     // The case fix 3 refuses to handle by rewriting the status.
     const grown = twoSeasons({ status: "Completed" });

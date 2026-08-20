@@ -459,22 +459,31 @@
   max-width: 100%;
   padding: 0 var(--wl-space-2, 4px);
   border-radius: var(--wl-radius-pill, 999px);
-  background: rgb(var(--wl-card-scrim) / 0.72);
-  color: rgb(var(--wl-card-ink) / 0.86);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
+  /* 0.85, up from 0.72: these chips float over raw ARTWORK, and a cover is
+     whatever colour it wants to be — the cream band on one poster and the
+     near-white sky on another both bled through 0.72 until the label was work
+     to read. The backing has to hold on the worst cover, not the average one.
+     The blur is doubled for the same reason (it is what melts a busy texture
+     behind three words), and the 1px ring of the same scrim seats the pill on
+     a pure-white area, where an unringed dark blob otherwise looks pasted on. */
+  background: rgb(var(--wl-card-scrim) / 0.85);
+  color: rgb(var(--wl-card-ink) / 0.96);
+  box-shadow: 0 0 0 1px rgb(var(--wl-card-scrim) / 0.4);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 /* Both multi-season chips keep their meaning — "new season" is the loud one and
-   stays green, "next up" is the quiet one — but on the scrim's terms. */
+   stays green, "next up" is the quiet one — but on the scrim's terms: the green
+   is mixed towards the ink far enough to pass on the dark backing. */
 .wl-card-body .wl-airing-chip.is-new-season {
-  color: color-mix(in srgb, var(--color-green, var(--text-accent)) 70%, rgb(var(--wl-card-ink)));
+  color: color-mix(in srgb, var(--color-green, var(--text-accent)) 55%, rgb(var(--wl-card-ink)));
 }
 
 .wl-card-body .wl-airing-chip.is-next-up {
-  color: rgb(var(--wl-card-ink) / 0.78);
+  color: rgb(var(--wl-card-ink) / 0.88);
 }
 
 .wl-card-badges {
@@ -494,9 +503,28 @@
    looked like a leftover from the old design. */
 .wl-card-badges .wl-plex-badge,
 .wl-card-mini-poster .wl-plex-badge {
-  background: rgb(var(--wl-card-scrim, var(--wl-scrim-rgb, 10 10 14)) / 0.72);
+  /* Matched to the caption chips: 0.85 + ring, because the top of the card is
+     the barest artwork of all and "On Plex" over a cream poster was the first
+     label reported unreadable. The state colour (green/yellow) stays the text;
+     the backing's whole job is to make any cover behind it irrelevant. */
+  background: rgb(var(--wl-card-scrim, var(--wl-scrim-rgb, 10 10 14)) / 0.85);
+  box-shadow: 0 0 0 1px rgb(var(--wl-card-scrim, var(--wl-scrim-rgb, 10 10 14)) / 0.4);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+}
+
+/* The state colours come from the theme, and a light theme's green and yellow
+   are tuned for pale panels — on the dark backing above they sit a stop too
+   dim. Mixed towards the ink only HERE: the same badge on the detail screens
+   sits on a themed panel, where the theme's own colour is the right one. */
+.wl-card-badges .wl-plex-badge.is-available,
+.wl-card-mini-poster .wl-plex-badge.is-available {
+  color: color-mix(in srgb, var(--color-green, var(--text-success)) 55%, rgb(var(--wl-card-ink, 255 255 255)));
+}
+
+.wl-card-badges .wl-plex-badge.is-partial,
+.wl-card-mini-poster .wl-plex-badge.is-partial {
+  color: color-mix(in srgb, var(--color-yellow, var(--text-muted)) 55%, rgb(var(--wl-card-ink, 255 255 255)));
 }
 
 .wl-card-fav {

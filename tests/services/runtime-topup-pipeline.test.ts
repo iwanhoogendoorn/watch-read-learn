@@ -174,13 +174,17 @@ describe("the payload really is the problem", () => {
     expect((await tmdb.details(108978, "tv")).runtime).toBe(44);
   });
 
-  it("and the composed source answers 44 while keeping Overseerr's mediaInfo", async () => {
-    const { source } = pipeline();
+  it("and the composed source answers 44 in ONE request, off the homelab entirely", async () => {
+    // TMDB-primary since "make this not dependent on the home lab server":
+    // the runtime arrives natively, the homelab is never dialled, and the
+    // top-up that used to buy this same 44 with a second request is retired.
+    const { fake, source } = pipeline();
     const details = await source(108978, "tv");
     expect(details.runtime).toBe(44);
-    // The reason Overseerr stays the primary — TMDB knows none of this.
-    expect(details.mediaInfo?.status).toBe(4);
-    expect(details.voteCount).toBe(3079); // Overseerr's, not TMDB's 3080
+    expect(details.voteCount).toBe(3080); // TMDB's document, not Overseerr's 3079
+    expect(details.mediaInfo).toBeUndefined(); // the honest price; availability is background work
+    expect(fake.urls).toHaveLength(1);
+    expect(fake.urls[0]).toContain("api.themoviedb.org");
   });
 });
 
@@ -205,7 +209,7 @@ describe("through the sweep, into the store", () => {
     expect(titles[0]?.episodeDuration).toBe(44);
   });
 
-  it("keeps the whole title refresh when the top-up 404s", async () => {
+  it("falls back to Overseerr whole — mediaInfo included — when TMDB 404s", async () => {
     const titles = [reacher()];
     const store = fakeStore(titles);
     const fake = createFakeHttp({
@@ -238,8 +242,8 @@ describe("through the sweep, into the store", () => {
   });
 });
 
-describe("the sweep's stagger still governs the extra request", () => {
-  it("both requests happen inside one limiter slot, not alongside it", async () => {
+describe("the sweep's stagger still governs the request", () => {
+  it("the one request happens inside the limiter slot, not alongside it", async () => {
     const events: string[] = [];
     const inner = createPassthroughLimiter();
     // A limiter that brackets each slot, so the ordering of the HTTP calls
@@ -291,37 +295,18 @@ describe("the sweep's stagger still governs the extra request", () => {
 
     await sweep.run({ force: true });
 
-    // The top-up is awaited inside the slot: the sweep cannot advance to the
-    // next title until it has finished, so the pair is paced, not raced.
-    expect(events).toEqual(["slot:enter", "http:overseerr", "http:tmdb", "slot:exit"]);
+    // One title, one request, inside the slot — the flip halved the traffic
+    // the top-up era needed for the same 44, and none of it is the homelab's.
+    expect(events).toEqual(["slot:enter", "http:tmdb", "slot:exit"]);
     expect(titles[0]?.episodeDuration).toBe(44);
   });
 
-  it("costs exactly one extra request, and none at all once the data is good", async () => {
-    const { fake, source } = pipeline();
-    await source(108978, "tv");
-    expect(fake.urls).toHaveLength(2);
-
-    // A show whose `episodeRunTime` is populated never reaches TMDB.
-    const healthy = createFakeHttp({
-      "/api/v1/tv/108978": { body: { ...overseerrReacher, episodeRunTime: [44, 44, 51] } },
-      "api.themoviedb.org": { body: tmdbReacher },
-    });
-    const overseerr = createOverseerrClient(() => ({ url: "http://x:5055", apiKey: "k" }), {
-      http: healthy.http,
-      limiter: createPassthroughLimiter(),
-    });
-    const tmdb = createTmdbClient(() => ({ token: "eyJtest" }), {
-      http: healthy.http,
-      limiter: createPassthroughLimiter(),
-    });
-    expect((await createDetailsSource({ overseerr, tmdb })(108978, "tv")).runtime).toBe(44);
-    expect(healthy.urls).toHaveLength(1);
-  });
-
-  it("makes no extra request when no TMDB token is configured", async () => {
+  it("an Overseerr-only vault still answers, runtime honestly 0", async () => {
+    // No token means the homelab IS the provider — and its stripped payload
+    // means the runtime stays 0, exactly as it did before the top-up existed.
     const { fake, source } = pipeline({ tmdbToken: "" });
     expect((await source(108978, "tv")).runtime).toBe(0);
     expect(fake.urls).toHaveLength(1);
+    expect(fake.urls[0]).toContain("10.11.111.66");
   });
 });

@@ -46,10 +46,22 @@ export interface AddResult {
   mediaInfo?: OverseerrMediaInfo;
 }
 
+/**
+ * Everything the add-box actually asks of a provider — three calls. Narrowed
+ * from `OverseerrClient` so the composed Overseerr-first/TMDB-fallback source
+ * (`services/details.ts`) fits here without pretending to be a full client:
+ * the modal has never cared which catalogue answers, only that one does.
+ */
+export interface AddSearchClient {
+  configured(): boolean;
+  search(query: string): Promise<OverseerrSearchResult[]>;
+  details(tmdbId: number, mediaType: MediaType): Promise<OverseerrDetails>;
+}
+
 export interface AddModalOptions {
   store: WatchLogStoreApi;
   /** Omit (or pass an unconfigured client) to get the manual form only. */
-  client?: OverseerrClient;
+  client?: AddSearchClient;
   onAdded?: (result: AddResult) => void;
   /**
    * Seed the search box (and the manual form's name) — used when the title is
@@ -251,7 +263,7 @@ export function findExisting(
 
 export class AddTitleModal extends Modal {
   private store: WatchLogStoreApi;
-  private client: OverseerrClient | undefined;
+  private client: AddSearchClient | undefined;
   private onAdded: ((result: AddResult) => void) | undefined;
 
   private resultsEl: HTMLElement | null = null;

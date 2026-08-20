@@ -1652,7 +1652,14 @@ export default class WatchLogPlugin extends Plugin {
   openAddModal(afterAdd?: (title: TitleV4) => void, initialQuery?: string): void {
     new AddTitleModal(this.app, {
       store: this.store,
-      client: this.integrations.overseerr,
+      // The composed search source: Overseerr first, TMDB when Overseerr
+      // cannot answer. Details ride the same spine, so a hit found by the
+      // fallback also resolves through it.
+      client: {
+        configured: () => this.integrations.search.configured(),
+        search: (query) => this.integrations.search.search(query),
+        details: (tmdbId, mediaType) => this.integrations.detailsFor(tmdbId, mediaType),
+      },
       ...(initialQuery ? { initialQuery } : {}),
       onAdded: (result) => {
         // A freshly added title has no Plex or airing data; fetch both now so

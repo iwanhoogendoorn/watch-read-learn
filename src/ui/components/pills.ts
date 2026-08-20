@@ -129,6 +129,11 @@ export function progressText(title: TitleV4): string {
  */
 export function hasUnwatchedNewSeason(title: TitleV4): boolean {
   if (title.status !== STATUS_COMPLETED) return false;
+  // A single-episode title cannot grow a season, and "remaining > 0" alone
+  // could not tell that apart from the common completed-by-status film whose
+  // one episode was never ticked in the grid — which put a "New season" chip
+  // on a movie. Seasons are a thing only a multi-episode title has.
+  if (getEffectiveTotal(title) <= 1) return false;
   return episodesRemaining(title) > 0;
 }
 

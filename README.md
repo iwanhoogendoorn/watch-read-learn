@@ -76,6 +76,10 @@ manga and games in one library, wired into a home media stack.
 - **Overseerr requests** — request something you do not have without leaving
   Obsidian, and watch the status come back (pending → approved → downloading →
   available). Nothing is ever requested without an explicit yes.
+- **Search does not need your server** — with a TMDB token, typing into the add
+  box goes straight to the cloud; a homelab that is off, rebooting or behind a
+  VPN cannot slow it down. Overseerr keeps the jobs only it can do — requests
+  and Plex state — as background work that tolerates the server being away.
 - **Upcoming** — one feed for the next episode, an announced season, a film's
   release, a book's publication date and a game's launch, with the same filter
   toolbar as everywhere else, an `.ics` export, and a per-row link that drops the

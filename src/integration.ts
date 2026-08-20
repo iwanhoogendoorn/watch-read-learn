@@ -19,7 +19,7 @@
 import { Notice, type App } from "obsidian";
 import { createOverseerrClient } from "./services/overseerr";
 import { createPlexClient, type PlexClientEx } from "./services/plex";
-import { createDetailsSource, type DetailsSource } from "./services/details";
+import { createDetailsSource, type DetailsSource, createSearchSource, createProviderHealth, type SearchClient } from "./services/details";
 import { createTmdbClient } from "./services/tmdb";
 import { createAvailabilityService, type AvailabilityService } from "./services/availability";
 import {
@@ -138,6 +138,13 @@ export class Integrations {
    * else.
    */
   private readonly details: DetailsSource;
+  /** The add-box's search: Overseerr first, TMDB when Overseerr cannot answer. */
+  readonly search: SearchClient;
+
+  /** The composed details lookup, for callers outside this class (the add-box). */
+  detailsFor(tmdbId: number, mediaType: MediaType): Promise<OverseerrDetails> {
+    return this.details(tmdbId, mediaType);
+  }
   /**
    * AniList + Jikan, their search service and their airing engine.
    *
@@ -190,12 +197,28 @@ export class Integrations {
 
     this.tmdb = createTmdbClient(() => ({ token: settings().tmdbToken }));
 
+    // The add-box searches through the same Overseerr-first/TMDB-second spine
+    // the details path has. Composed once here; the modal never learns
+    // provider names, and an unreachable homelab no longer kills search when a
+    // perfectly good TMDB token sits in the same settings file.
+    // One outage memory for the pair: a search that times out means the click
+    // on its result skips Overseerr instead of hanging for its own 8 seconds.
+    const health = createProviderHealth();
+
+    this.search = createSearchSource({
+      overseerr: this.overseerr,
+      tmdb: this.tmdb,
+      health,
+      onFallback: (err) => console.warn("[wrl] search fell back to TMDB:", err),
+    });
+
     this.details = createDetailsSource({
       overseerr: this.overseerr,
       tmdb: this.tmdb,
+      health,
+      onFallback: (err) => console.warn("[wrl] details fell back to TMDB:", err),
       // A console warning, not a Notice: the refresh itself succeeded, and the
       // user did not ask for this call and cannot act on it failing.
-      onTopUpFailed: (err) => console.warn("[wrl] could not top up the episode runtime", err),
     });
 
     this.availability = createAvailabilityService({
