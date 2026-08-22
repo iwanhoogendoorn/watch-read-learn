@@ -69,6 +69,10 @@ import {
   slugify,
 } from "./schema";
 import {
+  LEGACY_IMAGE_CACHE_FOLDERS,
+  defaultImageCacheFolder,
+} from "../services/imagecache";
+import {
   recomputeOffsets,
   rememberSeasonGeometry,
   sanitizeWatchedEpisodes,
@@ -560,7 +564,12 @@ function migrateSettings(raw: Rec, note: (m: string) => void): Settings {
   // Artwork cache. Both keys default to "off, in the default folder" for a file
   // that predates them, which is exactly the behaviour that file already had.
   s.cacheImagesLocally = bool(s.cacheImagesLocally, defaults.cacheImagesLocally);
-  s.imageCacheFolder = str(s.imageCacheFolder, defaults.imageCacheFolder) || defaults.imageCacheFolder;
+  // Derived from THIS file's root folder (settled at line ~489 above), not from
+  // the stock one: a vault whose material lives in `Media/Watching` should get
+  // `Media/Watching/images`, and taking the shipped default here is what put a
+  // `WRL/` at somebody's vault root while their library sat elsewhere.
+  const derivedCacheFolder = defaultImageCacheFolder(s);
+  s.imageCacheFolder = str(s.imageCacheFolder, derivedCacheFolder) || derivedCacheFolder;
   // The cache's first default shipped as `WatchLog/images` — the old brand,
   // gone from everything else since the rename. A stored value that IS that
   // default (and only that: a folder the user chose is theirs, even one they
@@ -568,8 +577,16 @@ function migrateSettings(raw: Rec, note: (m: string) => void): Settings {
   // folder's contents on load when the old path exists — see
   // `relocateImageCache` in `main.ts` — so the setting and the files change
   // together rather than the cache silently going cold.
-  if (s.imageCacheFolder === "WatchLog/images") {
-    s.imageCacheFolder = defaults.imageCacheFolder;
+  // Every folder this plugin ever shipped as the stock default: `WatchLog/`
+  // from before the rename, then `WRL/` — which sat at the VAULT root while a
+  // reader's material lived under their own root folder, so artwork landed
+  // nowhere near the notes it belongs to. A stored value that IS one of those
+  // follows the default to `<rootFolder>/images`; a folder the reader chose,
+  // even one spelled the same as a default they never had, is theirs and stays.
+  // `relocateImageCache` moves the files, so the setting and the folder change
+  // together rather than the cache silently going cold.
+  if (LEGACY_IMAGE_CACHE_FOLDERS.includes(s.imageCacheFolder)) {
+    s.imageCacheFolder = derivedCacheFolder;
   }
 
   s.libraryViewMode = s.libraryViewMode === "table" ? "table" : defaults.libraryViewMode;

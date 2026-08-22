@@ -26,6 +26,7 @@ import { WatchLogStore } from "../src/data/store";
 import { readExtra, type Settings, type WatchLogData } from "../src/types";
 import {
   DEFAULT_IMAGE_CACHE_FOLDER,
+  defaultImageCacheFolder,
   normalizeCacheFolder,
 } from "../src/services/imagecache";
 import {
@@ -152,7 +153,10 @@ describe("an existing data.json with none of the new keys", () => {
     // The one setting where the wrong default writes files into somebody's
     // vault without them asking.
     expect(settings.cacheImagesLocally).toBe(false);
-    expect(settings.imageCacheFolder).toBe(DEFAULT_IMAGE_CACHE_FOLDER);
+    // Under the reader's own root folder, not at the vault root: artwork
+    // belongs beside the notes it illustrates. The bare constant is only the
+    // fallback for a vault with no root folder set.
+    expect(settings.imageCacheFolder).toBe(defaultImageCacheFolder(settings));
   });
 
   it("moves a file that never had the key onto the full-tab default", () => {
@@ -228,7 +232,7 @@ describe("defaults for a brand-new install", () => {
 
   it("ships the artwork cache off, in an already-normal folder", () => {
     expect(defaults.cacheImagesLocally).toBe(false);
-    expect(defaults.imageCacheFolder).toBe(DEFAULT_IMAGE_CACHE_FOLDER);
+    expect(defaults.imageCacheFolder).toBe(defaultImageCacheFolder(defaults));
     expect(normalizeCacheFolder(defaults.imageCacheFolder)).toBe(defaults.imageCacheFolder);
   });
 
@@ -249,7 +253,7 @@ describe("the store's own load path", () => {
     await store.load();
 
     expect(store.settings.cacheImagesLocally).toBe(false);
-    expect(store.settings.imageCacheFolder).toBe(DEFAULT_IMAGE_CACHE_FOLDER);
+    expect(store.settings.imageCacheFolder).toBe(defaultImageCacheFolder(store.settings));
     expect(store.settings.openTitlesInFullView).toBe(true);
     expect(store.settings.metadataSweepTtlHours).toBe(SWEEP_TTL_HOURS_DEFAULT);
     // And the user's own values are still there afterwards.

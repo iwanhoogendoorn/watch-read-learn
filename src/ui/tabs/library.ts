@@ -28,6 +28,7 @@ import type {
 import { buildTitleCard, type CardCtx } from "../components/card";
 import { createFiltersControl } from "../components/filters";
 import { createPosterLoader } from "../components/posters";
+import type { PosterCacheLookup } from "../../types";
 import { createSearchBox } from "../components/searchbox";
 import { createSortButton } from "../components/sortmenu";
 import { createVirtualGrid, type VirtualGridHandle } from "../components/virtual";
@@ -63,6 +64,16 @@ export interface LibraryDeps {
    * nothing.
    */
   onOpenTitle?: (title: TitleV4) => void;
+  /**
+   * The read side of the local artwork cache, for the grid's posters.
+   *
+   * The Library calls `buildTitleCard` directly rather than through the host's
+   * `buildCard` wrapper, so the cache the composition root spreads in there
+   * never reached the one grid that shows fifteen posters at once — the cache
+   * downloaded them and every card still hotlinked TMDB. Handed down here for
+   * the same reason `posterLoader` is: a tab must not reach for a service.
+   */
+  posterCache?: PosterCacheLookup;
   onOpenNote?: (title: TitleV4) => void;
   onOpenInPlex?: (title: TitleV4) => void;
   onOpenInOverseerr?: (title: TitleV4) => void;
@@ -285,6 +296,7 @@ export function mountLibraryTab(
       showRating: true,
       embedded: false,
       posterLoader,
+      ...(deps.posterCache ? { posterCache: deps.posterCache } : {}),
       onOpen: (title) => openDetail(title),
       onJumpToQuery: (q) => applyQuery(q),
       onRequest: deps.onRequest,

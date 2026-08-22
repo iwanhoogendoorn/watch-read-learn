@@ -189,8 +189,10 @@ export function createDefaultSettings(): Settings {
 
     // Off, because turning it on writes binary files into the user's vault.
     cacheImagesLocally: false,
-    // Mirrors `DEFAULT_IMAGE_CACHE_FOLDER`; normalised again before any write.
-    imageCacheFolder: "WRL/images",
+    // Under the root folder, beside the notes it illustrates — the same place
+    // `defaultReadingFolder` puts reading notes. Kept in step with `rootFolder`
+    // above; normalised again before any write.
+    imageCacheFolder: "Watch Read Learn/images",
 
     libraryViewMode: "grid",
     filterState: createFilterState(),

@@ -11,7 +11,7 @@
  * override, `resolvePosterUrl` for a bare TMDB path), the same negative cache,
  * and the same tinted-initial fallback when the image fails.
  */
-import type { TitleV4 } from "../../types";
+import type { PosterCacheLookup, TitleV4 } from "../../types";
 import {
   isPosterFailed,
   markPosterFailed,
@@ -20,11 +20,18 @@ import {
   resolvePosterUrl,
 } from "../components/posters";
 
-export function renderDetailPoster(host: HTMLElement, title: TitleV4): HTMLElement {
+export function renderDetailPoster(
+  host: HTMLElement,
+  title: TitleV4,
+  cache?: PosterCacheLookup,
+): HTMLElement {
   const poster = host.createDiv({ cls: "wl-poster" });
   poster.dataset.posterSeed = title.title;
 
-  const url = resolvePosterUrl(posterUrlFor(title));
+  // One image rather than a grid of them, but the same rule: a vault with the
+  // artwork cached should render offline, and a detail screen that hotlinks is
+  // the one place the reader is *looking* at the poster.
+  const url = resolvePosterUrl(posterUrlFor(title, cache));
   if (url === "" || isPosterFailed(url)) {
     renderPosterPlaceholder(poster, title.title);
     return poster;

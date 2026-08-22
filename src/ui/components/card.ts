@@ -230,7 +230,12 @@ export function cardActionButton(
 /** Point an existing `.wl-poster` box at the title's artwork. */
 function fillPoster(poster: HTMLElement, title: TitleV4, ctx: CardCtx): void {
   poster.dataset.posterSeed = title.title;
-  const url = posterUrlFor(title);
+  // `ctx.posterCache` or nothing: the cache is handed down for exactly this
+  // call, and dropping it here is why the artwork cache spent its first release
+  // downloading fifteen posters that nothing ever read — every card hotlinked
+  // TMDB while the files sat in the vault. Books never had the bug because the
+  // reading covers reach their cache by a different road.
+  const url = posterUrlFor(title, ctx.posterCache);
   if (ctx.posterLoader) ctx.posterLoader.observe(poster, url);
   else renderPosterPlaceholder(poster, title.title);
 }

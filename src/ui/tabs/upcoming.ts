@@ -22,6 +22,7 @@ import type {
   DateFormat,
   OverseerrSearchResult,
   PosterLoader,
+  PosterCacheLookup,
   TabController,
   TabId,
   TitleV4,
@@ -127,6 +128,13 @@ export interface TabDeps {
   /** `buildTitleCard`. Omitted until the components lane merges. */
   buildCard?: CardFactory;
   posterLoader?: PosterLoader;
+  /**
+   * Read side of the local artwork cache, for the thumbs on these rows.
+   *
+   * Handed down like the loader beside it. Absent (no opt-in, or a test) means
+   * the remote URL, which is what every surface did before the cache existed.
+   */
+  posterCache?: PosterCacheLookup;
   onOpenTitle?: (title: TitleV4) => void;
   /** Chip → filtered Library handoff, e.g. `genre:"Sci-Fi"`. */
   onJumpToQuery?: (query: string) => void;
@@ -851,8 +859,8 @@ export function renderEmptyState(parent: HTMLElement, options: EmptyStateOptions
  * t/p/w342/abc.jpg`) expansion live, and two copies of that rule is exactly how
  * one surface ends up rendering a broken image the others don't.
  */
-export function posterSrc(title: TitleV4): string {
-  return resolvePosterUrl(posterUrlFor(title));
+export function posterSrc(title: TitleV4, cache?: PosterCacheLookup): string {
+  return resolvePosterUrl(posterUrlFor(title, cache));
 }
 
 /** Deterministic tint so a poster-less thumb still reads as a distinct object. */
@@ -870,11 +878,11 @@ export function placeholderTint(title: TitleV4): string {
 export function renderPosterThumb(
   parent: HTMLElement,
   title: TitleV4,
-  deps: Pick<TabDeps, "posterLoader">,
+  deps: Pick<TabDeps, "posterLoader" | "posterCache">,
   cls = "wl-thumb",
 ): HTMLElement {
   const el = parent.createDiv({ cls });
-  const src = posterSrc(title);
+  const src = posterSrc(title, deps.posterCache);
   if (!src) {
     el.addClass("is-placeholder");
     el.style.setProperty("--wl-tint", placeholderTint(title));
@@ -901,7 +909,7 @@ export function renderPosterThumb(
  */
 export function renderFallbackCard(parent: HTMLElement, title: TitleV4, ctx: CardContext): void {
   const card = parent.createDiv({ cls: `wl-fallback-card is-${ctx.variant}` });
-  const src = posterSrc(title);
+  const src = posterSrc(title, ctx.posterCache);
   const poster = card.createDiv({ cls: "wl-fallback-poster" });
   if (src) {
     poster.createEl("img", {
@@ -961,6 +969,7 @@ export function cardContext(
   if (deps.onRequest && !overrides.onRequest) ctx.onRequest = deps.onRequest;
   if (deps.onPlayTrailer && !overrides.onPlayTrailer) ctx.onPlayTrailer = deps.onPlayTrailer;
   if (deps.posterLoader && !overrides.posterLoader) ctx.posterLoader = deps.posterLoader;
+  if (deps.posterCache && !overrides.posterCache) ctx.posterCache = deps.posterCache;
   return ctx;
 }
 

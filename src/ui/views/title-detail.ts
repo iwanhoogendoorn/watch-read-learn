@@ -34,6 +34,7 @@ import {
   type MountHandle,
   type TitlePatch,
   type TitleV4,
+  type PosterCacheLookup,
   type WatchLogStoreApi,
 } from "../../types";
 import { yearOf } from "../components/facets";
@@ -106,6 +107,8 @@ export interface TitleDetailDeps {
    * keeps this out of `main.ts`. A test passes its own and observes it.
    */
   onOpenPerson?: (name: string) => void;
+  /** Read side of the artwork cache, so the poster renders offline. */
+  posterCache?: PosterCacheLookup;
   onOpenNote?: (title: TitleV4) => void;
   onOpenInPlex?: (title: TitleV4) => void;
   onRefreshMetadata?: (title: TitleV4) => void;
@@ -318,7 +321,7 @@ class TitleDetailPane implements TitleDetailController, DetailSurface {
     const head = host.createDiv({ cls: "wl-tdv-head" });
 
     const posterWrap = head.createDiv({ cls: "wl-detail-poster" });
-    renderDetailPoster(posterWrap, title);
+    renderDetailPoster(posterWrap, title, this.deps.posterCache);
 
     const main = head.createDiv({ cls: "wl-tdv-headmain" });
 

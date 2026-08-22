@@ -66,7 +66,36 @@ export type VaultAdapterFits = Assert<
 >;
 
 /** Where images go when the user has not said otherwise. */
+/**
+ * The fallback when there is no root folder to hang the cache off.
+ *
+ * Prefer `defaultImageCacheFolder(settings)`: artwork belongs beside the notes
+ * it illustrates, under the reader's own root folder, exactly as the reading
+ * notes hang off it (`defaultReadingFolder`). This literal shipped as the
+ * default for one release and put a `WRL/` at the VAULT root while the reader's
+ * material lived in `10 PERSONAL/WRL` — they moved the folder by hand, which is
+ * how the mismatch surfaced.
+ */
 export const DEFAULT_IMAGE_CACHE_FOLDER = "WRL/images";
+
+/** Every folder this plugin has ever shipped as the stock cache location. */
+export const LEGACY_IMAGE_CACHE_FOLDERS: readonly string[] = [
+  "WatchLog/images",
+  "WRL/images",
+];
+
+/**
+ * Where artwork goes for a given vault: `<rootFolder>/images`.
+ *
+ * Derived at DEFAULT time, never enforced afterwards — a reader who moves the
+ * folder or renames their root keeps the cache where they put it, because the
+ * files are already there and silently repointing at an empty folder is a cold
+ * cache dressed up as a setting.
+ */
+export function defaultImageCacheFolder(settings: { rootFolder?: string }): string {
+  const root = (settings.rootFolder ?? "").trim().replace(/^\/+|\/+$/g, "");
+  return root === "" ? DEFAULT_IMAGE_CACHE_FOLDER : `${root}/images`;
+}
 
 /**
  * Staging name, mirroring `data/backup.ts`. Cleaned up on success and failure.

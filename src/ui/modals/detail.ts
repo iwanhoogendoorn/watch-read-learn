@@ -35,6 +35,7 @@ import {
   type OverseerrSearchResult,
   type TitlePatch,
   type TitleV4,
+  type PosterCacheLookup,
   type WatchLogStoreApi,
 } from "../../types";
 import {
@@ -110,6 +111,8 @@ export { renderDetailPoster as renderModalPoster } from "../detail/poster";
 export interface DetailModalOptions {
   store: WatchLogStoreApi;
   titleId: string;
+  /** Read side of the artwork cache, so the poster renders offline. */
+  posterCache?: PosterCacheLookup;
   /** Chip → filtered Library. The modal closes itself before handing over. */
   onJumpToQuery?: (query: string) => void;
   /**
@@ -329,7 +332,7 @@ export class DetailModal extends Modal implements DetailSurface {
     const header = host.createDiv({ cls: "wl-detail-header" });
 
     const posterWrap = header.createDiv({ cls: "wl-detail-poster" });
-    renderDetailPoster(posterWrap, title);
+    renderDetailPoster(posterWrap, title, this.options.posterCache);
 
     const main = header.createDiv({ cls: "wl-detail-head-main" });
 

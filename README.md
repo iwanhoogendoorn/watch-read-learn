@@ -46,8 +46,8 @@ manga and games in one library, wired into a home media stack.
   titles, finished films) while still re-checking finished *shows*, because that
   is how a new season gets noticed.
 - **Artwork can live in your vault** — off by default; turn it on and posters
-  *and book covers* are cached locally, so the library renders with no network at
-  all. It is also the politest option available: Open Library counts cover
+  *and book covers* are cached locally under your own root folder, beside the
+  notes they illustrate, so the library renders with no network at all. It is also the politest option available: Open Library counts cover
   requests against its rate limit, and a cached cover is fetched exactly once
   ever instead of once per render.
 - **Logging what you watched, in one go** — marking something finished asks

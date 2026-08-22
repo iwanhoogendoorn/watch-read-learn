@@ -73,6 +73,8 @@ import { WatchLogView } from "./ui/view";
 import {
   createImageCache,
   DEFAULT_IMAGE_CACHE_FOLDER,
+  LEGACY_IMAGE_CACHE_FOLDERS,
+  defaultImageCacheFolder,
   normalizeCacheFolder,
   type ImageCache,
 } from "./services/imagecache";
@@ -1176,6 +1178,7 @@ export default class WatchLogPlugin extends Plugin {
         buildTitleCard(parent, title, cache ? { ...ctx, posterCache: cache } : ctx);
       },
       ...(this.posterLoader ? { posterLoader: this.posterLoader } : {}),
+      ...(this.imageCache ? { posterCache: this.imageCache } : {}),
       parseWidget: (source) => parseWidgetSource(source),
     };
   }
@@ -1391,11 +1394,23 @@ export default class WatchLogPlugin extends Plugin {
   }
 
   private async relocateImageCache(): Promise<void> {
-    const OLD = "WatchLog/images";
     const target = normalizeCacheFolder(this.store.settings.imageCacheFolder);
-    if (target !== normalizeCacheFolder(DEFAULT_IMAGE_CACHE_FOLDER)) return;
+    // Only ever into the folder the defaults would choose for THIS vault. A
+    // reader who picked their own folder is never relocated into it.
+    if (target !== normalizeCacheFolder(defaultImageCacheFolder(this.store.settings))) return;
     const adapter = this.app.vault.adapter;
-    if (!(await adapter.exists(OLD))) return;
+    // Whichever stock folder a previous version left files in, if any. Checked
+    // in order and the first one that exists wins: a vault that somehow has two
+    // gets one move per load rather than a merge nobody asked for.
+    let OLD = "";
+    for (const legacy of LEGACY_IMAGE_CACHE_FOLDERS) {
+      if (normalizeCacheFolder(legacy) === target) continue; // already home
+      if (await adapter.exists(legacy)) {
+        OLD = legacy;
+        break;
+      }
+    }
+    if (OLD === "") return;
     try {
       const listing = await adapter.list(OLD);
       if (!(await adapter.exists(target))) await adapter.mkdir(target);
@@ -1603,6 +1618,11 @@ export default class WatchLogPlugin extends Plugin {
       app: this.app,
       store: this.store,
       engine: createLibraryEngine(this.store.settings),
+      // The grid that shows every poster at once gets the artwork cache; it
+      // builds its cards directly rather than through `buildCard`, so this is
+      // the only road in. Absent when the user has not opted in, which is the
+      // hotlinking behaviour they already had.
+      ...(this.imageCache ? { posterCache: this.imageCache } : {}),
       overseerr: this.integrations.overseerr,
       onRequest: (title) => {
         void runRequestFlow(this.app, title, this.integrations.requests);
@@ -1963,6 +1983,7 @@ export default class WatchLogPlugin extends Plugin {
     const deps: TitleDetailDeps = {
       app: this.app,
       store: this.store,
+      ...(this.imageCache ? { posterCache: this.imageCache } : {}),
       onJumpToQuery: (query) => this.openLibraryWithQuery(query),
       onOpenNote: (title) => {
         void this.openNote(title);
@@ -2044,6 +2065,7 @@ export default class WatchLogPlugin extends Plugin {
     const options: ConstructorParameters<typeof DetailModal>[1] = {
       store: this.store,
       titleId: title.id,
+      ...(this.imageCache ? { posterCache: this.imageCache } : {}),
       onJumpToQuery: (query) => this.openLibraryWithQuery(query),
       onRequest: (t) => {
         void runRequestFlow(this.app, t, this.integrations.requests);
