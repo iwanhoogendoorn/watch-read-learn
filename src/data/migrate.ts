@@ -623,6 +623,25 @@ function migrateSettings(raw: Rec, note: (m: string) => void): Settings {
   s.generateReadingNotes = bool(s.generateReadingNotes, defaults.generateReadingNotes);
   s.generateGameNotes = bool(s.generateGameNotes, defaults.generateGameNotes);
 
+  // --- local API (src/api/) -------------------------------------------------
+  //
+  // A file from before the API gets the defaults: switched off, read-only from
+  // other devices, on the stock port. A stored value of the wrong shape never
+  // errs towards exposure: an unreadable switch reads as off, and an
+  // unreadable "Listen on" reads as this Mac only rather than as the wider
+  // default.
+  s.apiEnabled = bool(s.apiEnabled, defaults.apiEnabled);
+  s.apiPort =
+    Number.isInteger(s.apiPort) && (s.apiPort as number) >= 1 && (s.apiPort as number) <= 65535
+      ? (s.apiPort as number)
+      : defaults.apiPort;
+  s.apiToken = str(s.apiToken, defaults.apiToken).trim();
+  if (s.apiHost === undefined) s.apiHost = defaults.apiHost;
+  else if (s.apiHost !== "loopback" && s.apiHost !== "tailscale" && s.apiHost !== "all") {
+    s.apiHost = "loopback";
+  }
+  s.apiAllowRemoteWrites = bool(s.apiAllowRemoteWrites, defaults.apiAllowRemoteWrites);
+
   // v3's `gamesApiSource` is deliberately NOT read: RAWG is out of scope (it
   // has been down for the duration of the research), so IGDB is the only games
   // provider and there is nothing to choose between. The key round-trips.

@@ -100,6 +100,12 @@ export const DEFAULT_RATING_SYSTEM: RatingTier[] = [
 
 export const DEFAULT_SORT: SortSpec = { key: "dateAdded", direction: "desc" };
 
+/**
+ * The local API's port. The neighbours are taken on purpose: 27125 Helm,
+ * 27126 Food Spot, 27127 Product Tracker, 27128 Maestro.
+ */
+export const DEFAULT_API_PORT = 27129;
+
 /** A fresh "nothing hidden" filter state. Always call it — never share one instance. */
 export function createFilterState(): FilterState {
   return {
@@ -224,6 +230,13 @@ export function createDefaultSettings(): Settings {
 
     generateReadingNotes: true,
     generateGameNotes: true,
+
+    // Local API: off, and read-only from other devices even once it is on.
+    apiEnabled: false,
+    apiPort: DEFAULT_API_PORT,
+    apiToken: "",
+    apiHost: "tailscale",
+    apiAllowRemoteWrites: false,
   };
 
   // A fresh install already ships the full view on, so the one-shot flip has
