@@ -315,6 +315,26 @@ describe("GET /items", () => {
     ]);
   });
 
+  it("answers an unknown status with 400 naming the statuses of the kinds asked for", async () => {
+    const h = await harness();
+    const any = await failure(h, "/items", { status: "Watching,Binged" });
+    expect(any.status).toBe(400);
+    expect(any.message).toMatch(/^status must be one of .*\bWatched\b.*\bPlan to Read\b.*, got "Binged"$/);
+
+    // A book is never "Watching"; a film is never "Reading".
+    const books = await failure(h, "/items", { kind: "book,audiobook", status: "Watching" });
+    expect(books.status).toBe(400);
+    expect(books.message).toBe(
+      'status must be one of Reading, Completed, Plan to Read, To be released, Dropped, got "Watching"',
+    );
+    const films = await failure(h, "/items", { kind: "film", status: "reading" });
+    expect(films.status).toBe(400);
+    expect(films.message).not.toContain("Plan to Read");
+
+    // Every kind together accepts either side's names, in any case.
+    expect((await call(h, "/items", { status: "PLAN TO READ,plan to watch" })).status).toBe(200);
+  });
+
   it("defaults limit to 200 and caps it at 1000", async () => {
     const data = fixture();
     for (let n = 0; n < 1100; n++) {

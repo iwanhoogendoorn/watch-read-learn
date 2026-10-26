@@ -33,6 +33,7 @@ import { watchedPatch } from "../../data/watched";
 import type { NamedColor, Season, Settings, TitlePatch, TitleV4 } from "../../types";
 import { byRecentlyModified, parseLimit, parseOffset, type ListPage } from "../query";
 import { kindOf, progressJson, seasonNumberOf, titleJson, type TitleKind } from "../serialize/titles";
+import { article } from "../text";
 import { ApiError, type ApiDeps, type ApiRequest, type ApiResponse, type RouteHandler } from "../types";
 
 const DEFAULT_SHOW_TYPE = "TV Show";
@@ -126,10 +127,15 @@ function optionalFromList(value: unknown, list: readonly NamedColor[], field: st
   return raw.trim() === "" ? "" : fromList(raw, namesOf(list), field);
 }
 
-function statusFrom(value: unknown, settings: Settings): string {
+/** Every status a film or show may have: the configured ones, then any constant they lack. */
+export function titleStatusNames(settings: Settings): string[] {
   const names = [...namesOf(settings.statuses)];
   for (const status of STATUS_CONSTANTS) if (!names.includes(status)) names.push(status);
-  return fromList(text(value, "status"), names, "status");
+  return names;
+}
+
+function statusFrom(value: unknown, settings: Settings): string {
+  return fromList(text(value, "status"), titleStatusNames(settings), "status");
 }
 
 /** 0–5; whole stars unless the half-star setting is on. `0`/null means unrated. */
@@ -312,7 +318,7 @@ function assertUnique(
         (needle !== undefined && t.title.trim().toLowerCase() === needle) ||
         (tmdbId !== undefined && t.tmdbId === tmdbId && (t.tmdbMediaType ?? mediaType) === mediaType),
     );
-  if (existing) throw new ApiError(409, `A ${kind} called "${existing.title}" already exists (id "${existing.id}").`);
+  if (existing) throw new ApiError(409, `${article(kind)} ${kind} called "${existing.title}" already exists (id "${existing.id}").`);
 }
 
 function findTitle(deps: ApiDeps, kind: TitleKind, id: string): TitleV4 {
@@ -353,7 +359,12 @@ function watchedFlag(body: Record<string, unknown>): boolean {
 // ---------------------------------------------------------------------------
 
 function list(req: ApiRequest, deps: ApiDeps, kind: TitleKind): ApiResponse {
-  const { status, type, q } = req.query;
+  const { type, q } = req.query;
+  // An unknown status is a 400, as it is on a write, not an empty list.
+  const status =
+    req.query.status !== undefined && req.query.status.trim() !== ""
+      ? statusFrom(req.query.status, deps.store.settings)
+      : undefined;
   const limit = parseLimit(req.query.limit);
   const offset = parseOffset(req.query.offset);
   const same = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -445,7 +456,11 @@ async function create(req: ApiRequest, deps: ApiDeps, kind: TitleKind): Promise<
     ...geometry,
   });
   if (kindOf(title) !== kind) {
-    bad(kind === "film" ? `A "${type}" with those details is not a film.` : `A "${type}" is a film, not a show.`);
+    bad(
+      kind === "film"
+        ? `${article(type)} "${type}" with those details is not a film.`
+        : `${article(type)} "${type}" is a film, not a show.`,
+    );
   }
   deps.store.addTitle(title);
   await flushed(deps);

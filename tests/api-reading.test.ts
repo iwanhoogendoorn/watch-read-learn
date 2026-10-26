@@ -334,6 +334,25 @@ describe("log read", () => {
     const { call } = await setup();
     expect((await call("POST", "/books/dune/read", { date: "2026-02-30" })).status).toBe(400);
   });
+
+  it("moves a start date later than the finish back to the finish, so Started is never after Finished", async () => {
+    const { call, savedBook } = await setup();
+    // Dune was started on 2024-01-01.
+    const res = await call("POST", "/books/dune/read", { date: "2023-06-01" });
+    expect(json(res)).toMatchObject({ dates: { dateStarted: "2023-06-01", dateFinished: "2023-06-01" } });
+    expect(savedBook("dune")).toMatchObject({ dateStarted: "2023-06-01", dateFinished: "2023-06-01" });
+  });
+
+  it("does the same for an audiobook, and leaves a start on the finish day alone", async () => {
+    const { call } = await setup();
+    const id = json(await call("POST", "/audiobooks", { title: "Circe", dateStarted: "2026-03-10" })).id as string;
+    const early = await call("POST", `/audiobooks/${id}/read`, { date: "2026-03-01" });
+    expect(json(early)).toMatchObject({ dates: { dateStarted: "2026-03-01", dateFinished: "2026-03-01" } });
+
+    await call("PATCH", `/audiobooks/${id}`, { dateStarted: "2026-03-05" });
+    const sameDay = await call("POST", `/audiobooks/${id}/read`, { date: "2026-03-05" });
+    expect(json(sameDay)).toMatchObject({ dates: { dateStarted: "2026-03-05", dateFinished: "2026-03-05" } });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -346,6 +365,15 @@ describe("validation", () => {
     expect((await call("POST", "/books", { title: "Z", status: "Finished" })).status).toBe(400);
     expect((await call("PATCH", "/books/dune", { status: "Read" })).status).toBe(400);
     expect((await call("GET", "/books", undefined, { status: "nope" })).status).toBe(400);
+  });
+
+  it("answers an unknown list status with 400 naming the valid ones, on both collections", async () => {
+    const { call } = await setup();
+    for (const path of ["/books", "/audiobooks"]) {
+      const res = await call("GET", path, undefined, { status: "Finished" });
+      expect(res.status).toBe(400);
+      expect(json(res).error).toBe("status must be one of: Reading, Completed, Plan to Read, To be released, Dropped");
+    }
   });
 
   it("rejects out-of-range ratings, negative or fractional progress and a missing title", async () => {
@@ -362,7 +390,10 @@ describe("validation", () => {
     expect((await call("POST", "/books", { title: "  dune " })).status).toBe(409);
     // The same title as an audiobook is a different thing to own.
     expect((await call("POST", "/audiobooks", { title: "Dune" })).status).toBe(201);
-    expect((await call("POST", "/audiobooks", { title: "DUNE" })).status).toBe(409);
+    const again = await call("POST", "/audiobooks", { title: "DUNE" });
+    expect(again.status).toBe(409);
+    expect(json(again).error).toMatch(/^An audiobook called "Dune" already exists \(id "[^"]+"\)$/);
+    expect(json(await call("POST", "/books", { title: "Dune" })).error).toMatch(/^A book called "Dune" already exists/);
     expect((await call("PATCH", "/books/half-filled", { title: "Dune" })).status).toBe(409);
   });
 

@@ -119,16 +119,21 @@ export function parseKinds(value: string | undefined): ItemKind[] | undefined {
 
 /**
  * `status=Watched` or `status=Watching,Plan to watch`, lower-cased for a
- * case-insensitive comparison. Statuses are user-configurable, so any name is
- * accepted; one nobody uses simply matches nothing.
+ * case-insensitive comparison. Each name must be one of `known` (in any case):
+ * a misspelt status is a 400, not a list that is quietly empty.
  */
-export function parseStatuses(value: string | undefined): string[] | undefined {
+export function parseStatuses(value: string | undefined, known: readonly string[]): string[] | undefined {
   const raw = present(value);
   if (raw === undefined) return undefined;
-  const statuses = raw
-    .split(",")
-    .map((part) => part.trim().toLowerCase())
-    .filter((part) => part !== "");
+  const statuses: string[] = [];
+  for (const part of raw.split(",")) {
+    const name = part.trim().toLowerCase();
+    if (!name) continue;
+    if (!known.some((candidate) => candidate.trim().toLowerCase() === name)) {
+      throw new ApiError(400, `status must be one of ${known.join(", ")}, got "${part.trim()}"`);
+    }
+    if (!statuses.includes(name)) statuses.push(name);
+  }
   return statuses.length ? statuses : undefined;
 }
 

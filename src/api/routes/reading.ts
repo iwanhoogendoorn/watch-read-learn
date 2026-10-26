@@ -27,6 +27,7 @@ import {
 import { buildReadingEntry, findExistingReading, type NewEntrySeed } from "../../domains/reading/store";
 import { statusPatch, todayString } from "../../domains/reading/progress";
 import { byRecentlyModified, parseLimit, parseOffset, type ListPage } from "../query";
+import { article } from "../text";
 import { ApiError, type ApiDeps, type ApiRequest, type ApiResponse, type RouteHandler } from "../types";
 import {
   EXTRA_FORMAT,
@@ -266,7 +267,7 @@ function assertUnique(deps: ApiDeps, kind: ReadingApiKind, title: string, self?:
   const rows = rowsOf(deps, kind).filter((book) => book.id !== self);
   const scoped: ReadingData = { ...deps.reading.reading, books: rows };
   const existing = findExistingReading(scoped, "book", title);
-  if (existing) throw new ApiError(409, `A ${noun(kind)} called "${existing.title}" already exists (id "${existing.id}")`);
+  if (existing) throw new ApiError(409, `${article(noun(kind))} ${noun(kind)} called "${existing.title}" already exists (id "${existing.id}")`);
 }
 
 // ---------------------------------------------------------------------------
@@ -379,7 +380,7 @@ async function remove(deps: ApiDeps, kind: ReadingApiKind, id: string): Promise<
 
 /**
  * "I read it": Completed, finished on `date`, started then too if it never
- * was, the counter filled to its total when there is one. A rating of 0 and an
+ * was or the start is later than `date`, the counter filled to its total when there is one. A rating of 0 and an
  * empty review mean "not given", never "clear what is there".
  */
 async function logRead(req: ApiRequest, deps: ApiDeps, kind: ReadingApiKind, id: string): Promise<ApiResponse> {
@@ -388,7 +389,8 @@ async function logRead(req: ApiRequest, deps: ApiDeps, kind: ReadingApiKind, id:
   const date = has(body, "date") && body.date !== null ? dateOrNull(body.date, "date") : todayString(deps.now());
 
   const patch: ReadingPatch = { status: "Completed", dateFinished: date };
-  if (!book.dateStarted) patch.dateStarted = date;
+  // Never started, or started after the day it was finished: it started then.
+  if (date !== null && (!book.dateStarted || book.dateStarted > date)) patch.dateStarted = date;
   if (has(body, "rating")) {
     const value = rating(body.rating);
     if (value > 0) patch.rating = value;

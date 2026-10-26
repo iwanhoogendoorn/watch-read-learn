@@ -33,6 +33,13 @@ It is never logged, and `data.json` must never be committed anywhere.
   27125, Food Spot 27126, Product Tracker 27127, Maestro 27128, Watch, Read
   and Learn 27129.
 - Runs only while Obsidian is open and the toggle is on; torn down on unload.
+  A reload of the plugin waits for the old listener to close before it binds
+  again.
+- If the port cannot be bound (another app has it, or another vault runs the
+  API on the same port), Settings shows *port 27129 is in use; retrying* and
+  the API tries again after 2 s, 5 s, 10 s and 30 s, then every minute until
+  it binds or is switched off. When only the tailnet address fails, 127.0.0.1
+  is served in the meantime.
 - Desktop only — mobile Obsidian has no `node:http`, and the plugin still
   loads there with the API simply absent.
 
@@ -130,6 +137,10 @@ URL-encode as usual.
   `{ "date": "2026-10-25", "rating": 4, "review": "Loved it", "watchedVia": "Cinema" }`.
   `rating` is 0–5 (half steps when half-star ratings are on); `review` and
   `watchedVia` must be one of the names configured in Settings.
+  Logging a show as watched sets its status, dates, rating and so on; it does
+  **not** tick its episodes. Mark those with `POST /shows/:id/seasons/:n` (a
+  whole season) or `POST /shows/:id/episodes` (one episode), and read the
+  result back with `GET /shows/:id/progress`.
 - **`review` means two different things.** On a film or show it is one of the
   review labels configured in Settings (anything else is a `400`), and it is
   tied to the rating the way the stars and the review select are in the
@@ -139,10 +150,16 @@ URL-encode as usual.
   `{ "date": "2026-10-25", "rating": 5, "review": "…", "progress": { … } }`.
   For a book, `progress` takes `pagesRead` / `totalPages`, `wordsRead` /
   `totalWords`, `chaptersRead` / `totalChapters` and `unit` (`pages` or
-  `words`); for an audiobook, `listenedMinutes` / `totalMinutes`.
+  `words`); for an audiobook, `listenedMinutes` / `totalMinutes`. `date`
+  becomes the start date too when there is none, or when the one there is
+  later than `date`, so a book is never started after it was finished.
 - **Book status** is one of `Reading`, `Completed`, `Plan to Read`, `Dropped`
   or `To be released`, exactly as written; film and show statuses are the
   ones configured in Settings, matched in any case.
+- **An unknown status is a `400`**, in a body and in a list filter alike
+  (`status` on `/films`, `/shows`, `/books`, `/audiobooks` and `/items`). The
+  error lists the valid names; a misspelt filter never quietly returns an
+  empty list.
 - **Episodes** (`POST /shows/:id/episodes`): `{ "season": 2, "episode": 5, "watched": true }`
   uses TMDB season numbering; `{ "absolute": 13, "watched": true }` counts
   from the first episode of the show. Marking a skipped or unaired episode is
@@ -195,7 +212,8 @@ id nobody has is `200` with an empty list, not a `404`.
 - `status`: a status name, case-insensitive; comma-separate for several.
   Titles use the statuses configured in Settings (`Watching`, `Watched`, …),
   books use `Reading`, `Completed`, `Plan to Read`, `Dropped` and
-  `To be released`.
+  `To be released`. A name that none of the kinds asked for can have is a
+  `400` listing the ones they can (`kind=book&status=Watching` is refused).
 - `from` / `to`: `YYYY-MM-DD`, **both inclusive**. With a range, items that
   have no value in the chosen date field are left out.
 - `dateField`: `dateFinished` (default), `dateStarted`, `dateAdded` or

@@ -10,6 +10,7 @@
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { titleRoutes } from "../src/api/routes/titles";
+import { article } from "../src/api/text";
 import { ApiError, type ApiDeps, type ApiRequest, type ApiResponse } from "../src/api/types";
 import { WatchLogStore } from "../src/data/store";
 import { watchedPatch } from "../src/data/watched";
@@ -198,6 +199,30 @@ describe("titleRoutes: routing", () => {
     const second = (await h.call("GET", "/shows", undefined, { offset: "1", limit: "1" })).body as { items: { id: string }[] };
     const all = (await h.call("GET", "/shows")).body as { items: { id: string }[] };
     expect(second.items.map((t) => t.id)).toEqual([all.items[1]?.id]);
+  });
+
+  it("answers an unknown list status with 400 naming the valid ones, on /films and on /shows", async () => {
+    const h = await harness();
+    for (const path of ["/films", "/shows"]) {
+      const err = await failure(h.call("GET", path, undefined, { status: "Binged" }));
+      expect(err.status).toBe(400);
+      expect(err.message).toMatch(/^status must be one of: .*\bWatching\b.*\bWatched\b.*\.$/);
+    }
+    // Known names still match in any case, and a blank one filters nothing.
+    const plan = (await h.call("GET", "/films", undefined, { status: "PLAN TO WATCH" })).body as { items: { id: string }[] };
+    expect(plan.items.map((t) => t.id)).toEqual(["arrival"]);
+    const blank = (await h.call("GET", "/shows", undefined, { status: " " })).body as { total: number };
+    expect(blank.total).toBe(2);
+  });
+
+  it("picks the article by the first letter in its messages", async () => {
+    const h = await harness();
+    expect((await failure(h.call("POST", "/films", { title: "Arrival" }))).message).toMatch(/^A film called "Arrival"/);
+    expect((await failure(h.call("POST", "/shows", { title: "Heat", type: "Movie", totalEpisodes: 3 }))).message).toBe(
+      'A "Movie" is a film, not a show.',
+    );
+    expect(["audiobook", "\"Anime\"", "Episode", "item", "Other", "upload"].map(article)).toEqual(["An", "An", "An", "An", "An", "An"]);
+    expect(["book", "film", "\"TV Show\"", "show", ""].map(article)).toEqual(["A", "A", "A", "A", "A"]);
   });
 
   it("answers a duplicate in the same collection with 409, by name or by TMDB id", async () => {

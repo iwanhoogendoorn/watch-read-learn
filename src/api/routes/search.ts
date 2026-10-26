@@ -10,7 +10,7 @@
 import { isSingleSitting } from "../../data/review";
 import { derivedStatus } from "../../domains/reading/progress";
 import { norm } from "../../search/query";
-import { readExtra, type Book, type TitleV4 } from "../../types";
+import { READING_STATUSES, readExtra, type Book, type TitleV4 } from "../../types";
 import { ApiError, type ApiDeps, type ApiRequest, type ApiResponse, type RouteHandler } from "../types";
 import {
   calendarDay,
@@ -25,6 +25,7 @@ import {
   type DateField,
   type ItemKind,
 } from "../query";
+import { titleStatusNames } from "./titles";
 
 /** External ids, `null` when the item has none. Titles and books carry different sets. */
 export interface ItemIds {
@@ -248,9 +249,23 @@ function lookup(req: ApiRequest, deps: ApiDeps): ApiResponse {
 // GET /items?kind=&status=&from=&to=&dateField=&limit=
 // ---------------------------------------------------------------------------
 
+/**
+ * The statuses the asked-for kinds can have: a film's or show's from Settings,
+ * a book's or audiobook's fixed set, both when no kind narrows it.
+ */
+function knownStatuses(deps: ApiDeps, kinds: ItemKind[] | undefined): string[] {
+  const titles = !kinds || kinds.includes("film") || kinds.includes("show");
+  const reading = !kinds || kinds.includes("book") || kinds.includes("audiobook");
+  const names = titles ? titleStatusNames(deps.store.settings) : [];
+  for (const status of reading ? READING_STATUSES : []) {
+    if (!names.some((name) => name.toLowerCase() === status.toLowerCase())) names.push(status);
+  }
+  return names;
+}
+
 function items(req: ApiRequest, deps: ApiDeps): ApiResponse {
   const kinds = parseKinds(req.query.kind);
-  const statuses = parseStatuses(req.query.status);
+  const statuses = parseStatuses(req.query.status, knownStatuses(deps, kinds));
   const range = parseDateRange(req.query);
   const dateField = parseDateField(req.query.dateField);
   const limit = parseLimit(req.query.limit);
