@@ -12,9 +12,10 @@
  * `plugin.clients` — a Test button with no client behind it says so plainly
  * rather than pretending to pass.
  */
-import { Modal, PluginSettingTab, Setting, setIcon, type App } from "obsidian";
+import { Modal, Notice, PluginSettingTab, Setting, setIcon, type App } from "obsidian";
+import { API_BASE } from "./api/router";
 import { readV3Backup } from "./data/backup";
-import { DEFAULT_RATING_SYSTEM } from "./data/schema";
+import { DEFAULT_API_PORT, DEFAULT_RATING_SYSTEM } from "./data/schema";
 import { DEFAULT_IMAGE_CACHE_FOLDER, normalizeCacheFolder } from "./services/imagecache";
 import {
   SWEEP_MAX_PER_RUN,
@@ -39,6 +40,7 @@ type SectionId =
   | "customize"
   | "widgets"
   | "data"
+  | "api"
   | "info";
 
 interface SectionDef {
@@ -61,6 +63,7 @@ const SECTIONS: SectionDef[] = [
   { id: "customize", label: "Customize", icon: "palette" },
   { id: "widgets", label: "Widgets", icon: "code" },
   { id: "data", label: "Data", icon: "database" },
+  { id: "api", label: "Local API", icon: "server" },
   { id: "info", label: "Quick info", icon: "info" },
 ];
 
@@ -308,6 +311,9 @@ export class WatchLogSettingTab extends PluginSettingTab {
         break;
       case "data":
         this.renderData(body);
+        break;
+      case "api":
+        this.renderApi(body);
         break;
       case "info":
         this.renderInfo(body);
@@ -1712,6 +1718,183 @@ export class WatchLogSettingTab extends PluginSettingTab {
   // -------------------------------------------------------------------------
   // Quick info
   // -------------------------------------------------------------------------
+
+  // -------------------------------------------------------------------------
+  // Local API
+  // -------------------------------------------------------------------------
+
+  /**
+   * The local HTTP API (`src/api/`).
+   *
+   * Every control that changes what the server is built from (on/off, port,
+   * "Listen on", token) saves and restarts it; "Allow writes from other
+   * devices" only saves, because the server reads it on every request. On
+   * mobile the section says why it is inert instead of showing dead controls.
+   */
+  private renderApi(parent: HTMLElement): void {
+    const settings = this.settings;
+    const plugin = this.plugin;
+    const status = plugin.apiStatus();
+    const tone: ChipTone =
+      status.state === "running"
+        ? "ok"
+        : status.state === "waiting"
+          ? "pending"
+          : status.state === "error"
+            ? "warn"
+            : "muted";
+
+    const api = this.group(parent, {
+      icon: "server",
+      title: "Local API",
+      subtitle: `An HTTP API under ${API_BASE} for scripts, shortcuts and other devices.`,
+      chip: status.detail,
+      tone,
+    });
+
+    if (status.state === "mobile") {
+      api.content.createDiv({
+        cls: "wl-setting-help",
+        text: "The local API runs inside Obsidian on a desktop. Switch it on there; this device can then reach it over Tailscale.",
+      });
+      return;
+    }
+
+    const restart = async (): Promise<void> => {
+      this.save("settings-api");
+      await plugin.restartApi();
+      this.renderBody();
+    };
+
+    new Setting(api.content)
+      .setName("Enable the local API")
+      .setDesc("Off by default. A token is generated the first time you switch it on.")
+      .addToggle((toggle) =>
+        toggle.setValue(settings.apiEnabled).onChange(async (value) => {
+          settings.apiEnabled = value;
+          if (value && settings.apiToken === "") settings.apiToken = plugin.newApiToken();
+          await restart();
+        }),
+      );
+
+    let portTimer: ReturnType<typeof setTimeout> | null = null;
+    new Setting(api.content)
+      .setName("Port")
+      .setDesc(`Default ${DEFAULT_API_PORT}. The same port is used on every address.`)
+      .addText((text) => {
+        text.inputEl.type = "number";
+        text.inputEl.min = "1";
+        text.inputEl.max = "65535";
+        text.setValue(String(settings.apiPort)).onChange((value) => {
+          if (portTimer !== null) clearTimeout(portTimer);
+          portTimer = null;
+          const port = Number(value.trim());
+          if (!Number.isInteger(port) || port < 1 || port > 65535 || port === settings.apiPort) return;
+          // Stored now, so closing the tab still saves it. Only the restart is
+          // debounced, so typing "27130" does not bind 2, 27, 271 and 2713 on
+          // the way; it is deliberately not one of `this.timers`, which `hide`
+          // cancels, or closing the tab would leave the old port running.
+          settings.apiPort = port;
+          this.saveSoon("settings-api");
+          portTimer = setTimeout(() => {
+            portTimer = null;
+            void restart();
+          }, 800);
+        });
+      });
+
+    this.addHelp(
+      new Setting(api.content).setName("Listen on").addDropdown((dropdown) =>
+        dropdown
+          .addOption("loopback", "This Mac only")
+          .addOption("tailscale", "This Mac + Tailscale")
+          .addOption("all", "All interfaces")
+          .setValue(settings.apiHost)
+          .onChange(async (value) => {
+            settings.apiHost = value === "loopback" || value === "all" ? value : "tailscale";
+            await restart();
+          }),
+      ),
+      "This Mac only: 127.0.0.1, nothing else can connect. This Mac + Tailscale: also this Mac's Tailscale address, so your other devices on the tailnet can connect over an encrypted tunnel; until Tailscale is up it serves this Mac only and checks again every 30 seconds. All interfaces: every network this Mac is on.",
+    );
+
+    if (settings.apiHost === "all") {
+      new Setting(api.content)
+        .setClass("wl-danger-setting")
+        .setName("Plain HTTP on every network")
+        .setDesc(
+          "Anyone on the same Wi-Fi or LAN can reach the API, and the token and your data cross the network unencrypted. Prefer This Mac + Tailscale unless you know you need this.",
+        );
+    }
+
+    new Setting(api.content)
+      .setName("Allow writes from other devices")
+      .setDesc(
+        "Off: requests from anything other than this Mac can read but not change your library; a write gets 403 Forbidden. Requests from this Mac can always write. Takes effect on the next request.",
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(settings.apiAllowRemoteWrites).onChange((value) => {
+          settings.apiAllowRemoteWrites = value;
+          this.save("settings-api");
+        }),
+      );
+
+    new Setting(api.content)
+      .setName("Token")
+      .setDesc("Send as: Authorization: Bearer <token>. Regenerating disconnects every client that has the old one.")
+      .addText((text) => {
+        text.inputEl.type = "password";
+        text.inputEl.addClass("wl-secret-input");
+        text.setPlaceholder("generated when you enable the API").setValue(settings.apiToken).setDisabled(true);
+      })
+      .addButton((button) =>
+        button
+          .setButtonText("Copy")
+          .setDisabled(settings.apiToken === "")
+          .onClick(() => {
+            void navigator.clipboard.writeText(settings.apiToken).then(
+              () => new Notice("API token copied."),
+              () => new Notice("Could not copy the API token."),
+            );
+          }),
+      )
+      .addButton((button) =>
+        button
+          .setButtonText("Regenerate")
+          .setWarning()
+          .onClick(() => {
+            new ConfirmModal(this.app, {
+              title: "Regenerate the API token?",
+              body: "Every script and device using the current token stops working until you give it the new one.",
+              confirmLabel: "Regenerate",
+              onConfirm: () => {
+                settings.apiToken = plugin.newApiToken();
+                void restart();
+              },
+            }).open();
+          }),
+      );
+
+    const example = api.content.createDiv({ cls: "wl-doc-row" });
+    example.createEl("strong", { text: "Try it" });
+    const hosts = (plugin.api?.hosts ?? []).filter((h) => h !== "127.0.0.1" && h !== "0.0.0.0");
+    const lines = [
+      "TOKEN=<paste the token>",
+      `curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:${settings.apiPort}${API_BASE}/health`,
+      ...hosts.map(
+        (h) => `curl -H "Authorization: Bearer $TOKEN" http://${h}:${settings.apiPort}${API_BASE}/health`,
+      ),
+    ];
+    api.content.createEl("pre", { cls: "wl-widget-preset-code" }).createEl("code", { text: lines.join("\n") });
+
+    const warning = api.content.createDiv({ cls: "wl-warning" });
+    setIcon(warning.createSpan({ cls: "wl-warning-icon" }), "shield-alert");
+    warning.createSpan({
+      text:
+        "The token is stored in plain text in this plugin's data.json, like every other key here. " +
+        "Anyone who can read your vault, or whatever syncs it, can read the token.",
+    });
+  }
 
   private renderInfo(parent: HTMLElement): void {
     const info = this.group(parent, {

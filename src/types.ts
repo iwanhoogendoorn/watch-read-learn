@@ -517,6 +517,25 @@ export interface Settings {
   /** Reading/games note generation, mirroring `generateNotes` for titles. */
   generateReadingNotes: boolean;
   generateGameNotes: boolean;
+
+  // --- local HTTP API (src/api/) -------------------------------------------
+  /** Serve the local API. Desktop only; ignored on mobile. Off by default. */
+  apiEnabled: boolean;
+  /** One port for every bound address. 27129 sits after Helm, Food Spot, Product Tracker and Maestro. */
+  apiPort: number;
+  /**
+   * The bearer token every request must send. Generated on first enable;
+   * `""` means no request can authenticate. Stored in cleartext in `data.json`.
+   */
+  apiToken: string;
+  /**
+   * Where to listen: this Mac only, this Mac plus its Tailscale address (the
+   * default, falling back to this Mac until the tailnet is up), or every
+   * interface over plain HTTP.
+   */
+  apiHost: "loopback" | "tailscale" | "all";
+  /** Let callers that are not on this machine write. Off: they get 403 on anything but GET/HEAD. */
+  apiAllowRemoteWrites: boolean;
 }
 
 // ---------------------------------------------------------------------------

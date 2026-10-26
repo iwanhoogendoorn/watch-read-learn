@@ -18,7 +18,11 @@ import {
   TFile,
   type Editor,
   type WorkspaceLeaf,
+  type WorkspaceWindow,
 } from "obsidian";
+import { randomToken } from "./api/auth";
+import { createApiRevision, type ApiRevision } from "./api/revision";
+import { bindPlanFor, startApiServer, type ApiServer } from "./api/server";
 import {
   DATA_FILE,
   V3_BACKUP_FILE,
@@ -167,6 +171,7 @@ import {
   type PlexClient,
   type PosterLoader,
   type ReadingKind,
+  type Settings,
   type SteamClient,
   type TabId,
   type OverseerrSearchResult,
@@ -214,6 +219,17 @@ export interface WatchLogHooks {
   buildCard?: CardFactory;
   posterLoader?: PosterLoader;
   parseWidget?: (source: string) => WidgetParseResult;
+}
+
+/** How often Tailscale mode looks for the tailnet address while it is not up. */
+const API_TAILSCALE_RECHECK_MS = 30_000;
+
+/**
+ * The settings a running API server is built from. Remote writes are left out
+ * on purpose: the server reads that one live on every request.
+ */
+function apiSignature(settings: Settings): string {
+  return JSON.stringify([settings.apiEnabled, settings.apiPort, settings.apiToken, settings.apiHost]);
 }
 
 export default class WatchLogPlugin extends Plugin {
@@ -295,6 +311,22 @@ export default class WatchLogPlugin extends Plugin {
   private gameNotes: GameNoteWriter | null = null;
   private igdb: IgdbClient | null = null;
   private steam: SteamClient | null = null;
+
+  // --- local HTTP API (src/api/) -------------------------------------------
+  /** The running server, when `apiEnabled` and the start succeeded. Desktop only. */
+  api: ApiServer | null = null;
+  /** Why the API is not (fully) running, for the settings tab. `null` when nothing is wrong. */
+  apiProblem: string | null = null;
+  /** Tailscale mode with no tailnet address yet: serving this Mac only and rechecking. */
+  apiWaitingForTailscale = false;
+  /** The data revision the API reports; counts `watchlog-data-changed` events. */
+  private apiRevision: ApiRevision | null = null;
+  /** Tail of the serialised (re)start chain, so two restarts can never interleave. */
+  private apiChain: Promise<void> = Promise.resolve();
+  private apiRetryTimer: number | undefined;
+  /** The settings the running server (or its absence) was built from. */
+  private apiAppliedSignature = "";
+  private unloaded = false;
 
   override async onload(): Promise<void> {
     this.store = new WatchLogStore(this);
@@ -410,6 +442,8 @@ export default class WatchLogPlugin extends Plugin {
 
     this.addSettingTab(new WatchLogSettingTab(this.app, this));
 
+    this.setupApi();
+
     // Catch-up on load: v3 only noticed an episode had aired while its view was
     // open, so a week with Obsidian closed swallowed every notification. Deferred
     // to after the workspace settles so it never delays startup.
@@ -436,9 +470,176 @@ export default class WatchLogPlugin extends Plugin {
   }
 
   override async onunload(): Promise<void> {
+    // The API goes first, so no request can start a write while the last one
+    // is being flushed.
+    await this.stopApi();
     // Flush any debounced write before the plugin goes away — and say so if it
     // did not land, rather than letting the session's edits disappear quietly.
     await this.saveNow("your last changes");
+  }
+
+  // -------------------------------------------------------------------------
+  // Local HTTP API (src/api/)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Wire the API's revision counter and start the server if it is enabled.
+   *
+   * Desktop only: mobile has no `node:http`, and the bundle never requires it
+   * there because nothing below runs.
+   */
+  private setupApi(): void {
+    if (!Platform.isDesktopApp) return;
+    const revision = createApiRevision();
+    this.apiRevision = revision;
+
+    // Settings changed underneath us (a synced data.json reload, or anything
+    // else that emits) restart the server only when the parts it is built
+    // from actually differ. The settings tab restarts it directly.
+    const onChanged = (): void => {
+      if (apiSignature(this.store.settings) !== this.apiAppliedSignature) void this.restartApi();
+    };
+    // The store dispatches on `activeDocument`, which is a pop-out window's
+    // document while one has focus, so each of those is watched too.
+    const watchDoc = (doc: Document): (() => void) => {
+      const offRevision = revision.watch(doc);
+      doc.addEventListener(DATA_CHANGED_EVENT, onChanged);
+      return () => {
+        offRevision();
+        doc.removeEventListener(DATA_CHANGED_EVENT, onChanged);
+      };
+    };
+    const unwatchMain = watchDoc(document);
+    const popouts = new Map<WorkspaceWindow, () => void>();
+    this.registerEvent(
+      this.app.workspace.on("window-open", (win: WorkspaceWindow) => {
+        popouts.get(win)?.();
+        popouts.set(win, watchDoc(win.doc));
+      }),
+    );
+    this.registerEvent(
+      this.app.workspace.on("window-close", (win: WorkspaceWindow) => {
+        popouts.get(win)?.();
+        popouts.delete(win);
+      }),
+    );
+    this.register(() => {
+      unwatchMain();
+      for (const off of popouts.values()) off();
+      popouts.clear();
+      revision.dispose();
+    });
+
+    if (this.store.settings.apiEnabled) void this.restartApi();
+  }
+
+  /** A fresh API token. The caller stores it in settings, saves and restarts. */
+  newApiToken(): string {
+    return randomToken();
+  }
+
+  /** One line for the settings chip. */
+  apiStatus(): { state: "running" | "waiting" | "off" | "mobile" | "error"; detail: string } {
+    if (!Platform.isDesktopApp) return { state: "mobile", detail: "not available on mobile" };
+    if (this.apiProblem !== null) return { state: "error", detail: this.apiProblem };
+    if (this.api === null) return { state: "off", detail: "off" };
+    if (this.apiWaitingForTailscale) return { state: "waiting", detail: "waiting for Tailscale" };
+    return { state: "running", detail: `running on ${this.api.hosts.join(", ")}:${this.api.port}` };
+  }
+
+  /**
+   * (Re)start the API from the current settings, or stop it when they say
+   * off. Serialised: a restart queued behind another waits for it to finish.
+   */
+  restartApi(): Promise<void> {
+    this.apiChain = this.apiChain
+      .catch(() => undefined)
+      .then(() => this.applyApiSettings());
+    return this.apiChain;
+  }
+
+  private async stopApi(): Promise<void> {
+    this.unloaded = true;
+    this.clearApiRetry();
+    // Wait out a start that is in flight; it sees `unloaded` and closes itself.
+    await this.apiChain.catch(() => undefined);
+    const server = this.api;
+    this.api = null;
+    await server?.close();
+  }
+
+  private async applyApiSettings(): Promise<void> {
+    this.clearApiRetry();
+    const old = this.api;
+    this.api = null;
+    this.apiProblem = null;
+    this.apiWaitingForTailscale = false;
+    await old?.close();
+
+    const settings = this.store.settings;
+    this.apiAppliedSignature = apiSignature(settings);
+    if (this.unloaded || !Platform.isDesktopApp || !settings.apiEnabled) return;
+    if (settings.apiToken === "") {
+      this.apiProblem = "no token yet; regenerate one below";
+      return;
+    }
+    const reading = this.reading;
+    if (!reading) {
+      this.apiProblem = "the library has not finished loading";
+      return;
+    }
+
+    const plan = bindPlanFor(settings.apiHost);
+    try {
+      const server = await startApiServer({
+        hosts: plan.hosts,
+        port: settings.apiPort,
+        token: settings.apiToken,
+        deps: {
+          store: this.store,
+          reading,
+          version: this.manifest.version,
+          revision: () => this.apiRevision?.current() ?? 0,
+          now: () => new Date(),
+        },
+        allowRemoteWrites: () => this.store.settings.apiAllowRemoteWrites,
+        log: (message) => console.log(`[wrl/api] ${message}`),
+      });
+      if (this.unloaded) {
+        await server.close();
+        return;
+      }
+      this.api = server;
+      if (plan.waitingForTailscale) {
+        // Tailscale is often not up yet when Obsidian starts. Serve this Mac
+        // now and add the tailnet address as soon as it appears.
+        this.apiWaitingForTailscale = true;
+        this.scheduleTailscaleRecheck();
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.apiProblem = /EADDRINUSE/.test(message)
+        ? `port ${settings.apiPort} is already in use`
+        : message;
+      console.error("[wrl/api] could not start:", message);
+      new Notice(`Watch, Read and Learn API: ${this.apiProblem}.`);
+    }
+  }
+
+  private scheduleTailscaleRecheck(): void {
+    this.apiRetryTimer = window.setTimeout(() => {
+      this.apiRetryTimer = undefined;
+      const settings = this.store.settings;
+      if (this.unloaded || !settings.apiEnabled || settings.apiHost !== "tailscale") return;
+      if (bindPlanFor("tailscale").waitingForTailscale) this.scheduleTailscaleRecheck();
+      else void this.restartApi();
+    }, API_TAILSCALE_RECHECK_MS);
+  }
+
+  private clearApiRetry(): void {
+    if (this.apiRetryTimer === undefined) return;
+    window.clearTimeout(this.apiRetryTimer);
+    this.apiRetryTimer = undefined;
   }
 
   // -------------------------------------------------------------------------
