@@ -7,8 +7,9 @@
  * "Good". Whatever a surface's chrome looks like, these two do the same thing.
  */
 import type { App } from "obsidian";
-import { STATUS_COMPLETED, STATUS_PLAN_TO_WATCH } from "../../constants";
+import { STATUS_PLAN_TO_WATCH } from "../../constants";
 import { isSingleSitting } from "../../data/review";
+import { watchedPatch } from "../../data/watched";
 import type { TitlePatch, TitleV4 } from "../../types";
 import { confirmAction } from "../modals/confirm";
 import { openWatchedWizard } from "../modals/watched";
@@ -28,21 +29,8 @@ export function askWatched(app: App, title: TitleV4, surface: DetailSurface): vo
     halfStars: surface.store.settings.halfStarRatings,
     reviews: surface.store.settings.reviews,
     watchedViaOptions: surface.store.settings.watchedViaOptions,
-    onConfirm: (result) => {
-      const patch: TitlePatch = { status: STATUS_COMPLETED };
-      if (result.date) {
-        patch.dateFinished = result.date;
-        // A film's two dates are one date; a series keeps whatever start it
-        // already had rather than being told it began the night it ended.
-        if (isSingleSitting(title) || !title.dateStarted) patch.dateStarted = result.date;
-      }
-      if (result.rating > 0) patch.rating = result.rating;
-      if (result.review !== "") patch.review = result.review;
-      // A venue nobody picked is not a venue. The Plex pre-selection only
-      // becomes a write because the user pressed Mark watched with it showing.
-      if (result.watchedVia !== "") patch.watchedVia = result.watchedVia;
-      surface.patch(patch, "detail-watched");
-    },
+    // The rules themselves live in `data/watched.ts`, shared with the HTTP API.
+    onConfirm: (result) => surface.patch(watchedPatch(title, result), "detail-watched"),
   });
 }
 
