@@ -57,9 +57,22 @@ It is never logged, and `data.json` must never be committed anywhere.
 | `403` | A write from another device while *Allow writes from other devices* is off |
 | `404` | No such film, show, book, audiobook, season or route |
 | `405` | The path exists but not with that method |
-| `409` | The request conflicts with the library: an episode marked as skipped or not yet aired, a duplicate title |
+| `409` | The request conflicts with the library: an episode marked as skipped or not yet aired, or a duplicate (see below) |
 | `413` | Body larger than 1 MB |
 | `500` | Something broke, including a write that did not reach disk |
+
+- **Lists** all answer `{ "items": [...], "total": <n> }`, where `total` is
+  the number of matches before `limit` / `offset` cut the page. `limit`
+  defaults to **200** and is capped at **1000** (asking for more returns
+  1000; `0` or a non-number is a `400`). `/films`, `/shows`, `/books` and
+  `/audiobooks` also take `offset` (default `0`) to page through the rest.
+- **Deletes** answer `200` with `{ "deleted": true, "id": "<id>" }`.
+- **Duplicates** are a `409`, within one collection: a film, show, book or
+  audiobook whose title matches an existing one in that collection (trimmed,
+  any case), and for films and shows also one with the same TMDB id. The same
+  name in two collections — a film and a show both called *Fargo* — is
+  fine. A remake that shares a film's name needs a title that tells them
+  apart (*Dune (2021)*).
 
 ### What counts as what
 
@@ -80,34 +93,34 @@ URL-encode as usual.
 | Method + path | What it does |
 | --- | --- |
 | `GET /health` | `{ ok, version, ready, revision, counts: { films, shows, books, audiobooks } }` |
-| `GET /films` | List films. Filters: `status`, `type`, `q` (title substring), `limit`, `offset` |
+| `GET /films` | List films, most recently modified first. Filters: `status`, `type`, `q` (title substring), `limit`, `offset` |
 | `POST /films` | Add a film. Body: `title` (required), plus any of the `PATCH` fields → `201` |
 | `GET /films/:id` | One film |
 | `PATCH /films/:id` | Update: `title`, `type`, `status`, `rating`, `review`, `watchedVia`, `favorite`, `tags`, `notes`, `year`, `dates`, `ids` |
-| `DELETE /films/:id` | Remove the film |
+| `DELETE /films/:id` | Remove the film → `{ deleted: true, id }` |
 | `POST /films/:id/watched` | Log it as watched. Body (all optional): `date` (`YYYY-MM-DD`, default today), `rating`, `review`, `watchedVia` |
 | `GET /shows` | List shows. Same filters as `/films` |
 | `POST /shows` | Add a show. Body: `title` (required), `seasons` or `totalEpisodes`, plus any of the `PATCH` fields → `201` |
 | `GET /shows/:id` | One show |
 | `PATCH /shows/:id` | Update; same fields as a film |
-| `DELETE /shows/:id` | Remove the show |
+| `DELETE /shows/:id` | Remove the show → `{ deleted: true, id }` |
 | `GET /shows/:id/progress` | The show's status and its watched / total episode counts, overall and per season |
 | `POST /shows/:id/episodes` | Mark one episode. Body: `{ season, episode, watched }` or `{ absolute, watched }` (`watched` defaults to `true`) |
 | `POST /shows/:id/seasons/:n` | Mark every non-skipped episode of season `n`. Body: `{ watched }` |
 | `POST /shows/:id/watched` | Log the whole show as watched. Body as for a film |
-| `GET /books` | List books (never audiobooks). Filters: `status`, `limit` |
+| `GET /books` | List books (never audiobooks), most recently modified first. Filters: `status`, `limit`, `offset` |
 | `POST /books` | Add a book. Body: `title` (required), `author`, `status`, `rating`, `favorite`, `categories`, `coverUrl`, `externalLink`, `dates`, `review`, `googleBooksId`, `openLibraryKey`, progress counters → `201` |
 | `GET /books/:id` | One book |
 | `PATCH /books/:id` | Update any of the `POST` fields |
-| `DELETE /books/:id` | Remove the book |
+| `DELETE /books/:id` | Remove the book → `{ deleted: true, id }` |
 | `POST /books/:id/read` | Log it as read. Body (all optional): `date` (default today), `rating`, `review`, `progress` |
-| `GET /audiobooks` | List audiobooks. Filters: `status`, `limit` |
+| `GET /audiobooks` | List audiobooks, most recently modified first. Filters: `status`, `limit`, `offset` |
 | `POST /audiobooks` | Add an audiobook. As `POST /books`, with `listenedMinutes` / `totalMinutes` as the progress → `201` |
 | `GET /audiobooks/:id` | One audiobook |
 | `PATCH /audiobooks/:id` | Update any of the `POST` fields |
-| `DELETE /audiobooks/:id` | Remove the audiobook |
+| `DELETE /audiobooks/:id` | Remove the audiobook → `{ deleted: true, id }` |
 | `POST /audiobooks/:id/read` | Log it as listened to. Body as for a book; `progress` is in minutes |
-| `GET /search` | Title search across films, shows, books and audiobooks. `q` (required), `kind`, `limit` |
+| `GET /search` | Title search across films, shows, books and audiobooks. `q` (required), `kind`, `limit`. See below |
 | `GET /lookup` | Find items by external id. See below |
 | `GET /items` | One flat list across every kind, filtered by kind, status and a date range. See below |
 
@@ -117,11 +130,19 @@ URL-encode as usual.
   `{ "date": "2026-10-25", "rating": 4, "review": "Loved it", "watchedVia": "Cinema" }`.
   `rating` is 0–5 (half steps when half-star ratings are on); `review` and
   `watchedVia` must be one of the names configured in Settings.
+- **`review` means two different things.** On a film or show it is one of the
+  review labels configured in Settings (anything else is a `400`), and it is
+  tied to the rating the way the stars and the review select are in the
+  detail view. On a book or audiobook it is free text, stored on the book as
+  it was sent; `null` or `""` clears it.
 - **Log read** (`POST /books/:id/read`, `POST /audiobooks/:id/read`):
   `{ "date": "2026-10-25", "rating": 5, "review": "…", "progress": { … } }`.
   For a book, `progress` takes `pagesRead` / `totalPages`, `wordsRead` /
   `totalWords`, `chaptersRead` / `totalChapters` and `unit` (`pages` or
   `words`); for an audiobook, `listenedMinutes` / `totalMinutes`.
+- **Book status** is one of `Reading`, `Completed`, `Plan to Read`, `Dropped`
+  or `To be released`, exactly as written; film and show statuses are the
+  ones configured in Settings, matched in any case.
 - **Episodes** (`POST /shows/:id/episodes`): `{ "season": 2, "episode": 5, "watched": true }`
   uses TMDB season numbering; `{ "absolute": 13, "watched": true }` counts
   from the first episode of the show. Marking a skipped or unaired episode is
@@ -149,11 +170,11 @@ read-only, and each match comes back in one small summary shape:
 A book's `ids` are `{ "googleBooks": …, "openLibrary": … }` instead. Fetch the
 full record from the matching domain route (`/films/:id`, `/books/:id`, …).
 
-**`GET /search?q=&kind=&limit=`** → `{ results: [...], total }`. A
+**`GET /search?q=&kind=&limit=`** → `{ items: [...], total }`. A
 case-insensitive, accent-insensitive substring match on the title. An exact
 title comes first, then titles that start with `q`, then the rest.
 
-**`GET /lookup`** → `{ matches: [...] }`. Pass at least one of the parameters
+**`GET /lookup`** → `{ items: [...], total }`, every match, unpaged. Pass at least one of the parameters
 below (none at all is a `400`); several widen the search rather than narrow it,
 so a script can pass every GUID Plex gave it and take whatever comes back. An
 id nobody has is `200` with an empty list, not a `404`.
@@ -182,8 +203,10 @@ id nobody has is `200` with an empty list, not a `404`.
   calendar day.
 - Sorted newest first on `dateField`, undated items last.
 
-**Limits.** `/search` and `/items` take `limit`, default **200**, capped at
-**1000** (asking for more returns 1000). `total` is always the full count.
+**Order.** `/films`, `/shows`, `/books` and `/audiobooks` put the most recently
+modified first (ties by id), so whatever a caller just changed is on page one.
+`/search` ranks by relevance (above), `/items` by its `dateField`, and
+`/lookup` keeps library order. `limit` works as on every list.
 
 ## Examples
 
@@ -266,7 +289,9 @@ write rule — only share the tailnet with devices you trust to write.
 - `src/api/types.ts` — the contract every route module is written against.
 - `src/api/routes/titles.ts` — `/films` and `/shows`.
 - `src/api/routes/reading.ts` — `/books` and `/audiobooks`.
-- `src/api/routes/search.ts` — `/search`, `/lookup` and `/items`; tested in
-  `tests/api-search.test.ts`.
+- `src/api/routes/search.ts` — `/search`, `/lookup` and `/items`.
+- `tests/api-e2e.test.ts` — every route in the table above against a real
+  server and store, including a check that this table and the routers agree
+  and that a write never loses a key it did not mean to change.
 - `src/api/query.ts` — query-string parsing shared by the list routes
   (`limit`, dates, `kind`, `status`, Plex GUIDs).
