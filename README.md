@@ -155,6 +155,18 @@ Blocks you have already written as ` ```watchlog ` keep rendering, and
 `obsidian://watchlog` links keep working. Both new spellings are registered
 alongside them.
 
+## Local HTTP API
+
+Scripts, shortcuts and other tools can read the library and log what you have
+watched or read over a small HTTP API inside Obsidian, under
+`http://127.0.0.1:27129/wrl/v1`. It is off until you switch it on in
+Settings → Local API, desktop only, and every request needs the bearer token
+shown there. By default it also listens on this Mac's Tailscale address,
+where other devices may read but not write unless you allow it.
+
+Routes, request bodies, status codes and examples are in
+[`docs/api.md`](docs/api.md).
+
 ## Cutting a release
 
 ```

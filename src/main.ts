@@ -18,7 +18,12 @@ import {
   TFile,
   type Editor,
   type WorkspaceLeaf,
+  type WorkspaceWindow,
 } from "obsidian";
+import { randomToken } from "./api/auth";
+import { ApiLifecycle, type ApiWanted } from "./api/lifecycle";
+import { createApiRevision, type ApiRevision } from "./api/revision";
+import { bindPlanFor, startApiServer, type ApiServer } from "./api/server";
 import {
   DATA_FILE,
   V3_BACKUP_FILE,
@@ -167,6 +172,7 @@ import {
   type PlexClient,
   type PosterLoader,
   type ReadingKind,
+  type Settings,
   type SteamClient,
   type TabId,
   type OverseerrSearchResult,
@@ -214,6 +220,14 @@ export interface WatchLogHooks {
   buildCard?: CardFactory;
   posterLoader?: PosterLoader;
   parseWidget?: (source: string) => WidgetParseResult;
+}
+
+/**
+ * The settings a running API server is built from. Remote writes are left out
+ * on purpose: the server reads that one live on every request.
+ */
+function apiSignature(settings: Settings): string {
+  return JSON.stringify([settings.apiEnabled, settings.apiPort, settings.apiToken, settings.apiHost]);
 }
 
 export default class WatchLogPlugin extends Plugin {
@@ -295,6 +309,29 @@ export default class WatchLogPlugin extends Plugin {
   private gameNotes: GameNoteWriter | null = null;
   private igdb: IgdbClient | null = null;
   private steam: SteamClient | null = null;
+
+  // --- local HTTP API (src/api/) -------------------------------------------
+  /** Starts, stops and rebinds the server, one step at a time. Desktop only. */
+  private apiLifecycle: ApiLifecycle | null = null;
+  /** The data revision the API reports; counts `watchlog-data-changed` events. */
+  private apiRevision: ApiRevision | null = null;
+  /** The settings the running server (or its absence) was built from. */
+  private apiAppliedSignature = "";
+
+  /** The running server, when `apiEnabled` and the start succeeded. */
+  get api(): ApiServer | null {
+    return this.apiLifecycle?.server ?? null;
+  }
+
+  /** Why the API is not (fully) running, for the settings tab. `null` when nothing is wrong. */
+  get apiProblem(): string | null {
+    return this.apiLifecycle?.problem ?? null;
+  }
+
+  /** Tailscale mode with no tailnet address yet: serving this Mac only and rechecking. */
+  get apiWaitingForTailscale(): boolean {
+    return this.apiLifecycle?.waitingForTailscale ?? false;
+  }
 
   override async onload(): Promise<void> {
     this.store = new WatchLogStore(this);
@@ -410,6 +447,8 @@ export default class WatchLogPlugin extends Plugin {
 
     this.addSettingTab(new WatchLogSettingTab(this.app, this));
 
+    this.setupApi();
+
     // Catch-up on load: v3 only noticed an episode had aired while its view was
     // open, so a week with Obsidian closed swallowed every notification. Deferred
     // to after the workspace settles so it never delays startup.
@@ -436,9 +475,137 @@ export default class WatchLogPlugin extends Plugin {
   }
 
   override async onunload(): Promise<void> {
+    // The API goes first, so no request can start a write while the last one
+    // is being flushed.
+    await this.stopApi();
     // Flush any debounced write before the plugin goes away — and say so if it
     // did not land, rather than letting the session's edits disappear quietly.
     await this.saveNow("your last changes");
+  }
+
+  // -------------------------------------------------------------------------
+  // Local HTTP API (src/api/)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Wire the API's revision counter and start the server if it is enabled.
+   *
+   * Desktop only: mobile has no `node:http`, and the bundle never requires it
+   * there because nothing below runs.
+   */
+  private setupApi(): void {
+    if (!Platform.isDesktopApp) return;
+    const revision = createApiRevision();
+    this.apiRevision = revision;
+
+    // Settings changed underneath us (a synced data.json reload, or anything
+    // else that emits) restart the server only when the parts it is built
+    // from actually differ. The settings tab restarts it directly.
+    const onChanged = (): void => {
+      if (apiSignature(this.store.settings) !== this.apiAppliedSignature) void this.restartApi();
+    };
+    // The store dispatches on `activeDocument`, which is a pop-out window's
+    // document while one has focus, so each of those is watched too.
+    const watchDoc = (doc: Document): (() => void) => {
+      const offRevision = revision.watch(doc);
+      doc.addEventListener(DATA_CHANGED_EVENT, onChanged);
+      return () => {
+        offRevision();
+        doc.removeEventListener(DATA_CHANGED_EVENT, onChanged);
+      };
+    };
+    const unwatchMain = watchDoc(document);
+    const popouts = new Map<WorkspaceWindow, () => void>();
+    this.registerEvent(
+      this.app.workspace.on("window-open", (win: WorkspaceWindow) => {
+        popouts.get(win)?.();
+        popouts.set(win, watchDoc(win.doc));
+      }),
+    );
+    this.registerEvent(
+      this.app.workspace.on("window-close", (win: WorkspaceWindow) => {
+        popouts.get(win)?.();
+        popouts.delete(win);
+      }),
+    );
+    this.register(() => {
+      unwatchMain();
+      for (const off of popouts.values()) off();
+      popouts.clear();
+      revision.dispose();
+    });
+
+    this.apiLifecycle = new ApiLifecycle({
+      wanted: () => this.wantedApi(),
+      plan: bindPlanFor,
+      timers: {
+        set: (callback, ms) => window.setTimeout(callback, ms),
+        clear: (handle) => window.clearTimeout(handle as number),
+      },
+      log: (message) => console.log(`[wrl/api] ${message}`),
+      warn: (message) => console.error(`[wrl/api] ${message}`),
+      notify: (problem) => new Notice(`Watch, Read and Learn API: ${problem}.`),
+    });
+
+    if (this.store.settings.apiEnabled) void this.restartApi();
+  }
+
+  /** A fresh API token. The caller stores it in settings, saves and restarts. */
+  newApiToken(): string {
+    return randomToken();
+  }
+
+  /** One line for the settings chip. */
+  apiStatus(): { state: "running" | "waiting" | "off" | "mobile" | "error"; detail: string } {
+    if (!Platform.isDesktopApp) return { state: "mobile", detail: "not available on mobile" };
+    if (this.apiProblem !== null) return { state: "error", detail: this.apiProblem };
+    if (this.api === null) return { state: "off", detail: "off" };
+    if (this.apiWaitingForTailscale) return { state: "waiting", detail: "waiting for Tailscale" };
+    return { state: "running", detail: `running on ${this.api.hosts.join(", ")}:${this.api.port}` };
+  }
+
+  /**
+   * (Re)start the API from the current settings, or stop it when they say
+   * off. Serialised with every other start, stop and rebind, including those
+   * of a previous instance of this plugin that is still closing.
+   */
+  restartApi(): Promise<void> {
+    return this.apiLifecycle?.restart() ?? Promise.resolve();
+  }
+
+  private async stopApi(): Promise<void> {
+    await this.apiLifecycle?.stop();
+  }
+
+  /** What the settings ask of the API right now; read at the start of every (re)start. */
+  private wantedApi(): ApiWanted {
+    const settings = this.store.settings;
+    this.apiAppliedSignature = apiSignature(settings);
+    if (!settings.apiEnabled) return { serve: false };
+    if (settings.apiToken === "") return { serve: false, problem: "no token yet; regenerate one below" };
+    const reading = this.reading;
+    if (!reading) return { serve: false, problem: "the library has not finished loading" };
+    const { apiPort: port, apiToken: token } = settings;
+    return {
+      serve: true,
+      port,
+      host: settings.apiHost,
+      start: (hosts) =>
+        startApiServer({
+          hosts,
+          port,
+          token,
+          deps: {
+            store: this.store,
+            reading,
+            version: this.manifest.version,
+            revision: () => this.apiRevision?.current() ?? 0,
+            now: () => new Date(),
+          },
+          allowRemoteWrites: () => this.store.settings.apiAllowRemoteWrites,
+          log: (message) => console.log(`[wrl/api] ${message}`),
+        }),
+    };
   }
 
   // -------------------------------------------------------------------------
