@@ -167,7 +167,7 @@ function search(req: ApiRequest, deps: ApiDeps): ApiResponse {
 
   return {
     status: 200,
-    body: { results: hits.slice(0, limit).map(({ item }) => item.summary()), total: hits.length },
+    body: { items: hits.slice(0, limit).map(({ item }) => item.summary()), total: hits.length },
   };
 }
 
@@ -241,7 +241,7 @@ function lookup(req: ApiRequest, deps: ApiDeps): ApiResponse {
     );
   });
 
-  return { status: 200, body: { matches: matches.map((item) => item.summary()) } };
+  return { status: 200, body: { items: matches.map((item) => item.summary()), total: matches.length } };
 }
 
 // ---------------------------------------------------------------------------

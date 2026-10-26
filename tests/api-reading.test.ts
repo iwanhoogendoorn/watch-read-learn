@@ -79,7 +79,7 @@ async function setup() {
   return { store, reading, deps, call, saved, snapshot, last, savedBook };
 }
 
-const ids = (res: ApiResponse): string[] => (res.body as Json[]).map((item) => item.id as string);
+const ids = (res: ApiResponse): string[] => (res.body as { items: Json[] }).items.map((item) => item.id as string);
 const json = (res: ApiResponse): Json => res.body as Json;
 
 // ---------------------------------------------------------------------------
@@ -382,6 +382,26 @@ describe("lists", () => {
     expect(ids(await call("GET", "/books", undefined, { status: "Reading" }))).toEqual(["half-filled"]);
     expect(ids(await call("GET", "/books", undefined, { limit: "1" }))).toHaveLength(1);
     expect((await call("GET", "/books", undefined, { limit: "0" })).status).toBe(400);
+  });
+
+  it("answers { items, total }, pages with offset and caps limit at 1000", async () => {
+    const { call } = await setup();
+    const all = (await call("GET", "/books")).body as { items: Json[]; total: number };
+    expect(Object.keys(all).sort()).toEqual(["items", "total"]);
+    expect(all.total).toBe(all.items.length);
+    const capped = await call("GET", "/books", undefined, { limit: "5000" });
+    expect(capped.status).toBe(200);
+    expect(ids(capped)).toEqual(all.items.map((item) => item.id));
+    expect(ids(await call("GET", "/books", undefined, { offset: "1", limit: "1" }))).toEqual([all.items[1]?.id]);
+    expect((await call("GET", "/books", undefined, { offset: "-1" })).status).toBe(400);
+  });
+
+  it("puts the most recently modified first, like /films and /shows", async () => {
+    const { call } = await setup();
+    const before = ids(await call("GET", "/books"));
+    const last = before[before.length - 1] as string;
+    await call("PATCH", `/books/${last}`, { rating: 3 });
+    expect(ids(await call("GET", "/books"))[0]).toBe(last);
   });
 });
 

@@ -190,8 +190,25 @@ describe("titleRoutes: routing", () => {
     const one = (await h.call("GET", "/shows", undefined, { limit: "1" })).body as { total: number; items: unknown[] };
     expect(one.total).toBe(2);
     expect(one.items).toHaveLength(1);
-    expect((await failure(h.call("GET", "/shows", undefined, { limit: "1001" }))).status).toBe(400);
+    // Over the maximum is capped, as on every other list, not refused.
+    const capped = (await h.call("GET", "/shows", undefined, { limit: "1001" })).body as { total: number; items: unknown[] };
+    expect(Object.keys(capped).sort()).toEqual(["items", "total"]);
+    expect(capped.items).toHaveLength(2);
     expect((await failure(h.call("GET", "/shows", undefined, { limit: "0" }))).status).toBe(400);
+    const second = (await h.call("GET", "/shows", undefined, { offset: "1", limit: "1" })).body as { items: { id: string }[] };
+    const all = (await h.call("GET", "/shows")).body as { items: { id: string }[] };
+    expect(second.items.map((t) => t.id)).toEqual([all.items[1]?.id]);
+  });
+
+  it("answers a duplicate in the same collection with 409, by name or by TMDB id", async () => {
+    const h = await harness();
+    expect((await failure(h.call("POST", "/films", { title: "  arrival " }))).status).toBe(409);
+    expect((await failure(h.call("POST", "/films", { title: "Story of Your Life", ids: { tmdb: 329865 } }))).status).toBe(409);
+    expect((await failure(h.call("PATCH", "/shows/dexter", { title: "The Wire" }))).status).toBe(409);
+    // A show may share a film's name: the collections are checked apart.
+    expect((await h.call("POST", "/shows", { title: "Arrival", totalEpisodes: 6 })).status).toBe(201);
+    // Renaming a title to its own name, in another case, is not a conflict.
+    expect((await h.call("PATCH", "/films/arrival", { title: "ARRIVAL" })).status).toBe(200);
   });
 });
 
@@ -203,7 +220,8 @@ describe("titleRoutes: CRUD round-trip", () => {
   it("creates, reads, patches and deletes a film", async () => {
     const h = await harness();
     const made = await h.call("POST", "/films", {
-      title: "Arrival",
+      // Not the same name as the fixture's "Arrival" (that is a 409), but the same slug.
+      title: "Arrival!",
       ids: { tmdb: 1, imdb: "tt2543164" },
       tags: ["sci-fi", " sci-fi ", "cosy"],
     });
@@ -216,7 +234,7 @@ describe("titleRoutes: CRUD round-trip", () => {
     expect(created.status).toBe("Plan to watch");
     expect(created.tags).toEqual(["sci-fi", "cosy"]);
     expect(created.ids).toMatchObject({ tmdb: 1, tmdbMediaType: "movie", imdb: "tt2543164" });
-    expect(savedTitle(h.lastSave(), "arrival-2").title).toBe("Arrival");
+    expect(savedTitle(h.lastSave(), "arrival-2").title).toBe("Arrival!");
 
     const read = await h.call("GET", "/films/arrival-2");
     expect(read.body).toEqual(created);

@@ -8,19 +8,13 @@
  * order. The first handler that returns a response wins; a handler returns
  * `undefined` for a path that is not its own.
  *
- * Wiring the route modules (T5)
- * -----------------------------
- * The three modules are built in separate branches, so until they are merged
- * `ROUTE_MODULES` is an empty local registry and the router compiles without
- * them. Once `src/api/routes/{titles,search,reading}.ts` exist, T5 adds
- *
- *     import { titleRoutes } from "./routes/titles";
- *     import { searchRoutes } from "./routes/search";
- *     import { readingRoutes } from "./routes/reading";
- *
- * and sets `ROUTE_MODULES = [titleRoutes, searchRoutes, readingRoutes]`.
- * Nothing else changes: `server.ts` and `main.ts` call `handle()` without a
- * route list, so they pick the registry up as it is.
+ * The route modules
+ * -----------------
+ * `ROUTE_MODULES` is `[titleRoutes, searchRoutes, readingRoutes]`: `/films`
+ * and `/shows`, then `/search`, `/lookup` and `/items`, then `/books` and
+ * `/audiobooks`. Their paths do not overlap, so the order only decides who is
+ * asked first. `server.ts` and `main.ts` call `handle()` without a route
+ * list, so they pick the registry up as it is.
  *
  * Conventions every route module follows:
  * - throw `ApiError(status, message)` for an expected failure; it is sent as
@@ -31,13 +25,16 @@
  */
 import { isSingleSitting } from "../data/review";
 import { readExtra } from "../types";
+import { readingRoutes } from "./routes/reading";
+import { searchRoutes } from "./routes/search";
+import { titleRoutes } from "./routes/titles";
 import { ApiError, type ApiDeps, type ApiRequest, type ApiResponse, type RouteHandler } from "./types";
 
 /** Every API path lives under this prefix. */
 export const API_BASE = "/wrl/v1";
 
-/** The route modules, in the order they are offered a request. See the header for how T5 fills this. */
-export const ROUTE_MODULES: readonly RouteHandler[] = [];
+/** The route modules, in the order they are offered a request. */
+export const ROUTE_MODULES: readonly RouteHandler[] = [titleRoutes, searchRoutes, readingRoutes];
 
 /** `Book.format` (an extra key) marks an audiobook; a book without it is a printed or e-book. */
 export const AUDIOBOOK_FORMAT = "audiobook";

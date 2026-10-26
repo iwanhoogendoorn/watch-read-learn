@@ -169,7 +169,7 @@ async function failure(h: Harness, path: string, query: Record<string, string> =
 
 type Summary = { kind: string; id: string; title: string; status: string; ids: Record<string, unknown> };
 
-function idsOf(body: unknown, key: "matches" | "items" | "results"): string[] {
+function idsOf(body: unknown, key: "items"): string[] {
   return ((body as Record<string, Summary[]>)[key] ?? []).map((item) => item.id);
 }
 
@@ -192,54 +192,54 @@ describe("routing", () => {
 describe("GET /lookup", () => {
   it("finds a film by tmdb, imdb and plexRatingKey", async () => {
     const h = await harness();
-    expect(idsOf((await call(h, "/lookup", { tmdb: "603" })).body, "matches")).toEqual(["the-matrix"]);
-    expect(idsOf((await call(h, "/lookup", { imdb: "tt0133093" })).body, "matches")).toEqual(["the-matrix"]);
-    expect(idsOf((await call(h, "/lookup", { plexRatingKey: "1001" })).body, "matches")).toEqual(["the-matrix"]);
+    expect(idsOf((await call(h, "/lookup", { tmdb: "603" })).body, "items")).toEqual(["the-matrix"]);
+    expect(idsOf((await call(h, "/lookup", { imdb: "tt0133093" })).body, "items")).toEqual(["the-matrix"]);
+    expect(idsOf((await call(h, "/lookup", { plexRatingKey: "1001" })).body, "items")).toEqual(["the-matrix"]);
   });
 
   it("finds a show by tvdb", async () => {
     const h = await harness();
-    expect(idsOf((await call(h, "/lookup", { tvdb: "81189" })).body, "matches")).toEqual(["breaking-bad"]);
+    expect(idsOf((await call(h, "/lookup", { tvdb: "81189" })).body, "items")).toEqual(["breaking-bad"]);
   });
 
   it("maps tmdb://, imdb:// and tvdb:// Plex GUIDs onto the stored ids", async () => {
     const h = await harness();
-    expect(idsOf((await call(h, "/lookup", { plexGuid: "tmdb://603" })).body, "matches")).toEqual(["the-matrix"]);
-    expect(idsOf((await call(h, "/lookup", { plexGuid: "imdb://tt0903747" })).body, "matches")).toEqual([
+    expect(idsOf((await call(h, "/lookup", { plexGuid: "tmdb://603" })).body, "items")).toEqual(["the-matrix"]);
+    expect(idsOf((await call(h, "/lookup", { plexGuid: "imdb://tt0903747" })).body, "items")).toEqual([
       "breaking-bad",
     ]);
-    expect(idsOf((await call(h, "/lookup", { plexGuid: "tvdb://81189" })).body, "matches")).toEqual([
+    expect(idsOf((await call(h, "/lookup", { plexGuid: "tvdb://81189" })).body, "items")).toEqual([
       "breaking-bad",
     ]);
   });
 
   it("finds a book and an audiobook by their Open Library work key", async () => {
     const h = await harness();
-    const dune = (await call(h, "/lookup", { openLibrary: "/works/OL893414W" })).body as { matches: Summary[] };
-    expect(dune.matches.map((m) => [m.id, m.kind])).toEqual([["dune", "book"]]);
-    expect(dune.matches[0]?.ids.openLibrary).toBe("/works/OL893414W");
+    const dune = (await call(h, "/lookup", { openLibrary: "/works/OL893414W" })).body as { items: Summary[]; total: number };
+    expect(dune.items.map((m) => [m.id, m.kind])).toEqual([["dune", "book"]]);
+    expect(dune.items[0]?.ids.openLibrary).toBe("/works/OL893414W");
     // The bare id names the same work.
-    expect(idsOf((await call(h, "/lookup", { openLibrary: "OL21745884W" })).body, "matches")).toEqual([
+    expect(idsOf((await call(h, "/lookup", { openLibrary: "OL21745884W" })).body, "items")).toEqual([
       "project-hail-mary",
     ]);
   });
 
   it("finds a book by its Google Books id", async () => {
     const h = await harness();
-    expect(idsOf((await call(h, "/lookup", { googleBooks: "B1dune" })).body, "matches")).toEqual(["dune"]);
+    expect(idsOf((await call(h, "/lookup", { googleBooks: "B1dune" })).body, "items")).toEqual(["dune"]);
   });
 
   it("returns every item matching any of several ids", async () => {
     const h = await harness();
     const body = (await call(h, "/lookup", { tmdb: "603", tvdb: "81189" })).body;
-    expect(idsOf(body, "matches").sort()).toEqual(["breaking-bad", "the-matrix"]);
+    expect(idsOf(body, "items").sort()).toEqual(["breaking-bad", "the-matrix"]);
   });
 
   it("answers an empty list, not a 404, for an id nobody has", async () => {
     const h = await harness();
     const res = await call(h, "/lookup", { tmdb: "999999" });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ matches: [] });
+    expect(res.body).toEqual({ items: [], total: 0 });
   });
 
   it("refuses plex:// GUIDs with 400", async () => {
@@ -349,29 +349,29 @@ describe("GET /items", () => {
 describe("GET /search", () => {
   it("matches titles case-insensitively across films, shows and books", async () => {
     const h = await harness();
-    expect(idsOf((await call(h, "/search", { q: "MATRIX" })).body, "results")).toEqual([
+    expect(idsOf((await call(h, "/search", { q: "MATRIX" })).body, "items")).toEqual([
       "the-matrix",
       "the-matrix-reloaded",
     ]);
-    expect(idsOf((await call(h, "/search", { q: "hail mary" })).body, "results")).toEqual(["project-hail-mary"]);
-    expect(idsOf((await call(h, "/search", { q: "bebop" })).body, "results")).toEqual(["cowboy-bebop"]);
+    expect(idsOf((await call(h, "/search", { q: "hail mary" })).body, "items")).toEqual(["project-hail-mary"]);
+    expect(idsOf((await call(h, "/search", { q: "bebop" })).body, "items")).toEqual(["cowboy-bebop"]);
   });
 
   it("puts an exact title ahead of a partial one", async () => {
     const h = await harness();
-    expect(idsOf((await call(h, "/search", { q: "the matrix reloaded" })).body, "results")).toEqual([
+    expect(idsOf((await call(h, "/search", { q: "the matrix reloaded" })).body, "items")).toEqual([
       "the-matrix-reloaded",
     ]);
-    expect(idsOf((await call(h, "/search", { q: "dune" })).body, "results")).toEqual(["dune"]);
+    expect(idsOf((await call(h, "/search", { q: "dune" })).body, "items")).toEqual(["dune"]);
   });
 
   it("honours kind and limit", async () => {
     const h = await harness();
-    expect(idsOf((await call(h, "/search", { q: "a", kind: "audiobook" })).body, "results")).toEqual([
+    expect(idsOf((await call(h, "/search", { q: "a", kind: "audiobook" })).body, "items")).toEqual([
       "project-hail-mary",
     ]);
-    const limited = (await call(h, "/search", { q: "matrix", limit: "1" })).body as { results: unknown[]; total: number };
-    expect(limited.results).toHaveLength(1);
+    const limited = (await call(h, "/search", { q: "matrix", limit: "1" })).body as { items: unknown[]; total: number };
+    expect(limited.items).toHaveLength(1);
     expect(limited.total).toBe(2);
   });
 

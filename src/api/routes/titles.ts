@@ -31,11 +31,10 @@ import { syncedRatingPatch, syncedReviewPatch } from "../../data/review";
 import { createTitle, uniqueId } from "../../data/schema";
 import { watchedPatch } from "../../data/watched";
 import type { NamedColor, Season, Settings, TitlePatch, TitleV4 } from "../../types";
+import { byRecentlyModified, parseLimit, parseOffset, type ListPage } from "../query";
 import { kindOf, progressJson, seasonNumberOf, titleJson, type TitleKind } from "../serialize/titles";
 import { ApiError, type ApiDeps, type ApiRequest, type ApiResponse, type RouteHandler } from "../types";
 
-const LIST_DEFAULT_LIMIT = 200;
-const LIST_MAX_LIMIT = 1000;
 const DEFAULT_SHOW_TYPE = "TV Show";
 
 /** The five statuses the plugin keys behaviour off; always accepted. */
@@ -291,6 +290,31 @@ function fieldsPatch(
 // Lookups
 // ---------------------------------------------------------------------------
 
+/**
+ * The Add modal's "Already tracked" rule, scoped to one collection: the same
+ * name (trimmed, any case), or the same TMDB id from the same catalogue. A
+ * remake that shares its name needs a name that tells the two apart.
+ */
+function assertUnique(
+  deps: ApiDeps,
+  kind: TitleKind,
+  name: string | undefined,
+  tmdbId: number | undefined,
+  self?: string,
+): void {
+  const needle = name?.trim().toLowerCase();
+  const mediaType = kind === "film" ? "movie" : "tv";
+  const existing = deps.store
+    .allTitles()
+    .filter((t) => t.id !== self && kindOf(t) === kind)
+    .find(
+      (t) =>
+        (needle !== undefined && t.title.trim().toLowerCase() === needle) ||
+        (tmdbId !== undefined && t.tmdbId === tmdbId && (t.tmdbMediaType ?? mediaType) === mediaType),
+    );
+  if (existing) throw new ApiError(409, `A ${kind} called "${existing.title}" already exists (id "${existing.id}").`);
+}
+
 function findTitle(deps: ApiDeps, kind: TitleKind, id: string): TitleV4 {
   const title = deps.store.getTitle(id);
   if (!title || kindOf(title) !== kind) throw new ApiError(404, `No ${kind} with id "${id}".`);
@@ -330,18 +354,8 @@ function watchedFlag(body: Record<string, unknown>): boolean {
 
 function list(req: ApiRequest, deps: ApiDeps, kind: TitleKind): ApiResponse {
   const { status, type, q } = req.query;
-  let limit = LIST_DEFAULT_LIMIT;
-  if (req.query.limit !== undefined) {
-    limit = Number(req.query.limit);
-    if (!Number.isInteger(limit) || limit < 1 || limit > LIST_MAX_LIMIT) {
-      bad(`limit must be a whole number from 1 to ${LIST_MAX_LIMIT}.`);
-    }
-  }
-  let offset = 0;
-  if (req.query.offset !== undefined) {
-    offset = Number(req.query.offset);
-    if (!Number.isInteger(offset) || offset < 0) bad("offset must be a whole number of 0 or more.");
-  }
+  const limit = parseLimit(req.query.limit);
+  const offset = parseOffset(req.query.offset);
   const same = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase();
   const needle = (q ?? "").trim().toLowerCase();
   const matches = deps.store
@@ -350,14 +364,9 @@ function list(req: ApiRequest, deps: ApiDeps, kind: TitleKind): ApiResponse {
     .filter((t) => status === undefined || same(t.status, status))
     .filter((t) => type === undefined || same(t.type, type))
     .filter((t) => needle === "" || t.title.toLowerCase().includes(needle))
-    // Most recently touched first: the thing a caller just changed is on page one.
-    .sort((a, b) => b.dateModified.localeCompare(a.dateModified) || a.id.localeCompare(b.id));
-  return ok({
-    total: matches.length,
-    offset,
-    limit,
-    items: matches.slice(offset, offset + limit).map(titleJson),
-  });
+    .sort(byRecentlyModified);
+  const page: ListPage<unknown> = { items: matches.slice(offset, offset + limit).map(titleJson), total: matches.length };
+  return ok(page);
 }
 
 /** A show's seasons from the request, or the single season the Add modal makes. */
@@ -426,6 +435,7 @@ async function create(req: ApiRequest, deps: ApiDeps, kind: TitleKind): Promise<
     ...geometry,
   });
   const patch = fieldsPatch(body, draft, kind, settings, deps.now());
+  assertUnique(deps, kind, name, patch.tmdbId);
   const title = createTitle({
     ...patch,
     id: uniqueId(name, deps.store.allTitles().map((t) => t.id)),
@@ -447,6 +457,8 @@ async function update(req: ApiRequest, deps: ApiDeps, title: TitleV4, kind: Titl
   rejectUnknown(body, [...WRITABLE, ...READ_ONLY]);
   const patch = fieldsPatch(body, title, kind, deps.store.settings, deps.now());
   if (Object.keys(patch).length === 0) bad("Nothing to change.");
+  // Only what this request changes: an old same-name pair from the UI is not the caller's conflict.
+  assertUnique(deps, kind, patch.title, patch.tmdbId, title.id);
   const updated = deps.store.updateTitle(title.id, patch, "api-patch");
   if (!updated) throw new ApiError(404, `No ${kind} with id "${title.id}".`);
   await flushed(deps);

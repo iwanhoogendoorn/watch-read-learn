@@ -50,6 +50,27 @@ export function parseLimit(value: string | undefined): number {
   return Math.min(limit, MAX_LIMIT);
 }
 
+/** `offset`: how many items of the sorted list to skip, default 0. */
+export function parseOffset(value: string | undefined): number {
+  const raw = present(value);
+  if (raw === undefined) return 0;
+  if (!/^\d+$/.test(raw)) throw new ApiError(400, `offset must be a whole number of 0 or more, got "${raw}"`);
+  return Number(raw);
+}
+
+/** The one shape every list answers with: a page of `items`, and `total` matches before paging. */
+export interface ListPage<T> {
+  items: T[];
+  total: number;
+}
+
+/** Most recently modified first, ties broken by id: what a caller just changed is on page one. */
+export function byRecentlyModified(a: Modified, b: Modified): number {
+  return (b.dateModified ?? "").localeCompare(a.dateModified ?? "") || a.id.localeCompare(b.id);
+}
+
+type Modified = { id: string; dateModified?: string | null };
+
 /** A real calendar date in `YYYY-MM-DD`, or a 400 naming the parameter. */
 export function parseIsoDate(value: string | undefined, name: string): string | undefined {
   const raw = present(value);

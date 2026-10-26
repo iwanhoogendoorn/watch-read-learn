@@ -26,6 +26,7 @@ import {
 } from "../../types";
 import { buildReadingEntry, findExistingReading, type NewEntrySeed } from "../../domains/reading/store";
 import { statusPatch, todayString } from "../../domains/reading/progress";
+import { byRecentlyModified, parseLimit, parseOffset, type ListPage } from "../query";
 import { ApiError, type ApiDeps, type ApiRequest, type ApiResponse, type RouteHandler } from "../types";
 import {
   EXTRA_FORMAT,
@@ -38,9 +39,6 @@ import {
   readingJson,
   type ReadingApiKind,
 } from "../serialize/reading";
-
-const DEFAULT_LIMIT = 200;
-const MAX_LIMIT = 1000;
 
 const COLLECTIONS: Record<string, ReadingApiKind> = {
   books: "book",
@@ -278,20 +276,16 @@ function assertUnique(deps: ApiDeps, kind: ReadingApiKind, title: string, self?:
 function list(req: ApiRequest, deps: ApiDeps, kind: ReadingApiKind): ApiResponse {
   const now = deps.now();
   const wanted = req.query.status !== undefined && req.query.status !== "" ? status(req.query.status) : undefined;
+  const limit = parseLimit(req.query.limit);
+  const offset = parseOffset(req.query.offset);
 
-  let limit = DEFAULT_LIMIT;
-  if (req.query.limit !== undefined && req.query.limit !== "") {
-    const parsed = Number(req.query.limit);
-    if (!Number.isInteger(parsed) || parsed < 1) throw new ApiError(400, "limit must be a positive integer");
-    limit = Math.min(parsed, MAX_LIMIT);
-  }
-
-  const items = rowsOf(deps, kind)
+  // The same order as /films and /shows: most recently modified first.
+  const matches = [...rowsOf(deps, kind)]
+    .sort(byRecentlyModified)
     .map((book) => readingJson(book, now))
-    .filter((json) => wanted === undefined || json.status === wanted)
-    .sort((a, b) => String(a.title).localeCompare(String(b.title)) || String(a.id).localeCompare(String(b.id)))
-    .slice(0, limit);
-  return { status: 200, body: items };
+    .filter((json) => wanted === undefined || json.status === wanted);
+  const page: ListPage<unknown> = { items: matches.slice(offset, offset + limit), total: matches.length };
+  return { status: 200, body: page };
 }
 
 /**

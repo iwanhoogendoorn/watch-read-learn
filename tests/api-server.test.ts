@@ -14,6 +14,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sameToken, randomToken } from "../src/api/auth";
 import { createApiRevision, type ApiRevision } from "../src/api/revision";
 import { API_BASE, ROUTE_MODULES } from "../src/api/router";
+import { readingRoutes } from "../src/api/routes/reading";
+import { searchRoutes } from "../src/api/routes/search";
+import { titleRoutes } from "../src/api/routes/titles";
 import {
   MAX_BODY,
   createRequestListener,
@@ -301,8 +304,8 @@ describe("routing", () => {
     expect(echo.json).toEqual({ body: { a: [1, 2] }, query: { x: "1" } });
   });
 
-  it("starts with an empty route registry until T5 wires the modules in", () => {
-    expect(ROUTE_MODULES).toEqual([]);
+  it("offers requests to titles, then search, then reading", () => {
+    expect(ROUTE_MODULES).toEqual([titleRoutes, searchRoutes, readingRoutes]);
   });
 });
 
